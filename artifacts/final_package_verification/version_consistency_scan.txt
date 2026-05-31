@@ -1,0 +1,59 @@
+=== Version Consistency Scan ===
+Date: 2026-05-31
+
+--- 0.8.0-alpha.10 references ---
+artifacts/final_package_verification/version_consistency_scan.txt:4:--- 0.8.0-alpha.10 references ---
+core/stage_advancement_contract.py:2:"""Shared Stage Advancement Contract for v0.8.0-alpha.10.
+core/stage_advancement_coordinator.py:2:"""Coordination helpers for the v0.8.0-alpha.10 stage advancement contract-closure pass.
+core/stage_advancement_decision.py:2:"""Unified stage-advancement decision contract for v0.8.0-alpha.10.
+core/stage_resolution_service.py:2:"""Stage resolution operations for v0.8.0-alpha.10.
+docs/v09_pre_alpha_entry_criteria.md:4:Current package stage: `v0.8.0-alpha.10-source-freeze-check`  
+
+--- 103/103 references ---
+artifacts/final_package_verification/version_consistency_scan.txt:12:--- 103/103 references ---
+artifacts/full_acceptance_latest_minimal/delivery_alignment_update.md:45:| 103/103 pytest | Corrected to 148/148 in all main delivery docs; 103/103 retained in historical sections with annotations |
+artifacts/full_acceptance_latest_minimal/delivery_alignment_update.md:60:rg -n "103/103|615/615|34 paths|10 acceptance" README.md CLAUDE.md docs/current_project_state.md docs/validation-status.md docs/delivery_manifest.md docs/current-status-index.md docs/acceptance/README.md ROADMAP.md docs/e2e-results-summary.md
+CHANGELOG.md:19:- Full pytest: PASS — 103/103
+CLAUDE.md:54:| Phase 3T pytest (pre-Docker) | 103/103 PASS |
+docs/acceptance/current_acceptance_closure_report.md:60:| Full pytest (`python -m pytest tests/ -x -q`) | Phase 3T already PASS (103/103) | Do NOT re-run unless user explicitly re-authorizes |
+docs/acceptance/current_acceptance_closure_report.md:107:| Full regression | ✅ PASS (103/103) |
+docs/delivery_alignment_report.md:115:| 103/103 pytest | 140/140 pytest | CLAUDE.md, README.md, docs/current_project_state.md, docs/delivery_manifest.md, docs/validation-status.md, docs/e2e-results-summary.md, docs/current-status-index.md |
+docs/delivery_alignment_report.md:137:rg -n "103/103|615/615|34 paths|10 acceptance|production-ready|Production ready|PRODUCTION READY" README.md CLAUDE.md docs scripts config || true
+docs/delivery_alignment_report.md:153:1. `CHANGELOG.md` retains historical numbers (103/103, 615/615) in changelog entries — this is correct behavior for a changelog.
+
+--- 615/615 references ---
+artifacts/final_package_verification/version_consistency_scan.txt:15:artifacts/full_acceptance_latest_minimal/delivery_alignment_update.md:60:rg -n "103/103|615/615|34 paths|10 acceptance" README.md CLAUDE.md docs/current_project_state.md docs/validation-status.md docs/delivery_manifest.md docs/current-status-index.md docs/acceptance/README.md ROADMAP.md docs/e2e-results-summary.md
+artifacts/final_package_verification/version_consistency_scan.txt:21:docs/delivery_alignment_report.md:137:rg -n "103/103|615/615|34 paths|10 acceptance|production-ready|Production ready|PRODUCTION READY" README.md CLAUDE.md docs scripts config || true
+artifacts/final_package_verification/version_consistency_scan.txt:22:docs/delivery_alignment_report.md:153:1. `CHANGELOG.md` retains historical numbers (103/103, 615/615) in changelog entries — this is correct behavior for a changelog.
+artifacts/final_package_verification/version_consistency_scan.txt:24:--- 615/615 references ---
+artifacts/full_acceptance_latest_minimal/delivery_alignment_update.md:44:| 615/615 checks | Corrected to 707/707 in all main delivery docs |
+artifacts/full_acceptance_latest_minimal/delivery_alignment_update.md:60:rg -n "103/103|615/615|34 paths|10 acceptance" README.md CLAUDE.md docs/current_project_state.md docs/validation-status.md docs/delivery_manifest.md docs/current-status-index.md docs/acceptance/README.md ROADMAP.md docs/e2e-results-summary.md
+docs/acceptance/docker_final_acceptance_report.md:80:**Total acceptance script checks: 615/615 passed**
+docs/delivery_alignment_report.md:114:| 615/615 checks | 707/707 checks | CLAUDE.md, README.md, docs/current_project_state.md, docs/delivery_manifest.md, docs/validation-status.md, docs/acceptance/README.md |
+docs/delivery_alignment_report.md:137:rg -n "103/103|615/615|34 paths|10 acceptance|production-ready|Production ready|PRODUCTION READY" README.md CLAUDE.md docs scripts config || true
+docs/delivery_alignment_report.md:153:1. `CHANGELOG.md` retains historical numbers (103/103, 615/615) in changelog entries — this is correct behavior for a changelog.
+
+--- 34 paths references ---
+artifacts/final_package_verification/version_consistency_scan.txt:15:artifacts/full_acceptance_latest_minimal/delivery_alignment_update.md:60:rg -n "103/103|615/615|34 paths|10 acceptance" README.md CLAUDE.md docs/current_project_state.md docs/validation-status.md docs/delivery_manifest.md docs/current-status-index.md docs/acceptance/README.md ROADMAP.md docs/e2e-results-summary.md
+artifacts/final_package_verification/version_consistency_scan.txt:21:docs/delivery_alignment_report.md:137:rg -n "103/103|615/615|34 paths|10 acceptance|production-ready|Production ready|PRODUCTION READY" README.md CLAUDE.md docs scripts config || true
+artifacts/final_package_verification/version_consistency_scan.txt:25:artifacts/final_package_verification/version_consistency_scan.txt:15:artifacts/full_acceptance_latest_minimal/delivery_alignment_update.md:60:rg -n "103/103|615/615|34 paths|10 acceptance" README.md CLAUDE.md docs/current_project_state.md docs/validation-status.md docs/delivery_manifest.md docs/current-status-index.md docs/acceptance/README.md ROADMAP.md docs/e2e-results-summary.md
+artifacts/final_package_verification/version_consistency_scan.txt:26:artifacts/final_package_verification/version_consistency_scan.txt:21:docs/delivery_alignment_report.md:137:rg -n "103/103|615/615|34 paths|10 acceptance|production-ready|Production ready|PRODUCTION READY" README.md CLAUDE.md docs scripts config || true
+artifacts/final_package_verification/version_consistency_scan.txt:30:artifacts/full_acceptance_latest_minimal/delivery_alignment_update.md:60:rg -n "103/103|615/615|34 paths|10 acceptance" README.md CLAUDE.md docs/current_project_state.md docs/validation-status.md docs/delivery_manifest.md docs/current-status-index.md docs/acceptance/README.md ROADMAP.md docs/e2e-results-summary.md
+artifacts/final_package_verification/version_consistency_scan.txt:33:docs/delivery_alignment_report.md:137:rg -n "103/103|615/615|34 paths|10 acceptance|production-ready|Production ready|PRODUCTION READY" README.md CLAUDE.md docs scripts config || true
+artifacts/final_package_verification/version_consistency_scan.txt:36:--- 34 paths references ---
+artifacts/full_acceptance_latest_minimal/delivery_alignment_update.md:60:rg -n "103/103|615/615|34 paths|10 acceptance" README.md CLAUDE.md docs/current_project_state.md docs/validation-status.md docs/delivery_manifest.md docs/current-status-index.md docs/acceptance/README.md ROADMAP.md docs/e2e-results-summary.md
+docs/delivery_alignment_report.md:137:rg -n "103/103|615/615|34 paths|10 acceptance|production-ready|Production ready|PRODUCTION READY" README.md CLAUDE.md docs scripts config || true
+
+--- production-ready references ---
+artifacts/final_package_verification/version_consistency_scan.txt:21:docs/delivery_alignment_report.md:137:rg -n "103/103|615/615|34 paths|10 acceptance|production-ready|Production ready|PRODUCTION READY" README.md CLAUDE.md docs scripts config || true
+artifacts/final_package_verification/version_consistency_scan.txt:26:artifacts/final_package_verification/version_consistency_scan.txt:21:docs/delivery_alignment_report.md:137:rg -n "103/103|615/615|34 paths|10 acceptance|production-ready|Production ready|PRODUCTION READY" README.md CLAUDE.md docs scripts config || true
+artifacts/final_package_verification/version_consistency_scan.txt:33:docs/delivery_alignment_report.md:137:rg -n "103/103|615/615|34 paths|10 acceptance|production-ready|Production ready|PRODUCTION READY" README.md CLAUDE.md docs scripts config || true
+artifacts/final_package_verification/version_consistency_scan.txt:38:artifacts/final_package_verification/version_consistency_scan.txt:21:docs/delivery_alignment_report.md:137:rg -n "103/103|615/615|34 paths|10 acceptance|production-ready|Production ready|PRODUCTION READY" README.md CLAUDE.md docs scripts config || true
+artifacts/final_package_verification/version_consistency_scan.txt:40:artifacts/final_package_verification/version_consistency_scan.txt:26:artifacts/final_package_verification/version_consistency_scan.txt:21:docs/delivery_alignment_report.md:137:rg -n "103/103|615/615|34 paths|10 acceptance|production-ready|Production ready|PRODUCTION READY" README.md CLAUDE.md docs scripts config || true
+artifacts/final_package_verification/version_consistency_scan.txt:42:artifacts/final_package_verification/version_consistency_scan.txt:33:docs/delivery_alignment_report.md:137:rg -n "103/103|615/615|34 paths|10 acceptance|production-ready|Production ready|PRODUCTION READY" README.md CLAUDE.md docs scripts config || true
+artifacts/final_package_verification/version_consistency_scan.txt:45:docs/delivery_alignment_report.md:137:rg -n "103/103|615/615|34 paths|10 acceptance|production-ready|Production ready|PRODUCTION READY" README.md CLAUDE.md docs scripts config || true
+artifacts/final_package_verification/version_consistency_scan.txt:47:--- production-ready references ---
+artifacts/full_acceptance_latest_minimal/delivery_alignment_update.md:82:**PASS：交付说明、配置说明、阶段说明和验收文档已统一到 `artifacts/full_acceptance_latest_minimal/` 的最新全量验收报告。当前口径仅适用于 local-preview / personal / small-team，不代表 production-ready。**
+CLAUDE.md:123:If asked **"is it production-ready?"**, answer:
+
+RESULT: PASS (old numbers only in CHANGELOG/historical context)

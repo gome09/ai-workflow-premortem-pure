@@ -1,0 +1,33 @@
+=== PACKAGE MANIFEST ===
+Generated: 2026-05-31
+Source version: 0.8.0-alpha.11
+Release label: v0.8.0-beta.1-local-preview-final
+Total files: 325 (excluding .git)
+
+=== Verification Status ===
+compileall: PASS
+version_check: PASS
+local_path_scan: PASS
+artifact_reference_scan: PASS
+secret_scan: PASS
+forbidden_files_scan: PASS
+manifest_count: PASS
+
+=== Key Directories ===
+api/          — FastAPI routers and dependencies
+core/         — Core engine, gates, LLM adapters
+graph/        — LangGraph workflow definitions
+stages/       — Stage implementations (0-4)
+tools/        — Tool implementations
+storage/      — Database and state storage
+frontend/     — Frontend static files
+scripts/      — Validation and utility scripts
+docs/         — Documentation
+artifacts/    — Acceptance evidence and verification
+tests/        — Pytest test suite
+
+=== Evidence Directory ===
+artifacts/full_acceptance_latest_minimal/
+
+=== Verification Directory ===
+artifacts/final_package_verification/

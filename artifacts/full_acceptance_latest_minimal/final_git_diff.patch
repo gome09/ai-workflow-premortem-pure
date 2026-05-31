@@ -1,0 +1,15 @@
+# Git Diff Patch
+
+No git repository initialized in this project directory.
+A `git diff` patch cannot be generated.
+
+## Modified files (from this acceptance run):
+
+1. core/gates/risk_profile.py
+2. core/gates/rules/redteam_coverage.py
+3. core/report_service.py
+4. tests/test_report_export_robustness.py
+5. tests/test_stage1_evidence_unhashable_fix.py
+6. tests/test_stage3_risk_adaptive_gate.py
+7. tests/test_stage_resolution_eval_experiment_v080_alpha2.py
+8. scripts/acceptance/ac11c_interrupt_explicit_mode_runtime_smoke.py

@@ -1,0 +1,70 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature. Please describe the problem you're trying to solve and your proposed solution.
+
+        **Note:** This is a local-preview project focused on AI project pre-mortem and human oversight workflows. Features that align with this scope are more likely to be accepted.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of the system would this affect?
+      options:
+        - API (FastAPI backend)
+        - Frontend (Streamlit Review Workbench)
+        - Workflow Engine (LangGraph stages)
+        - Safety / Eval / Evidence
+        - Report Export
+        - Docker / Infrastructure
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem does this feature solve? What is the use case?
+      placeholder: I want to be able to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe your ideal solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Have you considered any alternative approaches?
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Any other context, screenshots, or references.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope alignment
+      options:
+        - label: This feature aligns with personal or small-team local-preview use
+          required: true
+        - label: This feature does not require production SaaS infrastructure
+          required: false

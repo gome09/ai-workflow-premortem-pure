@@ -1,0 +1,20 @@
+=== Artifact Reference Scan ===
+Date: 2026-05-31
+
+--- References to artifacts/full_acceptance_latest/ (not _minimal) ---
+Only in self-referential/historical context (artifacts/final_package_verification/ describing its own prior fixes):
+  artifacts/final_package_verification/final_verification_summary.md:14 — describes prior fix action
+  artifacts/final_package_verification/final_verification_summary.md:37 — describes prior fix action
+  artifacts/final_package_verification/artifact_reference_scan.txt — self-referential scan output
+
+These are historical records of what was fixed, not broken references.
+
+--- References to artifacts/live_e2e_ (non-existent dirs) ---
+Only in self-referential/historical context (artifacts/final_package_verification/ describing its own prior fixes):
+  artifacts/final_package_verification/final_verification_summary.md:38-39 — describes prior fix action
+  artifacts/final_package_verification/artifact_reference_scan.txt — self-referential scan output
+
+--- Production-ready claim check ---
+LIVE_E2E_MEDICATION_MANAGEMENT_REPORT.md:255 — "The bug fix is validated for local-preview scope." (corrected)
+
+RESULT: PASS (no broken artifact references in docs; self-referential scan files are historical)

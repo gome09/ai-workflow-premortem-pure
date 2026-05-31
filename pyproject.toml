@@ -1,0 +1,79 @@
+# pyproject.toml
+[project]
+name = "ai-workflow-tool"
+version = "0.8.0-alpha.11"
+description = "A human-AI collaborative workflow tool for project inception"
+readme = "README.md"
+requires-python = ">=3.11"
+
+dependencies = [
+    "langgraph>=0.2.0",
+    "langchain>=0.3.0",
+    "langchain-openai>=0.2.0",        # DeepSeek 兼容 OpenAI 接口
+    "langchain-community>=0.3.0",
+    "tavily-python>=0.5.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "streamlit>=1.40.0",
+    "psycopg[binary,pool]>=3.2.0",    # PostgreSQL 异步驱动
+    "langgraph-checkpoint-postgres>=2.0.0",
+    "redis[hiredis]>=5.2.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.6.0",
+    "python-dotenv>=1.0.0",
+    "httpx>=0.28.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.8.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
+
+
+[tool.ruff.lint.per-file-ignores]
+# Acceptance probes intentionally mutate environment and monkeypatch stores before importing app modules.
+"scripts/acceptance/**/*.py" = ["E402", "F841"]
+
+[tool.coverage.run]
+source = ["."]
+omit = [
+    "tests/*",
+    "frontend/*",
+    ".venv/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
+
+## 初始化命令（按顺序执行）
+#uv init ai-workflow-tool
+#cd ai-workflow-tool
+#uv add langgraph langchain langchain-openai langchain-community \
+#        tavily-python fastapi "uvicorn[standard]" streamlit \
+#        "psycopg[binary,pool]" langgraph-checkpoint-postgres \
+#        "redis[hiredis]" pydantic pydantic-settings python-dotenv httpx

@@ -1,0 +1,12 @@
+{
+  "context_schema_version": "0.6.0-alpha.8",
+  "session_id": "fixture-v060-minimal",
+  "current_state": "init",
+  "research_target": "Contract drafting assistant",
+  "domain": "Legal document generation",
+  "goal": "Identify high-risk AI workflow failure modes before rollout",
+  "pending_actions": [],
+  "audit_events": [],
+  "parser_errors": {},
+  "stage_output_versions": {}
+}

@@ -1,0 +1,73 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# 环境
+.env
+.env.*
+!.env.example
+!.env.demo
+.venv/
+venv/
+env/
+
+# uv
+.uv/
+
+# 测试 & 覆盖率
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Docker
+postgres_data/
+redis_data/
+
+# Secrets (never commit real secrets/)
+# Use secrets.example/ as template: cp -r secrets.example secrets
+secrets/
+nginx/certs/*
+!nginx/certs/.gitkeep
+
+# 报告输出
+exports/
+*.json.bak
+
+# Streamlit
+.streamlit/secrets.toml
+
+# 临时文件
+*.log
+*.tmp
+tmp/
+temp/
+
+# 本地数据库
+*.sqlite
+*.db
+*.dump
+
+# OS
+Thumbs.db
+
+# Git worktrees
+.worktrees/
+
+# 内部开发约束文档（含 AI 工具指令，不纳入对外分发）
+docs/internal/

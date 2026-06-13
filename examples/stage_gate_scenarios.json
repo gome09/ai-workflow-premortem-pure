@@ -1,0 +1,75 @@
+{
+  "version": "0.8.0-alpha.11",
+  "purpose": "Stage-advancement gate scenario examples. These scenarios are domain-agnostic and apply identically under all DOMAIN_PROFILE values (default and university_ai). They describe contract expectations and do not replace Docker acceptance or real E2E validation.",
+  "scenarios": [
+    {
+      "id": "missing_stage_output_blocks",
+      "stage": 1,
+      "expected_blocker_type": "missing_stage_output",
+      "expected_required_resolution": "run_stage",
+      "expected_operation": "Run the current stage to generate structured output."
+    },
+    {
+      "id": "stale_dependency_requires_rerun",
+      "stage": 3,
+      "expected_blocker_type": "stale_dependency",
+      "expected_required_resolution": "rerun_stage",
+      "approval_override_allowed": false
+    },
+    {
+      "id": "pending_action_requires_resolve_action",
+      "stage": 2,
+      "expected_blocker_type": "pending_action",
+      "expected_required_resolution": "resolve_action",
+      "expected_api_path_template": "/sessions/{session_id}/actions/{action_id}/resolve"
+    },
+    {
+      "id": "parser_error_requires_edit",
+      "stage": 1,
+      "expected_blocker_type": "parser_error",
+      "expected_required_resolution": "edit_stage_output"
+    },
+    {
+      "id": "evidence_gap_missing_id_requires_edit",
+      "stage": 1,
+      "expected_blocker_type": "evidence_gap",
+      "expected_required_resolution": "edit_stage_output",
+      "metadata_gap_type": "missing_evidence_id"
+    },
+    {
+      "id": "evidence_gap_unverified_requires_verify",
+      "stage": 1,
+      "expected_blocker_type": "evidence_gap",
+      "expected_required_resolution": "verify_evidence",
+      "expected_api_path_template": "/sessions/{session_id}/evidence/{evidence_id}/verify"
+    },
+    {
+      "id": "safety_finding_requires_resolution",
+      "stage": 4,
+      "expected_blocker_type": "safety_finding",
+      "expected_required_resolution": "resolve_safety_finding"
+    },
+    {
+      "id": "eval_failure_requires_action",
+      "stage": 3,
+      "expected_blocker_type": "eval_failure",
+      "expected_required_resolution": "resolve_action"
+    },
+    {
+      "id": "final_governance_blocks_complete",
+      "stage": 4,
+      "expected_blocker_type": "final_governance",
+      "expected_required_resolution": "resolve_safety_finding"
+    }
+  ],
+  "release_label": "v0.9.0-alpha.5",
+  "validation_context": {
+    "source_alignment": "scenarios_checked_against_stage_advancement_contract",
+    "runtime_note": "historical_runtime_evidence_exists_but_this_file_is_contract_example_only",
+    "domain_profiles_in_code": [
+      "default",
+      "university_ai",
+      "medical_ai"
+    ]
+  }
+}

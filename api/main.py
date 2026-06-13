@@ -1,0 +1,171 @@
+# api/main.py
+import json
+import logging
+import sys
+from contextlib import asynccontextmanager
+
+import redis as redis_lib
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+
+from api.limiter import limiter
+from api.routers import (
+    chat,
+    eval,
+    eval_datasets,
+    eval_experiments,
+    evidence,
+    interrupts,
+    oversight,
+    redteam,
+    reports,
+    safety,
+    session,
+    stage,
+    traces,
+)
+from auth.router import router as auth_router
+from core.config import settings
+from core.execution_mode import WorkflowExecutionMode
+from scenarios import list_scenarios
+from core.version import APP_STATUS, APP_VERSION
+from storage.session_store import session_store
+
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+except ImportError:
+    class Instrumentator:  # type: ignore[override]
+        """No-op fallback used when Prometheus instrumentation is unavailable."""
+
+        def instrument(self, app: FastAPI):
+            return self
+
+        def expose(self, app: FastAPI, endpoint: str = "/metrics", include_in_schema: bool = False):
+            return app
+
+
+class _JSONFormatter(logging.Formatter):
+    """stdlib-only JSON log formatter — Docker log drivers consume structured output."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload: dict = {
+            "time": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
+            "level": record.levelname,
+            "name": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            payload["exc_info"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=False)
+
+
+_handler = logging.StreamHandler(sys.stdout)
+_handler.setFormatter(_JSONFormatter())
+logging.basicConfig(level=settings.log_level.upper(), handlers=[_handler], force=True)
+logger = logging.getLogger(__name__)
+
+
+_instrumentator = Instrumentator()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    session_store.initialize()
+    _instrumentator.expose(app, endpoint="/metrics", include_in_schema=False)
+    logger.info("App started.")
+    yield
+    logger.info("App shutting down.")
+
+
+app = FastAPI(
+    title="AI Workflow Tool",
+    description="Human-AI collaborative workflow tool for project inception",
+    version=APP_VERSION,
+    lifespan=lifespan,
+)
+
+# Prometheus metrics — instrument before middleware, expose in lifespan
+_instrumentator.instrument(app)
+
+# Rate limiting: decorator-only pattern (not global middleware).
+# Each protected route uses @limiter.limit(...) explicitly.
+# app.state.limiter is required by slowapi to resolve the limiter instance at request time.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+origins = [o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(auth_router)
+app.include_router(session.router)
+app.include_router(stage.router)
+app.include_router(chat.router)
+app.include_router(oversight.router)
+app.include_router(interrupts.router)
+app.include_router(evidence.router)
+app.include_router(safety.router)
+app.include_router(reports.router)
+app.include_router(eval.router)
+app.include_router(eval_datasets.router)
+app.include_router(eval_experiments.router)
+app.include_router(redteam.router)
+app.include_router(traces.router)
+
+
+@app.get("/health/live", include_in_schema=False)
+def health_live():
+    """Liveness probe — confirms process is up. No I/O."""
+    return {"status": "ok", "version": APP_VERSION}
+
+
+@app.get("/health/ready", include_in_schema=False)
+def health_ready():
+    """Readiness probe — verifies primary storage and Redis connectivity (Redis skipped in sqlite mode)."""
+    checks: dict[str, str] = {}
+    overall_ok = True
+
+    try:
+        with session_store._get_conn() as conn:
+            conn.execute("SELECT 1")
+        checks["postgres"] = "ok"
+    except Exception as e:
+        checks["postgres"] = f"error: {e}"
+        overall_ok = False
+
+    if settings.storage_backend != "sqlite":
+        try:
+            r = redis_lib.from_url(settings.redis_url, socket_connect_timeout=2)
+            r.ping()
+            checks["redis"] = "ok"
+        except Exception as e:
+            checks["redis"] = f"error: {e}"
+            overall_ok = False
+    else:
+        checks["redis"] = "skipped (sqlite mode)"
+
+    status_code = 200 if overall_ok else 503
+    body = {"status": "ready" if overall_ok else "degraded", "checks": checks}
+    return JSONResponse(content=body, status_code=status_code)
+
+
+@app.get("/health")
+def health():
+    """Legacy health endpoint — kept for backward compatibility."""
+    mode = WorkflowExecutionMode.normalize(settings.workflow_execution_mode)
+    return {
+        "status": "ok",
+        "version": APP_VERSION,
+        "app_status": APP_STATUS,
+        "workflow_execution_mode": mode.value,
+        "default_domain_profile": settings.domain_profile,
+        "default_scenario_id": settings.default_scenario_id or None,
+        "builtin_scenarios": [item.scenario_id for item in list_scenarios()],
+    }

@@ -5,7 +5,7 @@ from core.models import EvalCase, EvalRun
 
 
 def judge_eval_run(case: EvalCase, run: EvalRun) -> EvalRun:
-    """Apply the v0.5.1 conservative judge to an EvalRun.
+    """Apply the conservative judge to an EvalRun.
 
     This judge is intentionally transparent and non-autonomous. It never claims
     semantic correctness from a black-box model output unless a later human or

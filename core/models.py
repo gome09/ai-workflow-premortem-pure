@@ -250,7 +250,7 @@ class PendingHumanAction(BaseModel):
     stage_output_version: int = 1
     superseded_by: str | None = None
 
-    # v0.7 reliable stage-advancement contract fields.
+    # Stage-advancement contract fields.
     action_contract_id: str = Field(default_factory=lambda: f"ACTC-{str(uuid.uuid4())[:8]}")
     action_schema_version: str = ACTION_SCHEMA_VERSION
     idempotency_key: str | None = None
@@ -301,7 +301,7 @@ class ActionResolutionLog(BaseModel):
 
 
 class ActionResolutionResult(BaseModel):
-    """Explicit v0.7 action-resolution outcome.
+    """Action-resolution outcome.
 
     This is intentionally lightweight so API callers can understand whether a
     human action actually advanced the workflow, replayed an earlier decision,
@@ -324,7 +324,7 @@ class ActionResolutionResult(BaseModel):
     action_status: str | None = None
     before_hash: str | None = None
     after_hash: str | None = None
-    # v0.7-alpha.3 explicit hash semantics for API/UI clients.
+    # Explicit hash semantics for API/UI clients.
     action_hash: str | None = None
     payload_before_hash: str | None = None
     payload_after_hash: str | None = None
@@ -336,7 +336,7 @@ class ActionResolutionResult(BaseModel):
 
 
 class LLMTrace(BaseModel):
-    """Minimal GenAI trace used by v0.7 stage advancement."""
+    """Minimal GenAI trace for stage execution."""
 
     trace_id: str = Field(default_factory=lambda: f"TRC-{str(uuid.uuid4())[:8]}")
     session_id: str
@@ -430,8 +430,8 @@ class SafetyFinding(BaseModel):
     requires_human_review: bool = False
     status: Literal["open", "resolved", "dismissed"] = "open"
 
-    # v0.8-alpha.4 taxonomy mapping fields. These default to empty/unknown so
-    # existing v0.7/v0.8 context_json remains loadable.
+    # Taxonomy mapping fields. These default to empty/unknown so existing
+    # context_json remains loadable without schema changes.
     taxonomy_refs: list[str] = Field(default_factory=list)
     control_refs: list[str] = Field(default_factory=list)
     mitigation_status: Literal["open", "mitigating", "mitigated", "accepted", "dismissed"] = "open"
@@ -445,7 +445,7 @@ class SafetyFinding(BaseModel):
 class EvalCase(BaseModel):
     """可积累的压测 / 评估用例。
 
-    v0.4 阶段先从 Stage 3 结构化压测结果同步生成，暂不自动执行外部 eval runner。
+    从 Stage 3 结构化压测结果同步生成，暂不自动执行外部 eval runner。
     """
 
     eval_id: str = Field(default_factory=lambda: f"EVAL-{str(uuid.uuid4())[:8]}")
@@ -489,9 +489,8 @@ class EvalCase(BaseModel):
 class EvalRun(BaseModel):
     """A single execution record for an EvalCase.
 
-    EvalCase is the reusable test definition; EvalRun records one concrete run.
-    v0.8.0-alpha.1 adds dataset/experiment linkage without changing the
-    existing StageAdvancementDecision gate contract.
+    EvalCase is the reusable test definition; EvalRun records one concrete run
+    and links it to a dataset/experiment for regression tracking.
     """
 
     run_id: str = Field(default_factory=lambda: f"RUN-{str(uuid.uuid4())[:8]}")
@@ -524,8 +523,8 @@ class EvalRun(BaseModel):
 class EvalJudgment(BaseModel):
     """Structured judge recommendation for one EvalRun.
 
-    v0.8-alpha.5 keeps this as a recommendation layer. Gate decisions must not
-    treat automated judge labels as a final human approval for high-risk cases.
+    This is a recommendation layer. Gate decisions must not treat automated
+    judge labels as a final human approval for high-risk cases.
     """
 
     judgment_id: str = Field(default_factory=lambda: f"JDG-{str(uuid.uuid4())[:8]}")
@@ -565,8 +564,8 @@ class HumanCalibration(BaseModel):
 class EvalDataset(BaseModel):
     """Reusable grouping of EvalCase ids.
 
-    v0.8.0-alpha.1 keeps datasets session-scoped because Workspace/Project is a
-    v0.9 concern.
+    Datasets are session-scoped. Cross-session workspace/project grouping is
+    deferred to a future release.
     """
 
     dataset_id: str = Field(default_factory=lambda: f"DATASET-{str(uuid.uuid4())[:8]}")
@@ -605,8 +604,8 @@ class EvalDataset(BaseModel):
 class EvalAggregateMetrics(BaseModel):
     """Experiment-level aggregate metrics.
 
-    Some fields are reserved for later trace/judge/redteam integration and
-    default to zero/None in alpha.1.
+    Some fields are reserved for future trace/judge/redteam integration and
+    default to zero/None until populated.
     """
 
     total_cases: int = 0
@@ -631,7 +630,7 @@ class EvalAggregateMetrics(BaseModel):
     failed_case_ids: list[str] = Field(default_factory=list)
     needs_review_case_ids: list[str] = Field(default_factory=list)
 
-    # v0.8-alpha.5 judge/human calibration metrics.
+    # Judge/human calibration metrics.
     automated_judgment_count: int = 0
     human_calibration_count: int = 0
     human_disagreement_count: int = 0
@@ -642,8 +641,8 @@ class EvalAggregateMetrics(BaseModel):
 class EvalExperiment(BaseModel):
     """A repeatable run of an EvalDataset.
 
-    v0.8-alpha.1 computes metrics and baseline comparison but does not create a
-    Regression Gate blocker. That belongs to v0.8-alpha.2.
+    Computes metrics and baseline comparison. Regression Gate blocking is enforced
+    by EvalRegressionRule in core/gates/rules/eval_regression.py.
     """
 
     experiment_id: str = Field(default_factory=lambda: f"EXP-{str(uuid.uuid4())[:8]}")
@@ -671,11 +670,10 @@ class EvalExperiment(BaseModel):
 
 
 class RedTeamCase(BaseModel):
-    """Adversarial safety/eval case used by the v0.8 Red Team gate.
+    """Adversarial safety/eval case used by the Red Team gate.
 
-    RedTeamCase is intentionally session-scoped in v0.8 because Workspace /
-    Project / RBAC are v0.9 concerns. The alpha.3 contract keeps generation
-    deterministic and links approved cases back into the existing EvalCase /
+    RedTeamCase is session-scoped. Cross-session workspace/project grouping is
+    deferred to a future release. Approved cases link back into the EvalCase /
     EvalDataset / EvalExperiment regression pipeline.
     """
 
@@ -718,7 +716,7 @@ class InterruptRecord(BaseModel):
 
     PendingHumanAction remains the product/business approval contract.
     InterruptRecord is the execution-engine mapping layer used by the
-    experimental v0.6 LangGraph interrupt/checkpoint adapter.
+    experimental LangGraph interrupt/checkpoint adapter (langgraph_interrupt mode).
     """
 
     interrupt_id: str = Field(default_factory=lambda: f"INT-{str(uuid.uuid4())[:8]}")
@@ -729,8 +727,8 @@ class InterruptRecord(BaseModel):
     status: Literal["pending", "resumed", "cancelled"] = "pending"
     resume_value: dict[str, Any] | None = None
 
-    # v0.6 adapter metadata. These fields are nullable so existing v0.5
-    # context_json rows and lightweight SQL tables remain backward-compatible.
+    # Adapter metadata. These fields are nullable so existing context_json rows
+    # and lightweight SQL tables remain backward-compatible.
     thread_id: str | None = None
     node_name: str | None = None
     checkpoint_ns: str | None = None
@@ -778,7 +776,7 @@ class ProjectContext(BaseModel):
     scenario_description: str = ""
     scenario_config: dict[str, Any] = Field(default_factory=dict)
 
-    # ── v0.7 context schema migration metadata ─────────
+    # ── Context schema migration metadata ─────────
     context_schema_version: str = CONTEXT_SCHEMA_VERSION
     migration_history: list[MigrationRecord] = Field(default_factory=list)
     last_migrated_at: datetime | None = None

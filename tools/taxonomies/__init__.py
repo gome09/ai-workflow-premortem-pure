@@ -1,4 +1,4 @@
-"""v0.8 taxonomy mapping helpers.
+"""Taxonomy mapping helpers.
 
 These files intentionally contain deterministic, dependency-free mappings.
 They do not perform live policy lookup or external validation.

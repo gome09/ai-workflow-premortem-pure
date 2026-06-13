@@ -7,14 +7,13 @@ from core.trace_backfill_service import build_trace_backfill_summary
 
 
 class TraceBackfillGapRule:
-    """Stage 3 trace-backfill gate for v0.8.0-alpha.8.
+    """Stage 3 trace-backfill gate.
 
     The rule is pure-read. It consumes existing LLMTrace, EvalCase, and
     EvalDataset records and only explains the next required operation.
     It never creates EvalCases or datasets during gate evaluation.
 
-    v0.8.0-beta.2: risk-adaptive — low-risk projects skip trace backfill
-    blocking.
+    Risk-adaptive: low-risk projects skip trace backfill blocking.
     """
 
     rule_id = "trace_backfill_gap"

@@ -36,8 +36,8 @@ def _risk_adjusted_high_risk_nodes(ctx: ProjectContext, tier: ProjectGateRiskTie
 class Stage3EvalFailureRule:
     """Direct GateRule: high-risk workflow nodes require EvalCase coverage and failure handling.
 
-    v0.8.0-beta.2: risk-adaptive — low-risk projects only require eval coverage
-    for nodes addressing *critical* failure modes, not all high-severity nodes.
+    Risk-adaptive: low-risk projects only require eval coverage for nodes addressing
+    *critical* failure modes, not all high-severity nodes.
     """
 
     rule_id = "stage3_eval_failure"

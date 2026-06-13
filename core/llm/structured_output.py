@@ -32,12 +32,11 @@ class StructuredOutputResult(BaseModel):
 
 
 class StructuredOutputClient:
-    """Provider-neutral stage output parser for v0.7 reliable execution.
+    """Provider-neutral stage output parser.
 
-    This adapter is now the first JSON-first boundary for Stage 1-4. Stage
-    executors still own Markdown fallback behavior, but they should enter JSON
-    parsing through this client so parser status and trace metadata remain
-    consistent.
+    This adapter is the JSON-first boundary for Stage 1-4. Stage executors still
+    own Markdown fallback behavior, but they should enter JSON parsing through
+    this client so parser status and trace metadata remain consistent.
     """
 
     def generate(
@@ -55,8 +54,8 @@ class StructuredOutputClient:
     ) -> StructuredOutputResult:
         """Generate through a provider boundary, then validate with existing schemas.
 
-        v0.7-alpha.3 defines the boundary without changing the stage executors'
-        live LLM path. Provider runtime validation remains deferred.
+        Provider runtime validation for non-mock providers remains deferred to
+        a future unified provider-validation pass.
         """
         response = provider.generate_structured(
             StructuredGenerationRequest(

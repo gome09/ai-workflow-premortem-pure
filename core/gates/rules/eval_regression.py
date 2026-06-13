@@ -10,12 +10,12 @@ from core.models import ProjectContext
 class EvalRegressionRule:
     """Direct GateRule: block Stage 3 advancement on EvalExperiment regression.
 
-    v0.8.0-alpha.2 deliberately keeps this rule pure-read. It consumes existing
-    EvalDataset / EvalExperiment / comparison_summary records but never creates,
-    runs, or compares experiments during gate evaluation.
+    This rule is pure-read. It consumes existing EvalDataset / EvalExperiment /
+    comparison_summary records but never creates, runs, or compares experiments
+    during gate evaluation.
 
-    v0.8.0-beta.2: risk-adaptive — low-risk projects skip regression blocking
-    unless the dataset has metadata.gate_required=true.
+    Risk-adaptive: low-risk projects skip regression blocking unless the dataset
+    has metadata.gate_required=true.
     """
 
     rule_id = "eval_regression"

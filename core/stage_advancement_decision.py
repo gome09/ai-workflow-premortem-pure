@@ -1,10 +1,10 @@
 # core/stage_advancement_decision.py
-"""Unified stage-advancement decision contract for v0.8.0-alpha.10.
+"""Unified stage-advancement decision contract.
 
 This module does not redesign the workflow and does not execute runtime
 validation. It gives graph/API/frontend/report code one authoritative view of
 whether a stage can advance, which blockers prevent advancement, which
-resolution operations should be performed next, and how mutating v0.8 operations
+resolution operations should be performed next, and how mutating operations
 should return a refreshed advancement decision envelope.
 """
 
@@ -95,7 +95,7 @@ class StageOperationEnvelope(BaseModel):
     The payload intentionally preserves the domain result while adding the
     authoritative StageAdvancementDecision and the next concrete operation. API
     routers may merge the domain result into the top level for backward
-    compatibility, but this envelope is the canonical alpha.10 contract.
+    compatibility. This envelope is the canonical stage-operation contract.
     """
 
     session_id: str

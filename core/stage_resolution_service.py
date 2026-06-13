@@ -1,5 +1,5 @@
 # core/stage_resolution_service.py
-"""Stage resolution operations for v0.8.0-alpha.10.
+"""Stage resolution operations.
 
 StageReadiness answers: "can this stage advance?"
 StageResolutionOperation answers: "what exact user operation can resolve each blocker?"

@@ -194,9 +194,9 @@ def create_redteam_case(
 def generate_redteam_cases(ctx: ProjectContext, *, stage: int = 3) -> list[RedTeamCase]:
     """Generate deterministic RedTeamCase records from current high-risk objects.
 
-    alpha.3 deliberately avoids LLM generation. It turns existing SafetyFinding,
-    FailureMode and WorkflowNode signals into draft cases so Stage 3 advancement
-    can require explicit approval and EvalCase sync.
+    Deliberately avoids LLM generation. Turns existing SafetyFinding, FailureMode
+    and WorkflowNode signals into draft cases so Stage 3 advancement can require
+    explicit approval and EvalCase sync.
     """
     created: list[RedTeamCase] = []
     fm_to_nodes = _stage2_nodes_by_failure_mode(ctx)

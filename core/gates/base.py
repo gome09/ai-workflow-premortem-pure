@@ -8,7 +8,7 @@ from core.models import ProjectContext
 
 
 class GateRule(Protocol):
-    """v0.7 gate rule contract.
+    """Gate rule contract.
 
     Rules evaluate one stage and return zero or more StageBlocker-like objects.
     The concrete StageBlocker model remains in `core.stage_readiness_service`

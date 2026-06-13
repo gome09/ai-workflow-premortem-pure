@@ -10,9 +10,8 @@ from core.llm.provider import StructuredGenerationRequest, StructuredGenerationR
 class OpenAICompatibleStructuredOutputProvider:
     """OpenAI-compatible boundary placeholder.
 
-    This class intentionally does not perform network calls in the
-    v0.7-alpha.3 source patch. The live integration should be completed and
-    validated during the later unified provider-validation pass.
+    This class is a stub. Network calls are not implemented; the live integration
+    requires a unified provider-validation pass before it can be used in production.
     """
 
     provider_name: str = "openai_compatible"

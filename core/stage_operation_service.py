@@ -1,5 +1,5 @@
 # core/stage_operation_service.py
-"""Executable stage-operation helpers for the current v0.8 stage-advancement contract.
+"""Executable stage-operation helpers for the stage-advancement contract.
 
 This module closes the existing stage-advancement loop without redesigning the
 project. It does not call LLMs, pytest, Streamlit, Docker, Tavily, or any

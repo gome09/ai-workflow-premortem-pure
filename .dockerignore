@@ -25,3 +25,21 @@ exports/
 # TLS certificates (generated at deploy time, never committed)
 nginx/certs/server.crt
 nginx/certs/server.key
+
+# Archived and legacy scripts — not part of production runtime
+archive/
+scripts/archive/
+
+# SQLite data files (dev/test only)
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Live E2E test artifacts
+artifacts/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp

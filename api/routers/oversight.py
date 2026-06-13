@@ -78,7 +78,7 @@ def resolve_action(
     body: ResolveActionRequest,
     ctx: TenantContext = Depends(get_current_tenant),
 ) -> dict:
-    """处理人工监督动作，并返回显式 v0.7 结果合同。"""
+    """处理人工监督动作，并返回 ActionResolutionResult 合同。"""
     try:
         result = session_service.resolve_action_with_result(
             session_id=session_id,

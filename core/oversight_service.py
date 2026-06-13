@@ -95,10 +95,10 @@ def _latest_action_resolution_log(
 
 
 def _target_object_exists(ctx: ProjectContext, action: PendingHumanAction) -> bool:
-    """Best-effort target_object_path guard for v0.7 action contracts.
+    """Best-effort target_object_path guard for action contracts.
 
     The project still supports legacy actions. Missing target paths are accepted,
-    but known v0.7 target paths must resolve to an existing stage object or to a
+    but known target paths must resolve to an existing stage object or to a
     valid stage-level parser/evidence-gap target.
     """
 
@@ -794,10 +794,10 @@ def resolve_action(
 ) -> PendingHumanAction:
     """处理人工动作，并同步底层 FlaggedItem / reviewed_outputs / 审计记录。
 
-    v0.7 adds a conservative idempotency contract around the existing stage
-    advancement semantics.  Edit payloads are still validated before status
-    transition, and duplicate submissions with the same idempotency key replay
-    the already-resolved action without creating duplicate audit events.
+    Applies a conservative idempotency contract around stage advancement semantics.
+    Edit payloads are validated before status transition, and duplicate submissions
+    with the same idempotency key replay the already-resolved action without creating
+    duplicate audit events.
     """
     for action in ctx.pending_actions:
         if action.action_id != action_id:
@@ -1007,7 +1007,7 @@ def resolve_action_with_result(
     idempotency_key: str | None = None,
     expected_before_hash: str | None = None,
 ) -> ActionResolutionResult:
-    """Resolve an action and return an explicit v0.7 contract result.
+    """Resolve an action and return an ActionResolutionResult contract.
 
     This wrapper preserves the legacy `resolve_action()` behavior for existing
     internal callers while giving API/service callers stable result semantics.

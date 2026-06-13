@@ -18,7 +18,7 @@ def list_interrupt_records(
     session_id: str,
     ctx: TenantContext = Depends(get_current_tenant),
 ) -> list[dict]:
-    """List action_id ↔ interrupt_id mappings for the v0.6 adapter path."""
+    """List action_id ↔ interrupt_id mappings for the experimental interrupt adapter path."""
     try:
         return session_service.list_interrupt_records(
             session_id=session_id, tenant_id=ctx.tenant_id

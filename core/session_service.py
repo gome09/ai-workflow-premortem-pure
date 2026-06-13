@@ -393,7 +393,7 @@ class SessionService:
         expected_before_hash: str | None = None,
         tenant_id: str = "",
     ) -> dict:
-        """Resolve a formal human action and return the v0.7 result contract."""
+        """Resolve a formal human action and return the action-resolution result contract."""
         ctx = self.get_session(session_id, tenant_id)
         if not ctx:
             raise ValueError(f"Session not found: {session_id}")
@@ -499,7 +499,7 @@ class SessionService:
                 expected_before_hash=expected_before_hash,
             )
         except Exception:
-            # Persist v0.7 resolution_attempts / failure logs without advancing execution.
+            # Persist resolution_attempts / failure logs without advancing execution.
             session_store.save(ctx)
             context_cache.set(ctx)
             raise
@@ -946,7 +946,7 @@ class SessionService:
             },
         )
 
-    # ── v0.8-alpha.1 Eval Dataset / Experiment foundation ───────────────────
+    # ── Eval Dataset / Experiment foundation ───────────────────
 
     def list_eval_datasets(self, session_id: str, tenant_id: str = "") -> list[dict]:
         ctx = self.get_session(session_id, tenant_id)
@@ -1262,7 +1262,7 @@ class SessionService:
             },
         )
 
-    # ── v0.8-alpha.5 Eval judgment and human calibration ─────────────────────
+    # ── Eval judgment and human calibration ─────────────────────
 
     def list_eval_judgments(
         self,
@@ -1340,7 +1340,7 @@ class SessionService:
             metadata={"eval_run_id": run_id, "human_label": human_label},
         )
 
-    # ── v0.8-alpha.6 trace backfill ──────────────────────────────────────────
+    # ── Trace backfill ──────────────────────────────────────────
 
     def trace_to_eval_case(
         self,
@@ -1418,7 +1418,7 @@ class SessionService:
             metadata={"dataset_id": dataset.dataset_id, "trace_ids": trace_ids},
         )
 
-    # ── v0.8-alpha.3 Red Team foundation ────────────────────────────────────
+    # ── Red Team foundation ────────────────────────────────────
 
     def list_redteam_cases(self, session_id: str, tenant_id: str = "") -> list[dict]:
         ctx = self.get_session(session_id, tenant_id)

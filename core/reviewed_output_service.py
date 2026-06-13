@@ -52,9 +52,9 @@ def apply_reviewed_output_with_result(
 ) -> ReviewedOutputApplyResult:
     """Apply reviewed payload atomically and return explicit metadata.
 
-    v0.7 rule: structured stage payload is validated and converted before any
-    ProjectContext mutation.  This prevents failed human edits from polluting
-    reviewed_outputs or clearing parser_errors.
+    Structured stage payload is validated and converted before any ProjectContext
+    mutation. This prevents failed human edits from polluting reviewed_outputs
+    or clearing parser_errors.
     """
     reviewed_key = f"stage_{stage}"
     version_before = int(ctx.stage_output_versions.get(reviewed_key, 1))

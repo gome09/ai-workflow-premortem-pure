@@ -1,5 +1,5 @@
 # core/stage_revision_service.py
-"""Stage revision and dependency-lineage helpers for v0.6.0-alpha.8.
+"""Stage revision and dependency-lineage helpers.
 
 The service centralizes non-runtime stage advancement bookkeeping:
 - record dependency versions when a stage output is generated or edited;

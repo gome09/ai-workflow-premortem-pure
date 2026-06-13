@@ -1,8 +1,5 @@
 # core/gates/report.py
-"""Gate decision path visualisation — report models and builder.
-
-v0.9.0-alpha.5  Task E2: Gate Decision Path Visualisation.
-"""
+"""Gate decision path visualisation — report models and builder."""
 
 from __future__ import annotations
 

@@ -1,5 +1,5 @@
 # core/stage_scope_service.py
-"""Stage visibility and actionability helpers for v0.6.0-alpha.7.
+"""Stage visibility and actionability helpers.
 
 This module is intentionally read-only. It keeps future-stage placeholders out
 of the current resolution queue so StageResolutionOperation only tells users

@@ -316,9 +316,9 @@ def mark_interrupt_resume_consumed(
 
 
 def run_with_interrupt_adapter(ctx: ProjectContext) -> ProjectContext:
-    """Backward-compatible v0.6 adapter entry point.
+    """Experimental interrupt adapter entry point.
 
-    The real experimental implementation now lives in
+    The implementation lives in
     graph.langgraph_interrupt_runner.invoke_one_turn_with_interrupts(). Import
     lazily here to avoid circular imports: langgraph_interrupt_runner also uses
     this module's mapping helpers.

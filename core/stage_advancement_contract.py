@@ -1,5 +1,5 @@
 # core/stage_advancement_contract.py
-"""Shared Stage Advancement Contract for v0.8.0-alpha.10.
+"""Shared Stage Advancement Contract.
 
 This module is intentionally declarative. It documents the blocker/action/
 resolution contract used by stage_readiness_service, stage_resolution_service,
@@ -136,12 +136,11 @@ STAGE_ADVANCEMENT_CONTRACT: Final[dict[str, dict[str, object]]] = {
     },
 }
 
-# Stage-resolution operations are the alpha.10 closure layer: every blocker must
-# map to an explicit user-facing operation instead of only a raw enum.
+# Every stage blocker maps to an explicit user-facing operation instead of only a raw enum.
 RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
     "run_stage": {
         "frontend_hint": "Run the current stage to generate structured output.",
-        "api_hint": "Send user input through POST /chat/{session_id}; stage operation APIs exist in alpha.8.",
+        "api_hint": "Send user input through POST /chat/{session_id}.",
         "can_execute_via_api": False,
         "api_method": None,
         "api_path_template": None,

@@ -1,5 +1,5 @@
 # core/stage_advancement_coordinator.py
-"""Coordination helpers for the v0.8.0-alpha.10 stage advancement contract-closure pass.
+"""Coordination helpers for the stage advancement contract-closure pass.
 
 The coordinator composes existing project services:
 - GateEngine / StageGateResult;
@@ -9,8 +9,8 @@ The coordinator composes existing project services:
 - lightweight trace records.
 
 It intentionally does not run pytest, API startup, Streamlit startup, Docker,
-LLM calls, search calls, or any v0.9 feature work. Alpha.10 closes the
-existing v0.8 stage-advancement path.
+LLM calls, search calls, or deferred features. It closes the stage-advancement
+path to the extent implemented.
 """
 
 from __future__ import annotations
@@ -231,9 +231,9 @@ def build_stage_operation_envelope(
 ) -> StageOperationEnvelope:
     """Wrap a mutating operation result with the latest advancement decision.
 
-    This is the alpha.10 coordination contract: every operation that can change a
-    stage gate returns its own domain result plus a refreshed
-    StageAdvancementDecision and the next concrete required operation.
+    Coordination contract: every operation that can change a stage gate returns
+    its own domain result plus a refreshed StageAdvancementDecision and the next
+    concrete required operation.
     """
     safe_stage = _safe_stage(ctx, stage=stage)
     result_payload = _jsonable(result)

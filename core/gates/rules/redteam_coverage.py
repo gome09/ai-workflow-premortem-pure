@@ -8,14 +8,14 @@ from core.redteam_service import build_redteam_coverage_summary
 
 
 class RedTeamCoverageRule:
-    """Stage 3 Red Team coverage gate for v0.8.0-alpha.3.
+    """Stage 3 Red Team coverage gate.
 
     The rule is pure-read: it only explains missing RedTeamCase coverage,
     approval, EvalCase sync, and redteam_generated dataset linkage.
 
-    v0.8.0-beta.2: risk-adaptive — low/medium-risk projects are not blocked
-    by missing redteam coverage unless there are actual high/critical safety
-    findings or adversarial critical cases.
+    Risk-adaptive: low/medium-risk projects are not blocked by missing redteam
+    coverage unless there are actual high/critical safety findings or adversarial
+    critical cases.
     """
 
     rule_id = "redteam_coverage"

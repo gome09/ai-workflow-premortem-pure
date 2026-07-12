@@ -47,6 +47,11 @@ jobs:
       - name: Prepare env file
         run: cp -f .env.demo .env
 
+      - name: Prepare data directory
+        run: |
+          mkdir -p data
+          chmod 777 data
+
       - name: Build and start lite stack
         run: docker compose -f docker-compose.lite.yml up --build -d
 

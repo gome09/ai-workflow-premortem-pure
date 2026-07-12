@@ -11,8 +11,7 @@ pytest.importorskip("redis")
 pytest.importorskip("langchain_core")
 pytest.importorskip("langchain_openai")
 pytest.importorskip("tavily")
-
-from types import SimpleNamespace
+pytest.importorskip("prometheus_fastapi_instrumentator")
 
 from fastapi.testclient import TestClient
 
@@ -24,22 +23,10 @@ from storage.backends.sqlite_store import SQLiteSessionStore
 @pytest.fixture
 def client():
     """创建测试客户端，Mock 掉存储和图"""
-    dummy_instrumentator = SimpleNamespace(
-        instrument=lambda app: dummy_instrumentator,
-        expose=lambda app, endpoint="/metrics", include_in_schema=False: app,
-    )
     store = SQLiteSessionStore(":memory:")
     store.initialize()
     cache = MemoryCache(ttl_seconds=3600)
     with (
-        patch.dict(
-            "sys.modules",
-            {
-                "prometheus_fastapi_instrumentator": SimpleNamespace(
-                    Instrumentator=lambda: dummy_instrumentator
-                )
-            },
-        ),
         patch("storage.session_store.session_store.initialize"),
         patch("core.session_service.session_store", store),
         patch("core.session_service.context_cache", cache),

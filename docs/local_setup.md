@@ -118,7 +118,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\gen_certs.ps1
 | `LLM_MODE` | 真实或 mock | 使用中，支持 `real` / `mock` |
 | `STORAGE_BACKEND` | 存储后端 | 使用中，支持 `postgres` / `sqlite` |
 | `DEFAULT_SCENARIO_ID` | 新建会话默认内置场景 | 使用中，可为空 |
-| `WORKFLOW_EXECUTION_MODE` | 执行模式 | 使用中，默认 `single_step` |
+| `WORKFLOW_EXECUTION_MODE` | 执行模式 | 使用中，默认 `single_step`；`langgraph_interrupt` 为实验性 opt-in 路径，非生产默认 |
 | `CORS_ALLOW_ORIGINS` | CORS 白名单 | 使用中 |
 | `UVICORN_WORKERS` | worker 数 | 使用中 |
 | `FIRST_ADMIN_EMAIL` | 已删除 | 不再使用 |

@@ -1,0 +1,19 @@
+{
+  "scenario_id": "student_course_selection",
+  "name": "学生选课管理系统",
+  "description": "面向高校学生选课管理系统的 AI 辅助选课推荐场景，使用 default profile 进行失败模式分析、审核流程设计和触发策略生成。",
+  "input_sample_path": "examples/student_course_selection_input.md",
+  "domain_profile": "default",
+  "mock_fixture": "default",
+  "default_config": {
+    "auto_bootstrap_input": true,
+    "stage_context_note": "演示重点：AI 辅助选课系统在立项阶段的失败模式、人机协同审核流程和触发链路。"
+  },
+  "applicable_stages": [
+    "init",
+    "stage_1",
+    "stage_2",
+    "stage_3",
+    "stage_4"
+  ]
+}

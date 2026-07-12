@@ -72,7 +72,7 @@ The following production source files had alpha/v0.x version labels in docstring
 
 | Issue | Reason not blocking release |
 |---|---|
-| `graph/langgraph_interrupt_runner.py` has no dedicated test suite | Mode is not default; production path (SINGLE_STEP) has 384+ passing tests |
+| `graph/langgraph_interrupt_runner.py` has no dedicated test suite | Mode is not default; production path (SINGLE_STEP) has 388+ passing tests, verified in CI |
 | `core/stage_readiness_service.py` still references v0.6/v0.7 in one inline comment | Describes backward-compat logic, not current behavior claim |
 | `core/eval_regression_policy.py` has one inline threshold comment referencing alpha.2 | Describes threshold origin, not current behavior; low risk of confusion |
 | mypy errors (pre-existing) | Not introduced by this cleanup; see validation section |
@@ -86,6 +86,22 @@ The following production source files had alpha/v0.x version labels in docstring
 | `python -m compileall .` | ✅ Exit 0 — no syntax errors |
 | `python scripts/version_check.py` | ✅ `Version metadata OK: 1.0.0` |
 | `pytest --collect-only` | ✅ 389 tests collected |
-| `pytest` | ✅ 384 passed, 5 skipped |
-| `ruff check .` | ⚠️ 7 pre-existing errors (6×I001 import sort, 1×UP037 annotation) — none in files modified this round |
-| `mypy . --exclude frontend` | ⚠️ 80 pre-existing errors — none introduced by this cleanup round |
+| `pytest` | ✅ 388 passed, 1 skipped (verified on Linux via GitHub Actions CI) |
+| `ruff check .` / `ruff format --check .` | ✅ 0 errors — the 7 pre-existing `I001`/`UP037` issues and 21 unformatted files were fixed |
+| `mypy . --exclude frontend` | ⚠️ 84 pre-existing errors — none introduced by this cleanup round; not part of the CI gate yet |
+
+## CI/CD
+
+GitHub Actions is wired up at [`.github/workflows/ci.yml`](.github/workflows/ci.yml), triggered on push to `main`, on pull requests, and via manual `workflow_dispatch`. Two jobs run on every push, both currently green:
+
+| Job | What it does |
+|---|---|
+| `lint-and-unit-tests` | `uv sync` → `make lint` (ruff check + format) → `uv run pytest tests/ -v` against the SQLite/mock (`.env.demo`) config |
+| `docker-lite-integration` | Builds and boots the real `docker-compose.lite.yml` stack (`api` + `frontend`), waits for `/health/live`, then smoke-tests both services over HTTP before tearing the stack down |
+
+Latest passing run: https://github.com/gome09/ai-workflow-premortem-pure/actions/runs/29189454740
+
+Two real, pre-existing issues were caught and fixed while bringing this pipeline online (neither was previously visible because no CI had ever run this suite on native Linux):
+
+- **`docker-lite-integration` bind-mount permission failure** — `docker-compose.lite.yml`'s `./data:/app/data` bind mount is created root-owned by the Docker daemon on a fresh Linux host, and the container's non-root `appuser` couldn't write the SQLite db file. Fixed by having the workflow `mkdir -p data && chmod 777 data` before `docker compose up`.
+- **Cross-test pollution in `tests/test_api.py`** — its `client()` fixture used `patch.dict("sys.modules", {"prometheus_fastapi_instrumentator": ...})` to fake an already-installed dependency. `patch.dict` restores the *entire* dict to its pre-patch snapshot on exit, which silently dropped `api.main` and everything it transitively imports (`api.routers.stage`, etc.) from `sys.modules`. On Linux this later desynced `tests/test_gate_report.py`'s `mock.patch("api.routers.stage.session_service")` from the module instance actually baked into the running FastAPI app, so 3 tests failed with spurious 404s. Fixed by removing the redundant fake (`api/main.py` already falls back to a no-op `Instrumentator` when the real package is missing) and using `pytest.importorskip(...)` like every other test file.

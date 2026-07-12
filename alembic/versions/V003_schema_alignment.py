@@ -38,7 +38,9 @@ def upgrade() -> None:
     op.execute("ALTER TABLE human_actions ADD COLUMN IF NOT EXISTS expected_before_hash  TEXT")
     op.execute("ALTER TABLE human_actions ADD COLUMN IF NOT EXISTS approved_payload_hash TEXT")
     op.execute("ALTER TABLE human_actions ADD COLUMN IF NOT EXISTS resume_token          TEXT")
-    op.execute("ALTER TABLE human_actions ADD COLUMN IF NOT EXISTS expires_at            TIMESTAMPTZ")
+    op.execute(
+        "ALTER TABLE human_actions ADD COLUMN IF NOT EXISTS expires_at            TIMESTAMPTZ"
+    )
     op.execute("ALTER TABLE human_actions ADD COLUMN IF NOT EXISTS resolution_attempts   INT")
     op.execute("ALTER TABLE human_actions ADD COLUMN IF NOT EXISTS last_resolution_error TEXT")
 
@@ -120,8 +122,7 @@ def upgrade() -> None:
     )
     """)
     op.execute(
-        "CREATE INDEX IF NOT EXISTS idx_eval_judgments_session "
-        "ON eval_judgments (session_id)"
+        "CREATE INDEX IF NOT EXISTS idx_eval_judgments_session ON eval_judgments (session_id)"
     )
 
     # ── 6. human_calibrations ─────────────────────────────────────────────────
@@ -167,15 +168,18 @@ def upgrade() -> None:
     )
     """)
     op.execute(
-        "CREATE INDEX IF NOT EXISTS idx_interrupt_records_session "
-        "ON interrupt_records (session_id)"
+        "CREATE INDEX IF NOT EXISTS idx_interrupt_records_session ON interrupt_records (session_id)"
     )
 
 
 def downgrade() -> None:
     # Drop new tables
-    for table in ("interrupt_records", "human_calibrations", "eval_judgments",
-                  "action_resolution_logs"):
+    for table in (
+        "interrupt_records",
+        "human_calibrations",
+        "eval_judgments",
+        "action_resolution_logs",
+    ):
         op.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
 
     # Restore redteam_cases obsolete columns (data cannot be recovered)
@@ -191,27 +195,17 @@ def downgrade() -> None:
     op.execute("ALTER TABLE redteam_cases DROP COLUMN IF EXISTS payload_json")
     op.execute("ALTER TABLE redteam_cases DROP COLUMN IF EXISTS approved_at")
     op.execute("ALTER TABLE redteam_cases DROP COLUMN IF EXISTS updated_at")
-    op.execute(
-        "ALTER TABLE redteam_cases ADD COLUMN IF NOT EXISTS category       TEXT"
-    )
-    op.execute(
-        "ALTER TABLE redteam_cases ADD COLUMN IF NOT EXISTS attack_vector  TEXT"
-    )
+    op.execute("ALTER TABLE redteam_cases ADD COLUMN IF NOT EXISTS category       TEXT")
+    op.execute("ALTER TABLE redteam_cases ADD COLUMN IF NOT EXISTS attack_vector  TEXT")
     op.execute(
         "ALTER TABLE redteam_cases ADD COLUMN IF NOT EXISTS input_payload  TEXT NOT NULL DEFAULT ''"
     )
     op.execute(
         "ALTER TABLE redteam_cases ADD COLUMN IF NOT EXISTS expected_block BOOLEAN NOT NULL DEFAULT TRUE"
     )
-    op.execute(
-        "ALTER TABLE redteam_cases ADD COLUMN IF NOT EXISTS actual_output  TEXT"
-    )
-    op.execute(
-        "ALTER TABLE redteam_cases ADD COLUMN IF NOT EXISTS blocked        BOOLEAN"
-    )
-    op.execute(
-        "ALTER TABLE redteam_cases ADD COLUMN IF NOT EXISTS score          INT"
-    )
+    op.execute("ALTER TABLE redteam_cases ADD COLUMN IF NOT EXISTS actual_output  TEXT")
+    op.execute("ALTER TABLE redteam_cases ADD COLUMN IF NOT EXISTS blocked        BOOLEAN")
+    op.execute("ALTER TABLE redteam_cases ADD COLUMN IF NOT EXISTS score          INT")
 
     # Remove added llm_traces columns
     op.execute("ALTER TABLE llm_traces DROP COLUMN IF EXISTS provider")

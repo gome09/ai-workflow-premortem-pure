@@ -12,8 +12,9 @@ pytest.importorskip("langchain_core")
 pytest.importorskip("langchain_openai")
 pytest.importorskip("tavily")
 
-from fastapi.testclient import TestClient
 from types import SimpleNamespace
+
+from fastapi.testclient import TestClient
 
 from core.models import ProjectContext, SessionState
 from storage.backends.memory_cache import MemoryCache
@@ -33,7 +34,11 @@ def client():
     with (
         patch.dict(
             "sys.modules",
-            {"prometheus_fastapi_instrumentator": SimpleNamespace(Instrumentator=lambda: dummy_instrumentator)},
+            {
+                "prometheus_fastapi_instrumentator": SimpleNamespace(
+                    Instrumentator=lambda: dummy_instrumentator
+                )
+            },
         ),
         patch("storage.session_store.session_store.initialize"),
         patch("core.session_service.session_store", store),

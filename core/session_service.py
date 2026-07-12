@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 
+from core.config import settings
 from core.eval_dataset_service import (
     add_cases_to_dataset,
     create_dataset,
@@ -78,8 +79,8 @@ from core.redteam_service import (
     reject_redteam_case as reject_redteam_case_operation,
 )
 from core.report_service import build_markdown_report, build_report_dict, create_report_artifact
-from core.scenario_context import attach_scenario_to_context
 from core.safety_service import resolve_safety_finding
+from core.scenario_context import attach_scenario_to_context
 from core.stage_advancement_coordinator import (
     advance_stage_if_ready as advance_stage_if_ready_operation,
 )
@@ -112,7 +113,6 @@ from core.trace_backfill_service import (
 from storage.cache import context_cache
 from storage.session_store import session_store
 from tools.safety_classifier import add_findings_dedup, scan_user_materials
-from core.config import settings
 
 logger = logging.getLogger(__name__)
 

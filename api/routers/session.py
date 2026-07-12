@@ -7,8 +7,8 @@ from api.schemas import (
     AddMaterialsRequest,
     CreateSessionRequest,
     CreateSessionResponse,
-    ScenarioSummaryResponse,
     ResolveFlagRequest,
+    ScenarioSummaryResponse,
     SessionListItem,
 )
 from auth.jwt import TenantContext, get_current_tenant

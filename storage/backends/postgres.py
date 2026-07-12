@@ -31,10 +31,9 @@ class PostgresSessionStore:
 
     def initialize(self) -> None:
         """Run alembic migrations to head. Called once at app startup."""
+        import shutil
         import subprocess
         import sys
-
-        import shutil
 
         alembic_bin = shutil.which("alembic") or str(
             __import__("pathlib").Path(sys.executable).parent / "alembic"

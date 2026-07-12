@@ -719,7 +719,8 @@ with st.sidebar:
 
                 bootstrap_input = (
                     scenario_detail.get("input_sample")
-                    if scenario_detail and scenario_detail.get("default_config", {}).get("auto_bootstrap_input")
+                    if scenario_detail
+                    and scenario_detail.get("default_config", {}).get("auto_bootstrap_input")
                     else "你好，我想开始一个新的项目分析。"
                 )
                 with st.spinner("加载引导语..."):

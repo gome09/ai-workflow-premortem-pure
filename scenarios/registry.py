@@ -23,7 +23,7 @@ class ScenarioDefinition(BaseModel):
     applicable_stages: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def validate_references(self) -> "ScenarioDefinition":
+    def validate_references(self) -> ScenarioDefinition:
         input_path = _REPO_ROOT / self.input_sample_path
         if not input_path.exists():
             raise ValueError(f"Scenario input sample not found: {self.input_sample_path}")

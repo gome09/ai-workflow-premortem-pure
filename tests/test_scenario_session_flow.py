@@ -7,9 +7,9 @@ import pytest
 from core.config import settings
 from core.models import SessionState
 from core.session_service import SessionService
+from scenarios import read_scenario_input
 from storage.backends.memory_cache import MemoryCache
 from storage.backends.sqlite_store import SQLiteSessionStore
-from scenarios import read_scenario_input
 
 
 def _resolve_pending_actions(service: SessionService, session_id: str) -> None:

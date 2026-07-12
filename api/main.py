@@ -30,13 +30,14 @@ from api.routers import (
 from auth.router import router as auth_router
 from core.config import settings
 from core.execution_mode import WorkflowExecutionMode
-from scenarios import list_scenarios
 from core.version import APP_STATUS, APP_VERSION
+from scenarios import list_scenarios
 from storage.session_store import session_store
 
 try:
     from prometheus_fastapi_instrumentator import Instrumentator
 except ImportError:
+
     class Instrumentator:  # type: ignore[override]
         """No-op fallback used when Prometheus instrumentation is unavailable."""
 

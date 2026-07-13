@@ -71,3 +71,13 @@ Thumbs.db
 
 # 内部开发约束文档（含 AI 工具指令，不纳入对外分发）
 docs/internal/
+
+# project-upgrade:start
+.upgrade/tmp/
+.upgrade/logs/
+.upgrade/cache/
+.upgrade/traces/
+.upgrade/**/*.tmp
+.upgrade/**/*.bak
+.upgrade/**/*.trace
+# project-upgrade:end

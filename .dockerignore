@@ -43,3 +43,7 @@ artifacts/
 .idea/
 .vscode/
 *.swp
+
+# project-upgrade:start
+.upgrade/
+# project-upgrade:end

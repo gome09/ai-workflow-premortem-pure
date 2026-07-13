@@ -45,7 +45,7 @@
 | 功能模块 | 说明 |
 |----------|------|
 | 四阶段工作流引擎 | Stage 1–4 确定性状态机，每步推进一个阶段 |
-| 人机监督闭环 | PendingHumanAction：escalate / edit / evidence / parser 四种处理方式 |
+| 人机监督闭环 | PendingHumanAction：approve / edit / reject / verify_evidence / escalate 五种处理方式 |
 | 风险自适应门禁 | Stage Gate 根据风险等级动态调整通过条件 |
 | 证据核验 | EvidenceSource 采集、核验、门禁检查 |
 | 安全发现 | SafetyFinding + Prompt Injection Scanner + 多标准风险分类 |
@@ -143,7 +143,7 @@ make demo-ui
 - **无需 API Key**：使用 Mock LLM，返回确定性 fixture JSON
 - **无需数据库**：SQLite 本地文件，无需 PostgreSQL / Redis
 - **无需 Docker**：直接 `uv run` 启动
-- **内置 3 个场景**：通用 RAG、高校课程问答、高校心理健康
+- **内置 4 个场景**：通用 RAG、高校课程问答、高校心理健康、学生选课管理
 - **完整功能覆盖**：四阶段工作流、人机监督、证据核验、Eval、Red Team、报告导出
 
 ### 验收测试
@@ -179,6 +179,7 @@ uv run pytest tests/ -q
 │   ├── gates/              #   门禁引擎
 │   ├── llm/                #   LLM 适配层
 │   │   └── adapters/       #     LLM 适配器（含 mock_fixtures）
+│   ├── migrations/         #   ProjectContext schema 迁移（区别于 alembic/ 的数据库表结构迁移）
 │   └── traces/             #   LLM 调用追踪
 ├── stages/                 # 四阶段执行逻辑
 │   └── domain_profiles/    #   领域提示词配置
@@ -197,7 +198,7 @@ uv run pytest tests/ -q
 ├── monitoring/             # Prometheus + Grafana 配置
 ├── nginx/                  # Nginx 反向代理配置
 ├── secrets.example/        # Docker secrets 模板（复制为 secrets/ 并填入真实值）
-├── data/                   # SQLite 数据文件
+├── data/                   # SQLite 数据文件（运行时自动生成，非仓库自带）
 ├── alembic/                # 数据库迁移
 ├── tests/                  # 测试
 ├── docker-compose.yml      # Docker 生产部署配置

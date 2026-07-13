@@ -152,4 +152,4 @@ curl -X POST http://localhost:8000/auth/register \
 - `docker-compose.lite.yml` 存在，轻量 Docker 模式使用 `.env.demo` 配置（`make lite-up` 自动复制）。
 - Docker Full 模式使用 `.env.example` + `secrets/`（`make setup` 自动生成）。
 - `secrets/` 目录不进入版本控制，由 `make setup` 从 `secrets.example/` 模板生成。
-- 当前本地环境缺少 `prometheus_fastapi_instrumentator` 时，`tests/test_health.py` 与 `tests/test_api.py` 会失败。
+- 当前本地环境缺少 `prometheus_fastapi_instrumentator` 时，`tests/test_api.py` 整个模块会被 `pytest.importorskip` 跳过，`tests/test_health.py` 中有 1 个用例因其他依赖条件被跳过；两者均为 skip，不是 fail（实测：`376 passed, 6 skipped`）。

@@ -72,18 +72,18 @@ class _RuleEvalRecord:
 
 # Explicit human-readable names; fall back to title-cased rule_id.
 _DISPLAY_NAMES: dict[str, str] = {
-    "missing_output": "Missing Stage Output",
-    "stale_dependency": "Stale Dependency",
-    "action_state": "Pending / Rejected Actions",
-    "parser_error": "Parser Error",
-    "safety_finding": "Open Safety Finding",
-    "stage1_evidence_gap": "Stage 1 Evidence Gap",
-    "stage2_policy_gap": "Stage 2 Policy Gap",
-    "stage3_eval_failure": "Stage 3 Eval Failure",
-    "redteam_coverage": "Red-Team Coverage",
-    "eval_regression": "Eval Regression",
-    "trace_backfill_gap": "Trace Backfill Gap",
-    "stage4_final_governance": "Stage 4 Final Governance",
+    "missing_output": "缺少阶段结果",
+    "stale_dependency": "依赖已过期",
+    "action_state": "待处理 / 已驳回动作",
+    "parser_error": "解析失败",
+    "safety_finding": "待处理安全发现",
+    "stage1_evidence_gap": "阶段一证据缺口",
+    "stage2_policy_gap": "阶段二策略缺口",
+    "stage3_eval_failure": "阶段三评测失败",
+    "redteam_coverage": "红队覆盖",
+    "eval_regression": "评测回归",
+    "trace_backfill_gap": "追踪回填缺口",
+    "stage4_final_governance": "阶段四最终治理",
 }
 
 

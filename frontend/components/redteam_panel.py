@@ -5,37 +5,37 @@ import streamlit as st
 
 
 def render_redteam_panel(*, cases: list[dict], coverage: dict) -> None:
-    """Minimal Red Team coverage panel."""
+    """红队覆盖精简面板。"""
 
-    st.subheader("Red Team Coverage")
+    st.subheader("红队覆盖")
     st.caption(
-        "RedTeamCase drafts must be approved, synced to EvalCase, "
-        "and grouped into a redteam_generated EvalDataset before Stage 3 advancement."
+        "阶段三推进前，红队用例草稿必须先批准、同步为评测用例，"
+        "并归入一个红队生成的评测数据集。"
     )
     cols = st.columns(4)
-    cols[0].metric("RedTeamCases", coverage.get("total_cases", len(cases)))
-    cols[1].metric("Draft", coverage.get("draft_cases", 0))
-    cols[2].metric("Approved", coverage.get("approved_cases", 0))
-    cols[3].metric("Synced", coverage.get("synced_cases", 0))
+    cols[0].metric("红队用例", coverage.get("total_cases", len(cases)))
+    cols[1].metric("草稿", coverage.get("draft_cases", 0))
+    cols[2].metric("已批准", coverage.get("approved_cases", 0))
+    cols[3].metric("已同步", coverage.get("synced_cases", 0))
 
     if coverage.get("blocking"):
-        st.warning("Red Team coverage is currently blocking Stage 3 advancement.")
+        st.warning("红队覆盖当前正在阻断阶段三推进。")
     else:
-        st.success("Red Team coverage gate has no current blockers.")
+        st.success("红队覆盖门控当前没有阻断项。")
 
     gaps = {
-        "Missing SafetyFinding coverage": coverage.get("missing_safety_finding_ids") or [],
-        "Missing node coverage": coverage.get("missing_node_ids") or [],
-        "Draft high-risk cases": coverage.get("draft_high_case_ids") or [],
-        "Approved but unsynced cases": coverage.get("approved_unsynced_case_ids") or [],
-        "Synced EvalCases outside redteam dataset": coverage.get(
+        "缺少安全发现覆盖": coverage.get("missing_safety_finding_ids") or [],
+        "缺少节点覆盖": coverage.get("missing_node_ids") or [],
+        "高风险草稿用例": coverage.get("draft_high_case_ids") or [],
+        "已批准但未同步的用例": coverage.get("approved_unsynced_case_ids") or [],
+        "已同步但不在红队数据集中的评测用例": coverage.get(
             "synced_eval_ids_without_redteam_dataset"
         )
         or [],
     }
     for label, values in gaps.items():
         if values:
-            st.caption(f"{label}: {', '.join(values)}")
+            st.caption(f"{label}：{', '.join(values)}")
 
     for case in cases:
         with st.expander(
@@ -43,16 +43,16 @@ def render_redteam_panel(*, cases: list[dict], coverage: dict) -> None:
             expanded=False,
         ):
             st.caption(
-                f"severity={case.get('severity')} · target_node={case.get('target_node_id') or '-'} · "
-                f"finding={case.get('source_finding_id') or '-'} · failure_mode={case.get('source_failure_mode_id') or '-'}"
+                f"严重程度={case.get('severity')} · 目标节点={case.get('target_node_id') or '-'} · "
+                f"安全发现={case.get('source_finding_id') or '-'} · 失败模式={case.get('source_failure_mode_id') or '-'}"
             )
-            st.markdown("**Prompt**")
+            st.markdown("**攻击提示词**")
             st.write(case.get("prompt") or "")
-            st.markdown("**Expected safe behavior**")
+            st.markdown("**期望的安全行为**")
             st.write(case.get("expected_safe_behavior") or "")
             if case.get("taxonomy_refs"):
-                st.caption("taxonomy_refs=" + ", ".join(case.get("taxonomy_refs") or []))
+                st.caption("分类引用=" + "、".join(case.get("taxonomy_refs") or []))
             if case.get("control_refs"):
-                st.caption("control_refs=" + ", ".join(case.get("control_refs") or []))
+                st.caption("控制项引用=" + "、".join(case.get("control_refs") or []))
             if case.get("linked_eval_case_id"):
-                st.caption(f"linked_eval_case_id={case.get('linked_eval_case_id')}")
+                st.caption(f"关联评测用例={case.get('linked_eval_case_id')}")

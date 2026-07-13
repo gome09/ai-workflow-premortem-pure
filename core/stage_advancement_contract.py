@@ -66,72 +66,72 @@ REQUIRED_RESOLUTIONS: Final[tuple[str, ...]] = (
 STAGE_ADVANCEMENT_CONTRACT: Final[dict[str, dict[str, object]]] = {
     "missing_stage_output": {
         "required_resolution": "run_stage",
-        "description": "The stage has not generated structured output yet.",
+        "description": "当前阶段还没有生成结构化结果。",
         "approval_override_allowed": False,
     },
     "stale_dependency": {
         "required_resolution": "rerun_stage",
-        "description": "The stage output depends on an older upstream stage version.",
+        "description": "当前阶段结果依赖的上游版本已更新，需要重新生成。",
         "approval_override_allowed": False,
     },
     "pending_action": {
         "required_resolution": "resolve_action",
-        "description": "A blocking PendingHumanAction for the current stage version is still pending.",
+        "description": "当前阶段版本仍有阻断型人工动作尚未处理。",
         "approval_override_allowed": False,
     },
     "rejected_action": {
         "required_resolution": "revise_stage",
-        "description": "A critical action was rejected; the stage must be revised or rolled back.",
+        "description": "有关键动作被驳回，需要修订当前阶段或回退。",
         "approval_override_allowed": False,
     },
     "unresolved_escalation": {
         "required_resolution": "approve_escalation",
-        "description": "An escalation action must be explicitly approved before advancement.",
+        "description": "存在需要明确批准后才能推进的升级项。",
         "approval_override_allowed": False,
     },
     "parser_error": {
         "required_resolution": "edit_stage_output",
-        "description": "Structured output parsing failed and must be corrected through edit/revise.",
+        "description": "结构化输出解析失败，需要通过编辑 / 修订更正。",
         "approval_override_allowed": False,
     },
     "safety_finding": {
         "required_resolution": "resolve_safety_finding",
-        "description": "High or critical safety findings must be resolved or explicitly approved.",
+        "description": "高危 / 危急安全发现必须处理或经明确批准。",
         "approval_override_allowed": True,
     },
     "evidence_gap": {
         "required_resolution": "verify_evidence",
-        "description": "High-risk failure modes require valid evidence_id references and verified evidence sources; missing/unknown ids require structured edit, existing unverified ids require verify_evidence.",
+        "description": "高风险失败模式需要有效的证据引用并核验证据来源；缺失 / 未知的证据需通过结构化编辑补充，已存在但未核验的证据需先核验。",
         "approval_override_allowed": False,
     },
     "policy_gap": {
         "required_resolution": "edit_stage_output",
-        "description": "High-risk workflow coverage or oversight-policy gaps must be edited/revised.",
+        "description": "高风险工作流覆盖或人工审核策略存在缺口，需编辑 / 修订。",
         "approval_override_allowed": False,
     },
     "eval_failure": {
         "required_resolution": "resolve_action",
-        "description": "Failed high-risk evals must be approved, edited, or rerun before advancement.",
+        "description": "失败的高风险评测必须先批准、编辑或重跑，才能推进。",
         "approval_override_allowed": True,
     },
     "redteam_coverage": {
         "required_resolution": "generate_redteam_cases",
-        "description": "High or critical risks require approved RedTeamCase coverage, synced EvalCase records, and a redteam_generated EvalDataset before Stage 3 advancement.",
+        "description": "高危 / 危急风险在阶段三推进前，需要已批准的红队用例覆盖、已同步的评测用例记录，以及一个红队生成的评测数据集。",
         "approval_override_allowed": False,
     },
     "eval_regression": {
         "required_resolution": "create_eval_experiment",
-        "description": "Gate-relevant EvalDatasets require cases, a baseline, a completed current EvalExperiment, and a non-regressing comparison before Stage 3 can advance. The concrete resolution is refined by eval_regression_policy per blocker status.",
+        "description": "与门控相关的评测数据集在阶段三推进前，需要有用例、基线、一次已完成的当前评测实验，以及一次无回归的对比。具体解除操作由评测回归策略按阻断状态细化。",
         "approval_override_allowed": False,
     },
     "trace_backfill_gap": {
         "required_resolution": "trace_to_eval_case",
-        "description": "Failed/parser/safety traces must be backfilled into EvalCase records and grouped into a production_trace EvalDataset before Stage 3 can advance.",
+        "description": "失败 / 解析错误 / 安全类追踪记录必须回填为评测用例，并归入生产追踪评测数据集后，阶段三才能推进。",
         "approval_override_allowed": False,
     },
     "final_governance": {
         "required_resolution": "resolve_safety_finding",
-        "description": "Final report completion is blocked by unresolved governance items.",
+        "description": "最终报告的完成被尚未闭环的治理事项阻断。",
         "approval_override_allowed": True,
     },
 }
@@ -139,7 +139,7 @@ STAGE_ADVANCEMENT_CONTRACT: Final[dict[str, dict[str, object]]] = {
 # Every stage blocker maps to an explicit user-facing operation instead of only a raw enum.
 RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
     "run_stage": {
-        "frontend_hint": "Run the current stage to generate structured output.",
+        "frontend_hint": "运行当前阶段以生成结构化结果。",
         "api_hint": "Send user input through POST /chat/{session_id}.",
         "can_execute_via_api": False,
         "api_method": None,
@@ -147,7 +147,7 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         "payload_hint": {},
     },
     "rerun_stage": {
-        "frontend_hint": "Prepare this stale stage for rerun, then send revised input through chat to regenerate it.",
+        "frontend_hint": "先将这个已过期的阶段准备为重跑状态，再通过对话发送修订后的输入以重新生成。",
         "api_hint": "POST /sessions/{session_id}/stages/{stage_id}/rerun",
         "can_execute_via_api": True,
         "api_method": "POST",
@@ -155,7 +155,7 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         "payload_hint": {"reason": "", "note": ""},
     },
     "resolve_action": {
-        "frontend_hint": "Resolve the linked PendingHumanAction before advancing.",
+        "frontend_hint": "请先处理关联的待处理人工动作，再推进阶段。",
         "api_hint": "POST /sessions/{session_id}/actions/{action_id}/resolve",
         "can_execute_via_api": True,
         "api_method": "POST",
@@ -167,7 +167,7 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         },
     },
     "verify_evidence": {
-        "frontend_hint": "Verify the evidence source itself; dismissing a human action does not remove evidence gates.",
+        "frontend_hint": "请核验证据来源本身；仅关闭（dismiss）人工动作不会解除证据门控。",
         "api_hint": "POST /sessions/{session_id}/evidence/{evidence_id}/verify when the blocker source is an evidence id.",
         "can_execute_via_api": True,
         "api_method": "POST",
@@ -175,7 +175,7 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         "payload_hint": {"note": ""},
     },
     "edit_stage_output": {
-        "frontend_hint": "Edit the structured stage output or request a stage revision.",
+        "frontend_hint": "编辑结构化阶段输出，或请求修订当前阶段。",
         "api_hint": "Prefer POST /sessions/{session_id}/actions/{action_id}/resolve with decision=edit and payload_after.",
         "can_execute_via_api": True,
         "api_method": "POST",
@@ -187,7 +187,7 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         },
     },
     "revise_stage": {
-        "frontend_hint": "Prepare the current stage for revision; regeneration still happens through the deterministic chat runner.",
+        "frontend_hint": "将当前阶段准备为修订状态；重新生成仍通过确定性的对话执行器完成。",
         "api_hint": "POST /sessions/{session_id}/stages/{stage_id}/revise",
         "can_execute_via_api": True,
         "api_method": "POST",
@@ -195,7 +195,7 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         "payload_hint": {"reason": "", "note": ""},
     },
     "back_stage": {
-        "frontend_hint": "Roll back to an earlier stage and supersede stale actions without executing the runtime.",
+        "frontend_hint": "回退到更早的阶段，并作废过期动作，不触发运行时执行。",
         "api_hint": "POST /sessions/{session_id}/stages/{stage_id}/rollback",
         "can_execute_via_api": True,
         "api_method": "POST",
@@ -203,7 +203,7 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         "payload_hint": {"to_stage": 0, "reason": "", "note": "", "target_running": False},
     },
     "approve_escalation": {
-        "frontend_hint": "Escalation actions require explicit approval by the responsible reviewer.",
+        "frontend_hint": "升级项需要由负责的审核人明确批准。",
         "api_hint": "POST /sessions/{session_id}/actions/{action_id}/resolve with decision=approve.",
         "can_execute_via_api": True,
         "api_method": "POST",
@@ -211,7 +211,7 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         "payload_hint": {"decision": "approve", "note": "负责人已明确批准"},
     },
     "resolve_safety_finding": {
-        "frontend_hint": "Resolve or dismiss the linked SafetyFinding and keep the audit record.",
+        "frontend_hint": "处理或关闭关联的安全发现，并保留审计记录。",
         "api_hint": "POST /sessions/{session_id}/safety-findings/{finding_id}/resolve when the blocker source is a safety finding.",
         "can_execute_via_api": True,
         "api_method": "POST",
@@ -219,7 +219,7 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         "payload_hint": {"status": "resolved | dismissed", "note": ""},
     },
     "create_eval_dataset_from_stage3": {
-        "frontend_hint": "Create a gate-relevant EvalDataset from Stage 3 generated EvalCase records.",
+        "frontend_hint": "从阶段三生成的评测用例记录中，创建一个与门控相关的评测数据集。",
         "api_hint": "POST /sessions/{session_id}/eval-datasets/from-stage3",
         "can_execute_via_api": True,
         "api_method": "POST",
@@ -232,7 +232,7 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         },
     },
     "add_eval_cases_to_dataset": {
-        "frontend_hint": "Add existing EvalCase ids to the linked EvalDataset before running regression checks.",
+        "frontend_hint": "在运行回归检查前，先把已有的评测用例加入关联的评测数据集。",
         "api_hint": "POST /sessions/{session_id}/eval-datasets/{dataset_id}/cases",
         "can_execute_via_api": True,
         "api_method": "POST",
@@ -240,7 +240,7 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         "payload_hint": {"eval_ids": []},
     },
     "set_eval_baseline": {
-        "frontend_hint": "Set the linked EvalDataset baseline experiment before comparing the current run.",
+        "frontend_hint": "在对比当前运行前，先为关联的评测数据集设定基线实验。",
         "api_hint": "POST /sessions/{session_id}/eval-datasets/{dataset_id}/baseline",
         "can_execute_via_api": True,
         "api_method": "POST",
@@ -248,7 +248,7 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         "payload_hint": {"baseline_experiment_id": ""},
     },
     "create_eval_experiment": {
-        "frontend_hint": "Create a current EvalExperiment for the linked EvalDataset, then run it.",
+        "frontend_hint": "为关联的评测数据集创建一个当前评测实验，然后运行它。",
         "api_hint": "POST /sessions/{session_id}/eval-experiments",
         "can_execute_via_api": True,
         "api_method": "POST",
@@ -261,7 +261,7 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         },
     },
     "run_eval_experiment": {
-        "frontend_hint": "Run the linked EvalExperiment before advancing. If the blocker only references a dataset, create a current experiment for that dataset first.",
+        "frontend_hint": "推进前先运行关联的评测实验。如果阻断项只指向某个数据集，请先为该数据集创建一个当前实验。",
         "api_hint": "POST /sessions/{session_id}/eval-experiments/{experiment_id}/run when the blocker source is an EvalExperiment.",
         "can_execute_via_api": True,
         "api_method": "POST",
@@ -269,7 +269,7 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         "payload_hint": {"dry_run_only": True},
     },
     "compare_eval_experiment": {
-        "frontend_hint": "Compare the current EvalExperiment with its baseline before advancing.",
+        "frontend_hint": "推进前，将当前评测实验与其基线进行对比。",
         "api_hint": "POST /sessions/{session_id}/eval-experiments/{experiment_id}/comparison",
         "can_execute_via_api": True,
         "api_method": "POST",
@@ -277,7 +277,7 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         "payload_hint": {"baseline_experiment_id": "optional"},
     },
     "generate_redteam_cases": {
-        "frontend_hint": "Generate deterministic RedTeamCase drafts from current high-risk SafetyFinding, FailureMode, and WorkflowNode signals.",
+        "frontend_hint": "基于当前高风险安全发现、失败模式和工作流节点信号，确定性地生成红队用例草稿。",
         "api_hint": "POST /sessions/{session_id}/redteam/generate",
         "can_execute_via_api": True,
         "api_method": "POST",
@@ -285,7 +285,7 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         "payload_hint": {"stage": 3},
     },
     "approve_redteam_case": {
-        "frontend_hint": "Approve the linked RedTeamCase before it can be synced into EvalCase.",
+        "frontend_hint": "先批准关联的红队用例，之后才能同步为评测用例。",
         "api_hint": "POST /sessions/{session_id}/redteam/cases/{case_id}/approve",
         "can_execute_via_api": True,
         "api_method": "POST",
@@ -293,7 +293,7 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         "payload_hint": {"note": "reviewer approved redteam coverage"},
     },
     "sync_redteam_eval_case": {
-        "frontend_hint": "Sync the approved RedTeamCase into an adversarial EvalCase.",
+        "frontend_hint": "将已批准的红队用例同步为一条对抗性评测用例。",
         "api_hint": "POST /sessions/{session_id}/redteam/cases/{case_id}/to-eval-case",
         "can_execute_via_api": True,
         "api_method": "POST",
@@ -301,7 +301,7 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         "payload_hint": {},
     },
     "create_redteam_dataset": {
-        "frontend_hint": "Create a redteam_generated EvalDataset from synced RedTeamCase EvalCases so Regression Gate can consume it.",
+        "frontend_hint": "从已同步的红队评测用例中，创建一个红队生成的评测数据集，供回归门控使用。",
         "api_hint": "POST /sessions/{session_id}/redteam/datasets",
         "can_execute_via_api": True,
         "api_method": "POST",
@@ -309,7 +309,7 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         "payload_hint": {"name": "Red Team generated dataset", "version": "0.1"},
     },
     "trace_to_eval_case": {
-        "frontend_hint": "Convert the linked failed/parser/safety trace into a production regression EvalCase before advancing.",
+        "frontend_hint": "推进前，把关联的失败 / 解析错误 / 安全类追踪记录转换为一条生产回归评测用例。",
         "api_hint": "POST /sessions/{session_id}/traces/{trace_id}/to-eval-case",
         "can_execute_via_api": True,
         "api_method": "POST",
@@ -317,7 +317,7 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         "payload_hint": {"expected_behavior": "optional", "target_node_id": "optional"},
     },
     "create_trace_backfill_dataset": {
-        "frontend_hint": "Create a production_trace EvalDataset from trace-backfilled EvalCases so Regression Gate can consume it.",
+        "frontend_hint": "从追踪回填的评测用例中，创建一个生产追踪评测数据集，供回归门控使用。",
         "api_hint": "POST /sessions/{session_id}/traces/to-eval-dataset",
         "can_execute_via_api": True,
         "api_method": "POST",

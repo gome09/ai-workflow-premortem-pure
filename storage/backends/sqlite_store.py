@@ -1031,7 +1031,7 @@ class SQLiteSessionStore:
                     ).fetchone()
         if not row:
             return None
-        ctx = migrate_context(row["context_json"])
+        ctx = migrate_context(json.loads(row["context_json"]))
         if ctx and row["tenant_id"]:
             ctx.tenant_id = row["tenant_id"]
         return ctx

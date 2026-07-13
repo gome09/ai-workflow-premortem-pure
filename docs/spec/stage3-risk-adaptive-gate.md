@@ -116,7 +116,7 @@ Session `ae08e110-9c31-47b4-a9c8-bf1336991a94` (LOW risk):
 - Redteam/regression/trace rules evaluated → 0 blockers
 - Safety底线 rules evaluated → pending_action + eval_failure blockers (correct)
 
-**Report:** [archive/verification-reports/risk_adaptive_gate_final_validation.md](archive/verification-reports/risk_adaptive_gate_final_validation.md)
+**Report:** [../archive/verification-reports/risk_adaptive_gate_final_validation.md](../archive/verification-reports/risk_adaptive_gate_final_validation.md)
 
 ---
 

@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-AI 工作流预验尸与人机监督平台（本科毕业设计项目）。借鉴软件工程"预验尸"（Pre-mortem）方法论，在 AI 项目立项阶段通过四阶段引导式分析（失败模式识别 → 人机协同工作流设计 → Zero-Shot 压力测试 → 触发策略生成），结合风险自适应门禁（LOW/MEDIUM/HIGH/CRITICAL）系统性发现 AI 系统可能的失败模式。详见 [README.md](README.md) 与 [docs/architecture.md](docs/architecture.md)。
+AI 工作流预验尸与人机监督平台（本科毕业设计项目）。借鉴软件工程"预验尸"（Pre-mortem）方法论，在 AI 项目立项阶段通过四阶段引导式分析（失败模式识别 → 人机协同工作流设计 → Zero-Shot 压力测试 → 触发策略生成），结合风险自适应门禁（LOW/MEDIUM/HIGH/CRITICAL）系统性发现 AI 系统可能的失败模式。详见 [README.md](README.md) 与 [docs/spec/architecture.md](docs/spec/architecture.md)。
 
 ## 技术栈
 
@@ -47,7 +47,7 @@ make setup && make prod-up   # 生产模式（PostgreSQL + Redis + 真实 LLM）
 - 请求执行路径：`SessionService` → `core.execution_service.execute_one_turn` → `graph.runner.run_one_step`（默认稳定路径 `single_step`；`langgraph_interrupt` 为实验性路径，仅在 `WORKFLOW_EXECUTION_MODE=langgraph_interrupt` 时启用）。
 - 人工动作解决路径：`core.oversight_service.resolve_action` → `graph.transition_policy.evaluate_action_resolution` → `core.execution_service.sync_execution_after_action_resolution` → 门禁重新评估。
 - `core/version.py` 是版本号唯一来源；`core/stage_readiness_service.py` 是阶段门禁权威判定源。
-- 完整架构图与时序图见 [docs/architecture.md](docs/architecture.md)。
+- 完整架构图与时序图见 [docs/spec/architecture.md](docs/spec/architecture.md)。
 
 ## 目录结构关键点
 
@@ -73,7 +73,8 @@ make setup && make prod-up   # 生产模式（PostgreSQL + Redis + 真实 LLM）
 ## 文档维护
 
 - 修改 `docs/` 下文档后请同步检查 [docs/README.md](docs/README.md) 索引是否需要更新条目。
-- `docs/improvement-roadmap.md` 是持续维护的分阶段改进路线图（合规映射/企业工程/开源社区三条坐标轴），涉及安全或合规相关改动时应参照其差距清单。
+- `docs/plan/improvement-roadmap.md` 是持续维护的分阶段改进路线图（合规映射/企业工程/开源社区三条坐标轴），涉及安全或合规相关改动时应参照其差距清单。
+- `docs/spec/` 存放系统设计与规格文档（architecture / api-reference / security-model / stage3-risk-adaptive-gate），`docs/plan/` 存放规划与路线图文档。
 
 <!-- project-upgrade:start -->
 ## Upgrade Workspace Rules

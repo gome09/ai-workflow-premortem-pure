@@ -3,24 +3,108 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 import requests
 import streamlit as st
+from dotenv import load_dotenv
+
 from components.redteam_panel import render_redteam_panel
 from components.report_panel import render_report_panel
+from components.stage_message import render_assistant_message
+from labels import (
+    action_source_zh,
+    blocker_type_zh,
+    decision_reason_zh,
+    hard_blocker_zh,
+    lifecycle_zh,
+    resolution_zh,
+    severity_zh,
+    status_zh,
+)
+
+load_dotenv()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 配置
 # ─────────────────────────────────────────────────────────────────────────────
 
-API_BASE = os.getenv("API_BASE", "http://localhost:8000")
+API_BASE = os.getenv("API_BASE", "http://127.0.0.1:8000")
+DEMO_USER_EMAIL = os.getenv("DEMO_USER_EMAIL", "demo@example.com")
+DEMO_USER_PASSWORD = os.getenv("DEMO_USER_PASSWORD", "demo-password-123")
 
 st.set_page_config(
-    page_title="AI Workflow Review Workbench",
+    page_title="AI 工作流风险复核工作台",
     page_icon="🔬",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 认证：自动注册/登录一个演示账号，把 JWT 存进 session_state
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _login_demo_user() -> dict | None:
+    try:
+        r = requests.post(
+            f"{API_BASE}/auth/login",
+            data={"username": DEMO_USER_EMAIL, "password": DEMO_USER_PASSWORD},
+            timeout=10,
+        )
+        r.raise_for_status()
+        return r.json()
+    except requests.exceptions.RequestException:
+        return None
+
+
+def _register_demo_user() -> dict | None:
+    try:
+        r = requests.post(
+            f"{API_BASE}/auth/register",
+            json={"email": DEMO_USER_EMAIL, "password": DEMO_USER_PASSWORD},
+            timeout=10,
+        )
+        if r.status_code == 409:
+            return _login_demo_user()
+        r.raise_for_status()
+        return r.json()
+    except requests.exceptions.RequestException:
+        return None
+
+
+def _refresh_access_token() -> bool:
+    refresh_token = st.session_state.get("refresh_token")
+    if not refresh_token:
+        return False
+    try:
+        r = requests.post(
+            f"{API_BASE}/auth/refresh",
+            json={"refresh_token": refresh_token},
+            timeout=10,
+        )
+        r.raise_for_status()
+        st.session_state.access_token = r.json().get("access_token")
+        return True
+    except requests.exceptions.RequestException:
+        return False
+
+
+def ensure_auth() -> None:
+    if st.session_state.get("access_token"):
+        return
+    tokens = _register_demo_user()
+    if tokens and tokens.get("access_token"):
+        st.session_state.access_token = tokens["access_token"]
+        st.session_state.refresh_token = tokens.get("refresh_token")
+
+
+def _auth_headers() -> dict:
+    token = st.session_state.get("access_token")
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
+ensure_auth()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 工具函数
@@ -91,7 +175,9 @@ def stage_operation_items(result: dict | list | None) -> list[dict]:
 
 def api_post(path: str, body: dict) -> dict | None:
     try:
-        r = requests.post(f"{API_BASE}{path}", json=body, timeout=120)
+        r = requests.post(f"{API_BASE}{path}", json=body, headers=_auth_headers(), timeout=120)
+        if r.status_code == 401 and _refresh_access_token():
+            r = requests.post(f"{API_BASE}{path}", json=body, headers=_auth_headers(), timeout=120)
         r.raise_for_status()
         return r.json()
     except requests.exceptions.Timeout:
@@ -101,16 +187,27 @@ def api_post(path: str, body: dict) -> dict | None:
         st.error(f"🔌 无法连接到后端服务，请确认 API 已启动（当前 API_BASE：{API_BASE}）。")
         return None
     except requests.exceptions.HTTPError as e:
-        st.error(f"❌ 请求失败：{e.response.status_code} - {e.response.text}")
+        detail = ""
+        try:
+            payload = e.response.json()
+            detail = payload.get("detail", "") if isinstance(payload, dict) else ""
+        except Exception:
+            detail = ""
+        st.error(f"❌ 请求失败（HTTP {e.response.status_code}），请稍后重试或联系管理员。")
+        if detail:
+            with st.expander("🔧 技术详情", expanded=False):
+                st.caption(str(detail))
         return None
-    except Exception as e:
-        st.error(f"❌ 未知错误：{e}")
+    except Exception:
+        st.error("❌ 发生未知错误，请稍后重试或联系管理员。")
         return None
 
 
 def api_get(path: str) -> dict | list | None:
     try:
-        r = requests.get(f"{API_BASE}{path}", timeout=30)
+        r = requests.get(f"{API_BASE}{path}", headers=_auth_headers(), timeout=30)
+        if r.status_code == 401 and _refresh_access_token():
+            r = requests.get(f"{API_BASE}{path}", headers=_auth_headers(), timeout=30)
         r.raise_for_status()
         return r.json()
     except requests.exceptions.Timeout:
@@ -121,10 +218,10 @@ def api_get(path: str) -> dict | list | None:
         return None
     except requests.exceptions.HTTPError as e:
         if e.response.status_code != 404:
-            st.error(f"❌ 请求失败：{e.response.status_code}")
+            st.error(f"❌ 请求失败（HTTP {e.response.status_code}），请稍后重试。")
         return None
-    except Exception as e:
-        st.error(f"❌ 未知错误：{e}")
+    except Exception:
+        st.error("❌ 发生未知错误，请稍后重试或联系管理员。")
         return None
 
 
@@ -442,7 +539,7 @@ def create_eval_experiment(
         {
             "dataset_id": dataset_id,
             "name": name,
-            "description": "Created from Streamlit Review Workbench.",
+            "description": "由复核工作台创建。",
             "run_mode": run_mode,
             "baseline_experiment_id": baseline_experiment_id,
             "run_config": {"runtime_validation": "deferred_by_instruction"},
@@ -505,6 +602,95 @@ def restore_messages_from_ctx(ctx: dict) -> list[dict]:
                 }
             )
     return messages
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 实时人工监督占位标记（与 graph.nodes.live_oversight_marker 对应）
+#
+# 助手消息里不再写死「N 项待处理监督事项 / 阻断原因」，只留一个标记；渲染时用
+# 当前实时的 pending_actions / stage_readiness 展开，保证对话区与左侧面板永远
+# 一致，不再出现历史快照漂移。
+# ─────────────────────────────────────────────────────────────────────────────
+
+LIVE_OVERSIGHT_RE = re.compile(r"\[\[LIVE_OVERSIGHT(?:\s+stage=(\d+))?\]\]")
+
+
+def _pending_actions_for_stage(stage_id: int | None) -> list[dict]:
+    actions = [
+        a
+        for a in (st.session_state.get("pending_actions") or [])
+        if a.get("status", "pending") == "pending"
+    ]
+    if stage_id is not None:
+        actions = [a for a in actions if a.get("stage_id") == stage_id]
+    return actions
+
+
+def _blockers_for_stage(stage_id: int | None) -> list[dict]:
+    if stage_id is None:
+        return []
+    readiness = st.session_state.get("stage_readiness") or {}
+    stage_readiness = readiness.get(f"stage_{stage_id}", {}) or {}
+    return stage_readiness.get("blockers", []) or []
+
+
+def render_live_oversight(stage_id: int | None) -> None:
+    """按来源实时汇总某阶段的待处理人工动作与阻断器（占位标记的展开体）。"""
+    actions = _pending_actions_for_stage(stage_id)
+    blockers = _blockers_for_stage(stage_id)
+
+    if not actions and not blockers:
+        st.success("✅ 没有待处理的人工监督事项。")
+        return
+
+    if actions:
+        grouped: dict[str, dict] = {}
+        for action in actions:
+            key = action.get("source_type") or "human_action"
+            entry = grouped.setdefault(key, {"count": 0, "risks": set(), "blocking": False})
+            entry["count"] += 1
+            entry["risks"].add(action.get("risk_level", "medium"))
+            entry["blocking"] = entry["blocking"] or action.get("blocking", True)
+
+        st.warning(f"🚦 有 {len(actions)} 项待处理的人工监督事项：")
+        for source_type, info in grouped.items():
+            label = action_source_zh(source_type)
+            risks = "、".join(severity_zh(r) for r in sorted(info["risks"], key=str))
+            count_note = f"（{info['count']} 项）" if info["count"] > 1 else ""
+            blocking_note = "" if info["blocking"] else "（不阻断推进）"
+            st.markdown(f"- {label}{count_note}{blocking_note}，风险等级：{risks}")
+
+    if blockers:
+        st.markdown(f"**当前阶段推进阻断（{len(blockers)} 项）：**")
+        for blocker in blockers[:8]:
+            st.markdown(
+                f"- [{severity_zh(blocker.get('severity'))} · "
+                f"{blocker_type_zh(blocker.get('blocker_type'))}] "
+                f"{blocker.get('message', '')}"
+            )
+
+    st.caption(
+        "存在阻断型事项时，输入「确认」暂时无法进入下一阶段；"
+        "请先在左侧「待处理人工动作」面板中处理，或输入「修改」/「回退」调整当前阶段。"
+    )
+
+
+def render_message_with_oversight(content: str) -> None:
+    """渲染助手消息；若含实时监督标记，则在原位展开为实时监督摘要。"""
+    match = LIVE_OVERSIGHT_RE.search(content or "")
+    if not match:
+        render_assistant_message(content)
+        return
+
+    stage_id = int(match.group(1)) if match.group(1) else None
+    before = content[: match.start()].rstrip()
+    after = content[match.end() :].strip()
+
+    if before:
+        render_assistant_message(before)
+    render_live_oversight(stage_id)
+    if after:
+        render_assistant_message(after)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -862,28 +1048,27 @@ with st.sidebar:
             )
             with st.expander(gate_label, expanded=bool(blockers)):
                 st.caption(
-                    f"阶段 {current_stage_id} · 输出版本 v{current_readiness.get('stage_output_version', 1)} · "
-                    "StageAdvancementDecision 是推进判断的统一来源。"
+                    f"阶段 {current_stage_id} · 输出版本 v{current_readiness.get('stage_output_version', 1)}"
                 )
                 if advancement_decision:
+                    hard_cnt = advancement_decision.get("hard_blockers_count", 0)
+                    exec_cnt = advancement_decision.get("executable_operations_count", 0)
                     st.caption(
-                        f"decision_reason=`{advancement_decision.get('decision_reason')}` · "
-                        f"lifecycle=`{advancement_decision.get('stage_lifecycle')}` · "
-                        f"hard={advancement_decision.get('hard_blockers_count', 0)} · "
-                        f"executable={advancement_decision.get('executable_operations_count', 0)}"
+                        f"当前状态：{lifecycle_zh(advancement_decision.get('stage_lifecycle'))} · "
+                        f"必须处理 {hard_cnt} 项 · 可执行操作 {exec_cnt} 项"
                     )
                 if current_readiness.get("block_reason"):
                     st.warning(current_readiness["block_reason"])
                 if blockers:
                     for blocker in blockers[:8]:
                         st.markdown(
-                            f"- `{blocker.get('blocker_id')}` "
-                            f"[{blocker.get('severity')}/{blocker.get('blocker_type')}] "
+                            f"- [{severity_zh(blocker.get('severity'))} · "
+                            f"{blocker_type_zh(blocker.get('blocker_type'))}] "
                             f"{blocker.get('message')}"
                         )
-                        if blocker.get("action_id"):
-                            st.caption(f"action_id: {blocker.get('action_id')}")
-                        st.caption(f"required_resolution: {blocker.get('required_resolution')}")
+                        st.caption(
+                            f"建议操作：{resolution_zh(blocker.get('required_resolution'))}"
+                        )
 
                     stage_ops = advancement_decision.get("required_operations") or (
                         stage_resolution.get("by_stage") or {}
@@ -892,21 +1077,13 @@ with st.sidebar:
                         st.markdown("**可执行解除操作：**")
                         for op in stage_ops[:8]:
                             label = (
-                                f"{op.get('required_resolution')} · "
-                                f"{op.get('blocker_type')} · "
-                                f"{'hard' if op.get('hard_blocker') else 'overridable'}"
+                                f"{resolution_zh(op.get('required_resolution'))} · "
+                                f"{blocker_type_zh(op.get('blocker_type'))} · "
+                                f"{hard_blocker_zh(op.get('hard_blocker'))}"
                             )
                             with st.expander(label, expanded=False):
                                 st.markdown(op.get("frontend_hint") or "")
-                                if op.get("action_id"):
-                                    st.code(op.get("action_id"), language="text")
-                                if op.get("api_path"):
-                                    st.caption(f"API: {op.get('api_method')} {op.get('api_path')}")
-                                elif op.get("api_hint"):
-                                    st.caption(op.get("api_hint"))
                                 payload_hint = op.get("payload_hint") or {}
-                                if payload_hint:
-                                    st.json(payload_hint)
                                 if (
                                     op.get("can_execute_via_api")
                                     and op.get("api_path")
@@ -934,7 +1111,7 @@ with st.sidebar:
                                         )
                                         if result:
                                             st.success(
-                                                "阶段操作已记录；未运行 LLM/pytest/API/前端/Docker。"
+                                                "阶段操作已记录；未运行 LLM / pytest / 接口 / 前端 / Docker。"
                                             )
                                             st.session_state.stage_readiness = {}
                                             st.session_state.stage_resolution = {}
@@ -964,12 +1141,49 @@ with st.sidebar:
                                             st.session_state.stage_resolution = {}
                                             refresh_actions()
                                             st.rerun()
+
+                                # ── 技术详情（原始 ID / 枚举 / API 路径 / 参数）──
+                                with st.expander("🔧 技术详情", expanded=False):
+                                    if op.get("action_id"):
+                                        st.code(op.get("action_id"), language="text")
+                                    if op.get("api_path"):
+                                        st.caption(
+                                            f"API：{op.get('api_method')} {op.get('api_path')}"
+                                        )
+                                    elif op.get("api_hint"):
+                                        st.caption(op.get("api_hint"))
+                                    if payload_hint:
+                                        st.json(payload_hint)
                     else:
                         st.caption(
-                            "当前 blocker 暂无可绑定 API 的解除操作，请按 required_resolution 处理；resolved/superseded 历史 action 不会显示为可执行 API。"
+                            "当前阻断项暂无可一键解除的操作，请按上面的「建议操作」逐项处理；"
+                            "已处理 / 已被替代的历史动作不会显示为可执行操作。"
                         )
+
+                    # ── 阻断项技术详情（原始标识，供排查）────────────────────
+                    with st.expander("🔧 技术详情（阻断项原始信息）", expanded=False):
+                        if advancement_decision:
+                            st.caption(
+                                f"decision_reason=`{advancement_decision.get('decision_reason')}`"
+                                f"（{decision_reason_zh(advancement_decision.get('decision_reason'))}） · "
+                                f"lifecycle=`{advancement_decision.get('stage_lifecycle')}` · "
+                                f"hard={advancement_decision.get('hard_blockers_count', 0)} · "
+                                f"executable={advancement_decision.get('executable_operations_count', 0)}"
+                            )
+                        for blocker in blockers[:8]:
+                            bits = [f"blocker_id={blocker.get('blocker_id')}"]
+                            if blocker.get("action_id"):
+                                bits.append(f"action_id={blocker.get('action_id')}")
+                            bits.append(
+                                f"source={blocker.get('source_type') or '-'}:"
+                                f"{blocker.get('source_id') or '-'}"
+                            )
+                            bits.append(
+                                f"required_resolution={blocker.get('required_resolution')}"
+                            )
+                            st.caption(" · ".join(bits))
                 else:
-                    st.success("当前阶段没有结构化 blocker。")
+                    st.success("当前阶段没有阻断项。")
 
                 operations = current_readiness.get("recommended_next_operations") or []
                 if operations:
@@ -979,7 +1193,7 @@ with st.sidebar:
 
                 metadata = current_readiness.get("stage_metadata") or {}
                 if current_stage_id == 2 and metadata.get("stage_2_coverage_matrix"):
-                    st.caption("Stage 2 high-risk coverage matrix 已生成，可在报告/API 中查看。")
+                    st.caption("阶段二高风险覆盖矩阵已生成，可在报告 / 接口中查看。")
                 if current_stage_id == 3 and metadata.get("stage_3_coverage_warning", {}).get(
                     "coverage_warning"
                 ):
@@ -987,14 +1201,15 @@ with st.sidebar:
                         "missing_eval_coverage_node_ids", []
                     )
                     st.warning(
-                        f"高风险节点缺少 EvalCase 覆盖，需补充 Stage3 structured_output 或回退重跑：{', '.join(missing)}"
+                        "高风险节点缺少评测用例覆盖，需补充阶段三结构化输出或回退重跑："
+                        f"{', '.join(missing)}"
                     )
                 if current_stage_id == 4 and metadata.get("final_governance_summary"):
                     summary = metadata["final_governance_summary"]
                     st.caption(
-                        "Final governance: "
-                        f"critical_safety={len(summary.get('open_critical_safety_findings', []))}, "
-                        f"pending_blockers={len(summary.get('pending_blocking_action_ids', []))}"
+                        "最终治理："
+                        f"待处理危急安全发现 {len(summary.get('open_critical_safety_findings', []))} 项，"
+                        f"待处理阻断动作 {len(summary.get('pending_blocking_action_ids', []))} 项"
                     )
 
         st.divider()
@@ -1035,6 +1250,11 @@ with st.sidebar:
                     )
 
                     if action_type == "verify_evidence":
+                        st.caption(
+                            "⚠️ 「忽略并留痕」只会关闭这条动作并记录留痕，"
+                            "**不会**解除高风险证据门控；若要真正解除门控，"
+                            "请点击「已核验」，或按需通过「修改」编辑结构化输出补充/修正证据引用。"
+                        )
                         col_a, col_b = st.columns(2)
                         with col_a:
                             if st.button(
@@ -1059,6 +1279,10 @@ with st.sidebar:
                                 ):
                                     refresh_flags()
                                     refresh_actions()
+                                    st.warning(
+                                        "已忽略并留痕，但高风险证据门控可能仍未解除。"
+                                        "请查看左侧「阶段推进阻断器」确认是否仍被阻断。"
+                                    )
                                     st.rerun()
 
                     elif action_type == "approve":
@@ -1248,14 +1472,14 @@ with st.sidebar:
         st.divider()
 
         # ── Evidence / Safety 面板 ──────────────────────────────────────────────
-        with st.expander("📚 证据来源 Evidence", expanded=False):
+        with st.expander("📚 证据来源", expanded=False):
             evidence_items = list_evidence(st.session_state.session_id)
             if evidence_items:
                 verified_total = sum(1 for e in evidence_items if e.get("verified"))
                 st.caption(
-                    f"{len(evidence_items)} total · "
-                    f"{verified_total} verified · "
-                    f"{len(evidence_items) - verified_total} unverified"
+                    f"共 {len(evidence_items)} 条 · "
+                    f"已核验 {verified_total} 条 · "
+                    f"未核验 {len(evidence_items) - verified_total} 条"
                 )
                 for ev in evidence_items:
                     verified = ev.get("verified", False)
@@ -1265,7 +1489,7 @@ with st.sidebar:
                     st.markdown(
                         f"{status_icon} **`{ev.get('evidence_id')}`** · "
                         f"{ev.get('source_type')} · "
-                        f"score={score:.2f} · {status_text}"
+                        f"可信度={score:.2f} · {status_text}"
                     )
                     st.caption(ev.get("title", ""))
                     if ev.get("url"):
@@ -1274,19 +1498,19 @@ with st.sidebar:
                         st.caption(ev["summary"][:200])
                     claims = ev.get("claims") or []
                     if claims:
-                        with st.expander(f"Claims ({len(claims)})", expanded=False):
+                        with st.expander(f"论据（{len(claims)}）", expanded=False):
                             for claim in claims:
                                 st.markdown(f"- {claim}")
                     if ev.get("used_by_failure_mode_ids"):
                         st.caption(
-                            "Linked failure modes: "
-                            + ", ".join(ev.get("used_by_failure_mode_ids", []))
+                            "关联失败模式："
+                            + "、".join(ev.get("used_by_failure_mode_ids", []))
                         )
                     if verified and ev.get("verification_note"):
-                        st.caption(f"Verification note: {ev['verification_note']}")
+                        st.caption(f"核验备注：{ev['verification_note']}")
                     if not verified and score < 0.4:
                         st.warning(
-                            "Low credibility — unverified weak sources may weaken downstream analysis."
+                            "可信度较低——未核验的弱来源可能削弱后续分析的可靠性。"
                         )
                     note_key = f"evidence_note_{ev.get('evidence_id')}"
                     ev_note = st.text_input("核验备注", key=note_key)
@@ -1306,7 +1530,7 @@ with st.sidebar:
             else:
                 st.caption("暂无证据来源。阶段一搜索完成后会自动生成。")
 
-        with st.expander("🛡️ Safety Findings", expanded=False):
+        with st.expander("🛡️ 安全风险发现", expanded=False):
             findings = list_safety_findings(st.session_state.session_id, status="open")
             if findings:
                 high_crit_open = sum(
@@ -1314,7 +1538,7 @@ with st.sidebar:
                     for f in findings
                     if f.get("status") == "open" and f.get("severity") in {"high", "critical"}
                 )
-                st.caption(f"{len(findings)} open · {high_crit_open} high/critical unresolved")
+                st.caption(f"待处理 {len(findings)} 项 · 高危/危急未处理 {high_crit_open} 项")
                 for finding in findings:
                     severity = finding.get("severity", "low")
                     is_high_crit = severity in {"high", "critical"}
@@ -1325,15 +1549,14 @@ with st.sidebar:
                         "low": "⚪",
                     }.get(severity, "⚪")
                     st.markdown(
-                        f"{severity_icon} **`{finding.get('finding_id')}`** · stage={finding.get('stage_id')} · "
-                        f"{severity}/{finding.get('risk_type')}"
+                        f"{severity_icon} **`{finding.get('finding_id')}`** · 阶段{finding.get('stage_id')} · "
+                        f"{severity_zh(severity)} / {finding.get('risk_type')}"
                     )
                     st.caption(finding.get("description", ""))
-                    st.caption("Recommended: " + finding.get("recommended_action", ""))
+                    st.caption("建议处理：" + finding.get("recommended_action", ""))
                     if is_high_crit:
                         st.warning(
-                            "High/critical unresolved safety finding — "
-                            "may block stage advancement or require human review."
+                            "高危 / 危急安全发现尚未处理——可能阻断阶段推进或需要人工复核。"
                         )
                     finding_note = st.text_input(
                         "处理备注", key=f"safety_note_{finding.get('finding_id')}"
@@ -1388,7 +1611,7 @@ with st.sidebar:
             else:
                 st.caption("暂无未关闭安全发现。")
 
-        with st.expander("🧩 Execution / Interrupt Debug", expanded=False):
+        with st.expander("🧩 执行 / 中断调试", expanded=False):
             records = st.session_state.interrupt_records or list_interrupt_records(
                 st.session_state.session_id
             )
@@ -1400,8 +1623,8 @@ with st.sidebar:
             )
             if health:
                 st.caption(
-                    f"Mode: `{health.get('workflow_execution_mode', 'unknown')}` · "
-                    f"Adapter: `{health.get('interrupt_adapter_status', 'unknown')}`"
+                    f"执行模式：`{health.get('workflow_execution_mode', 'unknown')}` · "
+                    f"中断适配器状态：`{health.get('interrupt_adapter_status', 'unknown')}`"
                 )
             if records:
                 summary = {
@@ -1440,30 +1663,30 @@ with st.sidebar:
                         elif record.get("status") == "cancelled":
                             st.info("该 interrupt 已取消，不会恢复执行。")
                         elif record.get("resume_consumed_at"):
-                            st.success(f"Resume consumed at: {record.get('resume_consumed_at')}")
+                            st.success(f"恢复消费时间：{record.get('resume_consumed_at')}")
                         st.json(record)
             else:
                 st.caption(
                     "暂无 interrupt records。阻断型 PendingHumanAction 出现后会自动创建映射记录。"
                 )
 
-        with st.expander("🛡️ Red Team Coverage", expanded=False):
+        with st.expander("🛡️ 红队覆盖", expanded=False):
             redteam_cases = list_redteam_cases(st.session_state.session_id)
             redteam_coverage = get_redteam_coverage(st.session_state.session_id)
             render_redteam_panel(cases=redteam_cases, coverage=redteam_coverage)
 
             col_generate, col_dataset = st.columns(2)
             with col_generate:
-                if st.button("🧪 Generate RedTeamCase drafts", use_container_width=True):
+                if st.button("🧪 生成红队用例草稿", use_container_width=True):
                     created = generate_redteam_cases(st.session_state.session_id)
-                    st.success(f"Generated {len(created)} RedTeamCase draft(s).")
+                    st.success(f"已生成 {len(created)} 条红队用例草稿。")
                     refresh_actions()
                     st.rerun()
             with col_dataset:
-                if st.button("📦 Create redteam dataset", use_container_width=True):
+                if st.button("📦 创建红队数据集", use_container_width=True):
                     dataset = create_redteam_dataset(st.session_state.session_id)
                     if dataset:
-                        st.success(f"Dataset created: {dataset.get('dataset_id')}")
+                        st.success(f"数据集已创建：{dataset.get('dataset_id')}")
                         refresh_actions()
                         st.rerun()
 
@@ -1474,70 +1697,70 @@ with st.sidebar:
                 cols = st.columns(3)
                 with cols[0]:
                     if case.get("status") == "draft" and st.button(
-                        f"✅ Approve {case_id}",
+                        f"✅ 批准 {case_id}",
                         key=f"approve_redteam_{case_id}",
                         use_container_width=True,
                     ):
                         approve_redteam_case(
-                            st.session_state.session_id, case_id, "Approved in Review Workbench"
+                            st.session_state.session_id, case_id, "已在复核工作台批准"
                         )
                         refresh_actions()
                         st.rerun()
                 with cols[1]:
                     if case.get("status") == "draft" and st.button(
-                        f"📝 Reject {case_id}",
+                        f"📝 驳回 {case_id}",
                         key=f"reject_redteam_{case_id}",
                         use_container_width=True,
                     ):
                         reject_redteam_case(
-                            st.session_state.session_id, case_id, "Rejected in Review Workbench"
+                            st.session_state.session_id, case_id, "已在复核工作台驳回"
                         )
                         refresh_actions()
                         st.rerun()
                 with cols[2]:
                     if case.get("status") == "approved" and st.button(
-                        f"🔗 Sync {case_id}",
+                        f"🔗 同步 {case_id}",
                         key=f"sync_redteam_{case_id}",
                         use_container_width=True,
                     ):
                         eval_case = sync_redteam_case_to_eval(st.session_state.session_id, case_id)
                         if eval_case:
-                            st.success(f"Synced to EvalCase: {eval_case.get('eval_id')}")
+                            st.success(f"已同步为评测用例：{eval_case.get('eval_id')}")
                         refresh_actions()
                         st.rerun()
 
-        with st.expander("🧪 Eval Cases / Datasets / Experiments", expanded=False):
+        with st.expander("🧪 评测用例 / 数据集 / 实验", expanded=False):
             eval_cases = list_eval_cases(st.session_state.session_id)
             eval_runs = list_eval_runs(st.session_state.session_id)
             eval_datasets = list_eval_datasets(st.session_state.session_id)
             eval_experiments = list_eval_experiments(st.session_state.session_id)
 
             st.caption(
-                "EvalDataset / EvalExperiment / Regression Gate / "
-                "Trace Backfill Gate are available at source level; runtime validation remains deferred."
+                "评测数据集 / 评测实验 / 回归门控 / 追踪回填门控均已在数据层面可用；"
+                "运行时校验仍按指令延后执行。"
             )
             metric_cols = st.columns(4)
-            metric_cols[0].metric("EvalCases", len(eval_cases))
-            metric_cols[1].metric("Datasets", len(eval_datasets))
-            metric_cols[2].metric("Experiments", len(eval_experiments))
-            metric_cols[3].metric("EvalRuns", len(eval_runs))
+            metric_cols[0].metric("评测用例", len(eval_cases))
+            metric_cols[1].metric("数据集", len(eval_datasets))
+            metric_cols[2].metric("实验", len(eval_experiments))
+            metric_cols[3].metric("评测运行", len(eval_runs))
 
             with st.expander(
-                "Dataset / Experiment foundation", expanded=bool(eval_datasets or eval_experiments)
+                "数据集 / 实验基础配置", expanded=bool(eval_datasets or eval_experiments)
             ):
                 dataset_name = st.text_input(
-                    "Dataset name",
-                    value="Stage 3 generated dataset",
+                    "数据集名称",
+                    value="阶段三生成数据集",
                     key="eval_dataset_name",
                 )
-                if st.button("📦 Create dataset from Stage 3", use_container_width=True):
+                if st.button("📦 从阶段三创建数据集", use_container_width=True):
                     dataset = create_eval_dataset_from_stage3(
                         st.session_state.session_id,
                         dataset_name,
-                        "Created from current Stage 3 EvalCases.",
+                        "由当前阶段三评测用例创建。",
                     )
                     if dataset:
-                        st.success(f"Dataset created: {dataset.get('dataset_id')}")
+                        st.success(f"数据集已创建：{dataset.get('dataset_id')}")
                         st.rerun()
 
                 if eval_datasets:
@@ -1546,28 +1769,28 @@ with st.sidebar:
                         for dataset in eval_datasets
                     }
                     selected_dataset_label = st.selectbox(
-                        "Select dataset",
+                        "选择数据集",
                         options=list(dataset_options.keys()),
                         key="selected_eval_dataset",
                     )
                     selected_dataset = dataset_options[selected_dataset_label]
                     st.caption(
-                        f"cases={len(selected_dataset.get('case_ids') or [])} · "
-                        f"source={selected_dataset.get('source')} · "
-                        f"baseline={selected_dataset.get('baseline_experiment_id') or '-'}"
+                        f"用例数={len(selected_dataset.get('case_ids') or [])} · "
+                        f"来源={selected_dataset.get('source')} · "
+                        f"基线={selected_dataset.get('baseline_experiment_id') or '-'}"
                     )
                     experiment_name = st.text_input(
-                        "Experiment name",
-                        value=f"Experiment for {selected_dataset.get('name')}",
+                        "实验名称",
+                        value=f"针对 {selected_dataset.get('name')} 的实验",
                         key="eval_experiment_name",
                     )
                     experiment_run_mode = st.selectbox(
-                        "Experiment run mode",
+                        "实验运行模式",
                         ["manual", "dry_run", "llm_node"],
                         index=1,
                         key="eval_experiment_run_mode",
                     )
-                    baseline_options = {"[none]": None}
+                    baseline_options = {"[无]": None}
                     baseline_options.update(
                         {
                             f"{exp.get('experiment_id')} · {exp.get('name')}": exp.get(
@@ -1578,11 +1801,11 @@ with st.sidebar:
                         }
                     )
                     selected_baseline_label = st.selectbox(
-                        "Baseline experiment",
+                        "基线实验",
                         options=list(baseline_options.keys()),
                         key="selected_eval_baseline",
                     )
-                    if st.button("🧪 Create experiment", use_container_width=True):
+                    if st.button("🧪 创建实验", use_container_width=True):
                         experiment = create_eval_experiment(
                             st.session_state.session_id,
                             selected_dataset.get("dataset_id"),
@@ -1591,22 +1814,22 @@ with st.sidebar:
                             baseline_options[selected_baseline_label],
                         )
                         if experiment:
-                            st.success(f"Experiment created: {experiment.get('experiment_id')}")
+                            st.success(f"实验已创建：{experiment.get('experiment_id')}")
                             st.rerun()
 
                 if eval_experiments:
-                    st.markdown("**Experiments**")
+                    st.markdown("**实验列表**")
                     for experiment in eval_experiments:
                         metrics = experiment.get("aggregate_metrics") or {}
                         comparison = experiment.get("comparison_summary") or {}
                         st.markdown(
                             f"- `{experiment.get('experiment_id')}` · {experiment.get('name')} · "
-                            f"{experiment.get('status')} · mode={experiment.get('run_mode')} · "
-                            f"pass_rate={metrics.get('pass_rate', 0):.2f}"
+                            f"{status_zh(experiment.get('status'))} · 模式={experiment.get('run_mode')} · "
+                            f"通过率={metrics.get('pass_rate', 0):.2f}"
                         )
                         if experiment.get("status") in {"created", "failed"}:
                             if st.button(
-                                f"▶️ Run {experiment.get('experiment_id')}",
+                                f"▶️ 运行 {experiment.get('experiment_id')}",
                                 key=f"run_experiment_{experiment.get('experiment_id')}",
                                 use_container_width=True,
                             ):
@@ -1617,40 +1840,40 @@ with st.sidebar:
                                 )
                                 if result:
                                     refresh_actions()
-                                    st.success("Experiment run completed or recorded.")
+                                    st.success("实验已运行或已记录。")
                                     st.rerun()
                         if comparison:
                             if comparison.get("regression_detected"):
                                 st.warning(
-                                    f"Comparison detected regression: {comparison.get('regression_reasons')}"
+                                    f"对比检测到回归：{comparison.get('regression_reasons')}"
                                 )
                             else:
-                                st.success("Comparison summary: no regression detected.")
+                                st.success("对比结果：未检测到回归。")
 
             run_mode = st.selectbox(
-                "Legacy EvalCase run mode", ["manual", "dry_run", "llm_node"], key="eval_run_mode"
+                "评测用例运行模式", ["manual", "dry_run", "llm_node"], key="eval_run_mode"
             )
             if eval_cases:
                 col_run_all, col_refresh_runs = st.columns(2)
                 with col_run_all:
-                    if st.button("▶️ Run all EvalCases", use_container_width=True):
+                    if st.button("▶️ 运行全部评测用例", use_container_width=True):
                         result = run_eval_cases(st.session_state.session_id, None, run_mode)
                         if result:
                             refresh_actions()
-                            st.success(f"Created {len(result.get('created_runs', []))} EvalRun(s).")
+                            st.success(f"已创建 {len(result.get('created_runs', []))} 次评测运行。")
                             st.rerun()
                 with col_refresh_runs:
-                    st.caption(f"EvalRuns: {len(eval_runs)}")
+                    st.caption(f"评测运行数：{len(eval_runs)}")
 
                 for case in eval_cases:
                     st.markdown(
-                        f"**`{case.get('eval_id')}`** · node={case.get('target_node_id')} · "
-                        f"{case.get('scenario_type')} · passed={case.get('passed')}"
+                        f"**`{case.get('eval_id')}`** · 节点={case.get('target_node_id')} · "
+                        f"{case.get('scenario_type')} · 通过={case.get('passed')}"
                     )
-                    st.caption("Input: " + (case.get("input_payload") or "")[:300])
-                    st.caption("Expected: " + (case.get("expected_behavior") or "")[:300])
+                    st.caption("测试输入：" + (case.get("input_payload") or "")[:300])
+                    st.caption("预期行为：" + (case.get("expected_behavior") or "")[:300])
                     if st.button(
-                        "▶️ Run this case",
+                        "▶️ 运行该用例",
                         key=f"run_eval_{case.get('eval_id')}",
                         use_container_width=True,
                     ):
@@ -1666,16 +1889,16 @@ with st.sidebar:
                     if case_runs:
                         latest_run = case_runs[-1]
                         st.caption(
-                            "Latest run: "
-                            f"{latest_run.get('run_id')} · status={latest_run.get('status')} · "
-                            f"judge={latest_run.get('judge_result')}"
+                            "最近一次运行："
+                            f"{latest_run.get('run_id')} · 状态={status_zh(latest_run.get('status'))} · "
+                            f"评审结果={latest_run.get('judge_result')}"
                         )
                     score_key = f"eval_score_{case.get('eval_id')}"
                     comment_key = f"eval_comment_{case.get('eval_id')}"
                     pass_key = f"eval_passed_{case.get('eval_id')}"
                     actual_key = f"eval_actual_{case.get('eval_id')}"
                     actual_value = st.text_area(
-                        "Actual output",
+                        "实际输出",
                         value=case.get("actual_output") or "",
                         key=actual_key,
                         height=90,
@@ -1715,7 +1938,7 @@ with st.sidebar:
         with st.expander("🧾 审计历史", expanded=False):
             events = list_audit_events(st.session_state.session_id)
             if events:
-                st.caption(f"{len(events)} audit events recorded (showing last 30)")
+                st.caption(f"共记录 {len(events)} 条审计事件（显示最近 30 条）")
                 for event in events[-30:]:
                     event_type = event.get("event_type", "?")
                     actor = event.get("actor", "system")
@@ -1731,11 +1954,11 @@ with st.sidebar:
                         f"{target_type}/{target_id}"
                     )
                     with st.expander(label, expanded=False):
-                        st.caption(f"Event type: **{event_type}**")
-                        st.caption(f"Actor: {actor}  ·  Timestamp: {created_at}")
-                        st.caption(f"Target: {target_type}/{target_id}")
+                        st.caption(f"事件类型：**{event_type}**")
+                        st.caption(f"操作者：{actor}  ·  时间：{created_at}")
+                        st.caption(f"目标对象：{target_type}/{target_id}")
                         if metadata:
-                            with st.expander("Metadata", expanded=False):
+                            with st.expander("元数据", expanded=False):
                                 st.json(metadata)
             else:
                 st.caption("暂无审计事件。")
@@ -1743,51 +1966,51 @@ with st.sidebar:
         st.divider()
 
         # ── 报告面板 ───────────────────────────────────────────────────────────
-        st.subheader("Report Workbench")
+        st.subheader("报告工作台")
 
-        # --- Export (live snapshot) ---
-        with st.expander("Export Live Snapshot", expanded=False):
+        # --- 导出实时快照 ---
+        with st.expander("导出实时快照", expanded=False):
             col_json, col_md = st.columns(2)
             with col_json:
-                if st.button("Generate JSON", use_container_width=True, key="export_json_btn"):
-                    with st.spinner("Generating..."):
+                if st.button("生成 JSON", use_container_width=True, key="export_json_btn"):
+                    with st.spinner("正在生成..."):
                         report = export_report(st.session_state.session_id, format="json")
                     if report:
                         report_json = json.dumps(report, ensure_ascii=False, indent=2)
                         sid_short = st.session_state.session_id[:8]
                         st.download_button(
-                            label="Download JSON",
+                            label="下载 JSON",
                             data=report_json,
                             file_name=f"workflow_report_{sid_short}.json",
                             mime="application/json",
                             use_container_width=True,
                         )
                     else:
-                        st.error("Failed to generate JSON report.")
+                        st.error("生成 JSON 报告失败，请稍后重试。")
             with col_md:
-                if st.button("Generate Markdown", use_container_width=True, key="export_md_btn"):
-                    with st.spinner("Generating..."):
+                if st.button("生成 Markdown", use_container_width=True, key="export_md_btn"):
+                    with st.spinner("正在生成..."):
                         report = export_report(st.session_state.session_id, format="markdown")
                     if report and report.get("content"):
                         sid_short = st.session_state.session_id[:8]
                         st.download_button(
-                            label="Download Markdown",
+                            label="下载 Markdown",
                             data=report["content"],
                             file_name=f"workflow_report_{sid_short}.md",
                             mime="text/markdown",
                             use_container_width=True,
                         )
                     else:
-                        st.error("Failed to generate Markdown report.")
+                        st.error("生成 Markdown 报告失败，请稍后重试。")
 
-        # --- Versioned artifacts ---
+        # --- 版本化报告快照 ---
         st.divider()
-        if st.button("Create Report Snapshot", use_container_width=True, key="create_artifact_btn"):
+        if st.button("创建报告快照", use_container_width=True, key="create_artifact_btn"):
             artifact = create_report_artifact(st.session_state.session_id)
             if artifact:
-                st.success(f"Snapshot created: {artifact.get('report_id')}")
+                st.success(f"快照已创建：{artifact.get('report_id')}")
             else:
-                st.error("Failed to create report snapshot.")
+                st.error("创建报告快照失败，请稍后重试。")
 
         artifacts = list_report_artifacts(st.session_state.session_id)
         if artifacts:
@@ -1796,23 +2019,23 @@ with st.sidebar:
                 for a in reversed(artifacts[-20:])
             }
             selected_label = st.selectbox(
-                "Select a report artifact to view",
-                options=["[none]"] + list(report_options.keys()),
+                "选择要查看的报告快照",
+                options=["[无]"] + list(report_options.keys()),
                 key="selected_report_label",
             )
-            if selected_label and selected_label != "[none]":
+            if selected_label and selected_label != "[无]":
                 selected_artifact = report_options[selected_label]
                 report_id = selected_artifact.get("report_id", "")
-                # Fetch full artifact from API (includes content_json/content_markdown)
+                # 从接口获取完整快照（含 content_json / content_markdown）
                 full_report = get_report_artifact(st.session_state.session_id, report_id)
                 if full_report:
                     render_report_panel(full_report)
                 else:
-                    st.error(f"Failed to load report {report_id}. The backend may be unavailable.")
+                    st.error(f"加载报告 {report_id} 失败，后端可能暂时不可用。")
             else:
-                st.caption("No report selected. Pick one from the dropdown above to view.")
+                st.caption("尚未选择报告，请在上方下拉框中选择一个查看。")
         else:
-            st.info("No report artifacts yet. Create a snapshot or export a live report above.")
+            st.info("暂无报告快照。可在上方创建快照或导出实时报告。")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1872,7 +2095,7 @@ else:
                             f"<div style='color:#888;font-size:0.85em;'>{reasoning}</div>",
                             unsafe_allow_html=True,
                         )
-                st.markdown(content)
+                render_message_with_oversight(content)
 
         elif role == "user":
             with st.chat_message("user", avatar="👤"):

@@ -474,6 +474,89 @@ def create_actions_from_workflow_policies(
     return created
 
 
+def create_actions_from_policy_gaps(
+    ctx: ProjectContext,
+    stage: int,
+    *,
+    stage_output_version: int | None = None,
+) -> list[PendingHumanAction]:
+    """Stage 2 policy gap: high-risk failure modes must be covered by policy."""
+    if stage != 2 or not ctx.stage_1_output or not ctx.stage_2_output:
+        return []
+
+    high_risk_ids = {
+        fm.id
+        for fm in ctx.stage_1_output.failure_modes
+        if str(fm.severity).lower() in {"high", "critical"}
+    }
+    if not high_risk_ids:
+        return []
+
+    severity_by_fm = {
+        fm.id: fm.severity
+        for fm in ctx.stage_1_output.failure_modes
+        if str(fm.severity).lower() in {"high", "critical"}
+    }
+    covered: set[str] = set()
+    created: list[PendingHumanAction] = []
+
+    for node in ctx.stage_2_output.workflow_nodes:
+        addressed = set(node.failure_modes_addressed or [])
+        high_risk_addressed = addressed.intersection(high_risk_ids)
+        covered.update(high_risk_addressed)
+        if high_risk_addressed and node.oversight_policy is None:
+            action = add_action_if_missing(
+                ctx,
+                stage_id=2,
+                source_type="policy_gap",
+                source_id=node.node_id,
+                node_id=node.node_id,
+                action_type="edit",
+                title=f"补充节点 {node.node_id} 的监督策略",
+                description=f"节点 {node.node_id} 覆盖高风险 failure_mode {', '.join(sorted(high_risk_addressed))}，但缺少 HumanOversightPolicy。",
+                risk_level="high",
+                trigger_reason="高风险节点缺少监督策略",
+                payload_before={
+                    "node": _model_payload(node),
+                    "failure_mode_ids": sorted(high_risk_addressed),
+                    "requires_structured_output": True,
+                    "expected_schema": "Stage2Schema",
+                    "gap_type": "missing_oversight_policy",
+                },
+                blocking=True,
+                stage_output_version=stage_output_version,
+            )
+            if action:
+                created.append(action)
+
+    for failure_mode_id in sorted(high_risk_ids - covered):
+        severity = severity_by_fm.get(failure_mode_id, "high")
+        action = add_action_if_missing(
+            ctx,
+            stage_id=2,
+            source_type="policy_gap",
+            source_id=failure_mode_id,
+            action_type="edit",
+            title=f"补充高风险 failure_mode {failure_mode_id} 的工作流覆盖",
+            description=f"阶段2没有 workflow node 覆盖高风险 failure_mode：{failure_mode_id}。",
+            risk_level=str(severity).lower(),
+            trigger_reason="高风险 failure_mode 未被工作流覆盖",
+            payload_before={
+                "failure_mode_id": failure_mode_id,
+                "severity": str(severity),
+                "requires_structured_output": True,
+                "expected_schema": "Stage2Schema",
+                "gap_type": "uncovered_high_risk_failure_mode",
+            },
+            blocking=True,
+            stage_output_version=stage_output_version,
+        )
+        if action:
+            created.append(action)
+
+    return created
+
+
 def create_actions_from_stage3_result(
     ctx: ProjectContext,
     stage: int,
@@ -495,12 +578,121 @@ def create_actions_from_stage3_result(
         title="处理阶段三压测未通过结果",
         description="阶段三整体压测未通过，需要人工决定修改压测输入、回退工作流设计或带风险继续。",
         risk_level="high",
-        trigger_reason="Stage3Output.overall_passed=False",
+        trigger_reason="阶段三整体压测结果为未通过",
         payload_before=_model_payload(ctx.stage_3_output),
         blocking=True,
         stage_output_version=stage_output_version,
     )
     return [action] if action else []
+
+
+def create_actions_from_trace_backfill_gaps(
+    ctx: ProjectContext,
+    stage: int,
+    *,
+    stage_output_version: int | None = None,
+) -> list[PendingHumanAction]:
+    """Stage 3 trace backfill gaps: failed traces must be backfilled as EvalCases."""
+    if stage != 3:
+        return []
+
+    from core.trace_backfill_service import build_trace_backfill_summary
+
+    summary = build_trace_backfill_summary(ctx)
+    created: list[PendingHumanAction] = []
+
+    for trace_id in summary.get("eligible_trace_ids_without_eval_case", []) or []:
+        action = add_action_if_missing(
+            ctx,
+            stage_id=3,
+            source_type="trace_backfill_gap",
+            source_id=trace_id,
+            action_type="approve",
+            title=f"回填追踪记录为评测用例：{trace_id}",
+            description=f"失败/解析错误/安全类追踪记录 {trace_id} 尚未回填为评测用例。",
+            risk_level="high",
+            trigger_reason="追踪记录未回填为评测用例",
+            payload_before={"gap_type": "trace_without_eval_case", "trace_id": trace_id, **summary},
+            blocking=True,
+            stage_output_version=stage_output_version,
+        )
+        if action:
+            created.append(action)
+
+    for eval_id in summary.get("backfilled_eval_ids_without_trace_dataset", []) or []:
+        action = add_action_if_missing(
+            ctx,
+            stage_id=3,
+            source_type="trace_backfill_gap",
+            source_id=eval_id,
+            action_type="approve",
+            title=f"将评测用例纳入追踪数据集：{eval_id}",
+            description=f"追踪回填的评测用例 {eval_id} 尚未纳入生产追踪评测数据集。",
+            risk_level="high",
+            trigger_reason="评测用例未纳入追踪数据集",
+            payload_before={"gap_type": "trace_eval_case_without_dataset", "eval_id": eval_id, **summary},
+            blocking=True,
+            stage_output_version=stage_output_version,
+        )
+        if action:
+            created.append(action)
+
+    return created
+
+
+def create_actions_from_eval_regression(
+    ctx: ProjectContext,
+    stage: int,
+    *,
+    stage_output_version: int | None = None,
+) -> list[PendingHumanAction]:
+    """Stage 3 eval regression: blocking regression decisions require human action."""
+    if stage != 3:
+        return []
+
+    from core.eval_regression_policy import build_stage_regression_decisions
+    from core.gates.risk_profile import build_stage3_gate_profile
+
+    profile = build_stage3_gate_profile(ctx)
+    dataset_by_id = {ds.dataset_id: ds for ds in getattr(ctx, "eval_datasets", []) or []}
+
+    created: list[PendingHumanAction] = []
+    for decision in build_stage_regression_decisions(ctx, stage=stage):
+        if not decision.blocking:
+            continue
+        if not profile.require_eval_regression:
+            dataset = dataset_by_id.get(decision.dataset_id)
+            dataset_gate_required = bool(
+                dataset and (dataset.metadata or {}).get("gate_required")
+            )
+            if not dataset_gate_required:
+                continue
+
+        action = add_action_if_missing(
+            ctx,
+            stage_id=3,
+            source_type="eval_regression",
+            source_id=decision.source_id or decision.dataset_id or "",
+            action_type="edit",
+            title=f"处理评测回归：{decision.dataset_id}",
+            description=decision.message,
+            risk_level=decision.severity or "high",
+            trigger_reason="评测实验回归，需要人工处理",
+            payload_before={
+                **decision.metadata,
+                "decision_status": decision.status,
+                "dataset_id": decision.dataset_id,
+                "experiment_id": decision.experiment_id,
+                "baseline_experiment_id": decision.baseline_experiment_id,
+                "required_resolution": decision.required_resolution,
+            },
+            blocking=True,
+            stage_output_version=stage_output_version,
+        )
+        if action:
+            created.append(action)
+
+    return created
 
 
 def _risk_for_failure_mode_ids(ctx: ProjectContext, failure_mode_ids: list[str]) -> str:
@@ -553,9 +745,9 @@ def create_actions_from_eval_failures(
             source_id=node_id,
             action_type="edit",
             title=f"补充高风险节点 EvalCase 覆盖：{node_id}",
-            description="Stage 3 must include at least one EvalCase for each high-risk workflow node before advancement.",
+            description="阶段三推进前，每个高风险工作流节点都必须至少有一条评测用例（EvalCase）。",
             risk_level="high",
-            trigger_reason="High-risk workflow node lacks Stage 3 EvalCase coverage.",
+            trigger_reason="高风险工作流节点缺少阶段三评测用例覆盖。",
             node_id=node_id,
             payload_before={
                 "target_node_id": node_id,
@@ -586,10 +778,10 @@ def create_actions_from_eval_failures(
             source_type="eval_case",
             source_id=case.eval_id,
             action_type=action_type,
-            title=f"Resolve failed eval case: {case.eval_id}",
-            description=f"EvalCase failed for node {case.target_node_id or 'unknown'}.",
+            title=f"处理未通过的评测用例：{case.eval_id}",
+            description=f"节点 {case.target_node_id or '未知'} 的评测用例未通过。",
             risk_level=risk_level,
-            trigger_reason="EvalCase.passed=False",
+            trigger_reason="评测用例未通过（passed=False）",
             node_id=case.target_node_id,
             payload_before=_model_payload(case),
             blocking=risk_level in {"high", "critical"},
@@ -669,7 +861,7 @@ def create_actions_from_trigger_methods(
             title=f"确认触发方式需要人工审核：{method.node_id}",
             description=method.execution_suggestion or method.trigger_instruction,
             risk_level="high",
-            trigger_reason="TriggerMethod.human_review_required=True",
+            trigger_reason="该触发方式被标记为需要人工复核",
             payload_before=_model_payload(method),
             blocking=True,
             stage_output_version=stage_output_version,
@@ -709,6 +901,114 @@ def create_actions_from_safety_findings(
         )
         if action:
             created.append(action)
+    return created
+
+
+def create_actions_from_redteam_gaps(
+    ctx: ProjectContext,
+    stage: int,
+    *,
+    stage_output_version: int | None = None,
+) -> list[PendingHumanAction]:
+    """阶段3红队测试覆盖不足时，创建人工动作引导用户处理。"""
+    if stage != 3:
+        return []
+
+    from core.redteam_service import build_redteam_coverage_summary
+
+    summary = build_redteam_coverage_summary(ctx, stage=stage)
+    created: list[PendingHumanAction] = []
+
+    if summary.get("missing_safety_finding_ids"):
+        action = add_action_if_missing(
+            ctx,
+            stage_id=3,
+            source_type="redteam_gap",
+            source_id="missing_safety_coverage",
+            action_type="approve",
+            title="红队测试覆盖不足：高风险安全发现缺少对抗用例",
+            description=f"共有 {len(summary.get('missing_safety_finding_ids', []))} 个高风险安全发现缺少 RedTeamCase 覆盖。需要生成对抗用例来验证系统在这些风险场景下的安全性。",
+            risk_level="high",
+            trigger_reason="红队测试覆盖不足",
+            payload_before={"gap_type": "missing_safety_redteam_case", **summary},
+            blocking=True,
+            stage_output_version=stage_output_version,
+        )
+        if action:
+            created.append(action)
+
+    if summary.get("missing_node_ids"):
+        action = add_action_if_missing(
+            ctx,
+            stage_id=3,
+            source_type="redteam_gap",
+            source_id="missing_node_coverage",
+            action_type="approve",
+            title="红队测试覆盖不足：高风险工作流节点缺少对抗用例",
+            description=f"共有 {len(summary.get('missing_node_ids', []))} 个高风险工作流节点缺少 RedTeamCase 覆盖。",
+            risk_level="high",
+            trigger_reason="红队测试覆盖不足",
+            payload_before={"gap_type": "missing_node_redteam_case", **summary},
+            blocking=True,
+            stage_output_version=stage_output_version,
+        )
+        if action:
+            created.append(action)
+
+    for case_id in summary.get("draft_high_case_ids", []) or []:
+        action = add_action_if_missing(
+            ctx,
+            stage_id=3,
+            source_type="redteam_case",
+            source_id=case_id,
+            action_type="approve",
+            title=f"批准红队用例：{case_id}",
+            description=f"高风险 RedTeamCase {case_id} 仍为 draft，需人工批准后才能进入 Eval。",
+            risk_level="high",
+            trigger_reason="红队用例待批准",
+            payload_before={"gap_type": "draft_redteam_case", "case_id": case_id, **summary},
+            blocking=True,
+            stage_output_version=stage_output_version,
+        )
+        if action:
+            created.append(action)
+
+    for case_id in summary.get("approved_unsynced_case_ids", []) or []:
+        action = add_action_if_missing(
+            ctx,
+            stage_id=3,
+            source_type="redteam_case",
+            source_id=case_id,
+            action_type="approve",
+            title=f"同步红队用例到 Eval：{case_id}",
+            description=f"已批准 RedTeamCase {case_id} 尚未同步为 EvalCase。",
+            risk_level="high",
+            trigger_reason="红队用例待同步",
+            payload_before={"gap_type": "approved_redteam_case_not_synced", "case_id": case_id, **summary},
+            blocking=True,
+            stage_output_version=stage_output_version,
+        )
+        if action:
+            created.append(action)
+
+    if summary.get("synced_eval_ids_without_redteam_dataset"):
+        action = add_action_if_missing(
+            ctx,
+            stage_id=3,
+            source_type="redteam_gap",
+            source_id="missing_redteam_dataset",
+            action_type="approve",
+            title="创建红队评测数据集",
+            description=f"共有 {len(summary.get('synced_eval_ids_without_redteam_dataset', []))} 个红队评测用例尚未进入 redteam_generated EvalDataset。",
+            risk_level="high",
+            trigger_reason="缺少红队评测数据集",
+            payload_before={"gap_type": "redteam_eval_case_not_in_dataset", **summary},
+            blocking=True,
+            stage_output_version=stage_output_version,
+        )
+        if action:
+            created.append(action)
+
     return created
 
 
@@ -765,10 +1065,19 @@ def create_review_actions_for_stage(
         create_actions_from_workflow_policies(ctx, stage, stage_output_version=stage_output_version)
     )
     created.extend(
+        create_actions_from_policy_gaps(ctx, stage, stage_output_version=stage_output_version)
+    )
+    created.extend(
         create_actions_from_stage3_result(ctx, stage, stage_output_version=stage_output_version)
     )
     created.extend(
         create_actions_from_eval_failures(ctx, stage, stage_output_version=stage_output_version)
+    )
+    created.extend(
+        create_actions_from_trace_backfill_gaps(ctx, stage, stage_output_version=stage_output_version)
+    )
+    created.extend(
+        create_actions_from_eval_regression(ctx, stage, stage_output_version=stage_output_version)
     )
     created.extend(
         create_actions_from_trigger_methods(ctx, stage, stage_output_version=stage_output_version)
@@ -778,6 +1087,9 @@ def create_review_actions_for_stage(
     )
     created.extend(
         create_actions_from_parser_errors(ctx, stage, stage_output_version=stage_output_version)
+    )
+    created.extend(
+        create_actions_from_redteam_gaps(ctx, stage, stage_output_version=stage_output_version)
     )
     return created
 
@@ -799,6 +1111,8 @@ def resolve_action(
     with the same idempotency key replay the already-resolved action without creating
     duplicate audit events.
     """
+    from core.audit_service import append_audit_event
+
     for action in ctx.pending_actions:
         if action.action_id != action_id:
             continue
@@ -893,6 +1207,171 @@ def resolve_action(
                         )
                         finding.resolved_at = action.resolved_at
                         break
+
+            if action.action_type == "verify_evidence":
+                from core.audit_service import append_audit_event
+
+                dismiss_decisions = {"dismiss", "dismissed", "reject"}
+                if decision in dismiss_decisions:
+                    continue
+
+                payload = action.payload_before or {}
+                sources = list(payload.get("weak_sources", []) or []) + list(
+                    payload.get("unverified_sources", []) or []
+                )
+                evidence_ids = {
+                    source.get("evidence_id")
+                    for source in sources
+                    if isinstance(source, dict) and source.get("evidence_id")
+                }
+                for evidence_id in evidence_ids:
+                    for ev in ctx.evidence_sources:
+                        if ev.evidence_id == evidence_id:
+                            ev_before = ev.model_dump(mode="json")
+                            ev.verified = True
+                            ev.verified_by = "user"
+                            ev.verified_at = action.resolved_at
+                            ev.verification_note = note or action.reviewer_note
+                            append_audit_event(
+                                ctx,
+                                actor="user",
+                                event_type="evidence_verified",
+                                target_type="evidence_source",
+                                target_id=evidence_id,
+                                before=ev_before,
+                                after=ev,
+                                metadata={"note": note, "action_id": action.action_id},
+                            )
+                            break
+
+            if action.source_type in {"redteam_gap", "redteam_case"} and decision == "approve":
+                from core.redteam_service import (
+                    approve_redteam_case,
+                    create_redteam_case,
+                    create_redteam_dataset,
+                    generate_redteam_cases,
+                    redteam_case_to_eval_case,
+                )
+                from core.audit_service import append_audit_event
+
+                payload = action.payload_before or {}
+                gap_type = payload.get("gap_type")
+
+                if gap_type in {"missing_safety_redteam_case", "missing_node_redteam_case"}:
+                    generated = generate_redteam_cases(ctx, stage=3)
+                    append_audit_event(
+                        ctx,
+                        actor="user",
+                        event_type="redteam_cases_generated",
+                        target_type="stage",
+                        target_id="3",
+                        after={"generated_count": len(generated), "action_id": action.action_id},
+                        metadata={"note": note, "gap_type": gap_type},
+                    )
+                elif gap_type == "draft_redteam_case":
+                    case_id = payload.get("case_id") or action.source_id
+                    if case_id:
+                        approved = approve_redteam_case(ctx, case_id, note=note)
+                        append_audit_event(
+                            ctx,
+                            actor="user",
+                            event_type="redteam_case_approved",
+                            target_type="redteam_case",
+                            target_id=case_id,
+                            after={"status": approved.status, "action_id": action.action_id},
+                            metadata={"note": note},
+                        )
+                elif gap_type == "approved_redteam_case_not_synced":
+                    case_id = payload.get("case_id") or action.source_id
+                    if case_id:
+                        synced = redteam_case_to_eval_case(ctx, case_id)
+                        append_audit_event(
+                            ctx,
+                            actor="user",
+                            event_type="redteam_case_synced_to_eval",
+                            target_type="redteam_case",
+                            target_id=case_id,
+                            after={"eval_id": synced.eval_id, "action_id": action.action_id},
+                            metadata={"note": note},
+                        )
+                elif gap_type == "redteam_eval_case_not_in_dataset":
+                    dataset = create_redteam_dataset(ctx, note=note)
+                    append_audit_event(
+                        ctx,
+                        actor="user",
+                        event_type="redteam_dataset_created",
+                        target_type="eval_dataset",
+                        target_id=dataset.dataset_id,
+                        after={"case_count": len(dataset.case_ids), "action_id": action.action_id},
+                        metadata={"note": note},
+                    )
+
+            # redteam_case 动作被驳回/忽略时，必须把底层 RedTeamCase 一并标记为 rejected，
+            # 否则 redteam_coverage 阻断器（build_redteam_coverage_summary）会对已消失的动作
+            # 继续实时重算出 draft/approved 覆盖缺口，出现动作队列与阶段阻断器不同步的悬挂态。
+            # 注：redteam_gap 类动作（如 missing_safety_coverage）本身不指向具体 case，没有可写回的
+            # 底层对象，reject/dismiss 时维持原状即可，此处不处理。
+            # 注：目前 redteam_case 动作的 action_type 恒为 "approve"，而
+            # graph/transition_policy.py 只允许 approve/reject 两种 decision（dismiss 会被
+            # 策略层拒绝，走不到这里）；同时保留 dismiss/dismissed 分支是为了在未来该动作类型
+            # 允许 dismiss 决策时不必再补这处回写。
+            if action.source_type == "redteam_case" and decision in {"reject", "dismiss", "dismissed"}:
+                from core.redteam_service import get_redteam_case, reject_redteam_case
+                from core.audit_service import append_audit_event
+
+                payload = action.payload_before or {}
+                case_id = payload.get("case_id") or action.source_id
+                if case_id:
+                    try:
+                        existing_case = get_redteam_case(ctx, case_id)
+                    except ValueError:
+                        existing_case = None
+                    if existing_case is not None and existing_case.status != "rejected":
+                        rejected = reject_redteam_case(ctx, case_id, note=note)
+                        append_audit_event(
+                            ctx,
+                            actor="user",
+                            event_type="redteam_case_rejected",
+                            target_type="redteam_case",
+                            target_id=case_id,
+                            after={"status": rejected.status, "action_id": action.action_id},
+                            metadata={"note": note},
+                        )
+
+            if action.source_type == "trace_backfill_gap" and decision == "approve":
+                from core.trace_backfill_service import (
+                    convert_trace_to_eval_case,
+                    create_dataset_from_failed_traces,
+                )
+                from core.audit_service import append_audit_event
+
+                payload = action.payload_before or {}
+                gap_type = payload.get("gap_type")
+
+                if gap_type == "trace_without_eval_case":
+                    trace_id = payload.get("trace_id") or action.source_id
+                    if trace_id:
+                        eval_case = convert_trace_to_eval_case(ctx, trace_id=trace_id)
+                        append_audit_event(
+                            ctx,
+                            actor="user",
+                            event_type="trace_backfill_converted",
+                            target_type="eval_case",
+                            target_id=eval_case.eval_id,
+                            after={"trace_id": trace_id, "eval_id": eval_case.eval_id, "action_id": action.action_id},
+                            metadata={"note": note},
+                        )
+                elif gap_type == "trace_eval_case_without_dataset":
+                    dataset = create_dataset_from_failed_traces(ctx, note=note)
+                    append_audit_event(
+                        ctx,
+                        actor="user",
+                        event_type="trace_backfill_dataset_created",
+                        target_type="eval_dataset",
+                        target_id=dataset.dataset_id,
+                        after={"case_count": len(dataset.case_ids), "action_id": action.action_id},
+                        metadata={"note": note},
+                    )
 
             if apply_result is not None:
                 from tools.safety_classifier import add_findings_dedup, scan_policy_gaps
@@ -1320,18 +1799,44 @@ def cancel_pending_actions_for_stage(
     return supersede_actions_for_stage(ctx, stage=stage, reason=reason)
 
 
+_RISK_LABEL = {"critical": "危急", "high": "高", "medium": "中", "low": "低"}
+
+_ACTION_SOURCE_LABEL = {
+    "flag": "有内容需要人工核验",
+    "failure_mode": "有高风险失败模式需要确认",
+    "evidence_gap": "证据引用不足，需要补充",
+    "evidence_low_credibility": "有证据可信度偏低，需要核验",
+    "evidence_unverified_for_high_risk": "高风险结论的证据尚未核验",
+    "oversight_policy": "有工作流节点的监督策略需要处理",
+    "stress_test": "压力测试结果需要人工决定",
+    "eval_coverage": "高风险节点缺少测试用例覆盖",
+    "eval_case": "有测试用例未通过，需要处理",
+    "eval_run": "有测试运行结果需要人工复核",
+    "trigger_method": "有触发方式需要人工审核确认",
+    "safety_finding": "有安全风险需要处理",
+    "parser": "AI 输出解析失败，需要人工修复",
+}
+
+
 def format_pending_actions_for_review(ctx: ProjectContext, stage: int) -> tuple[int, str]:
-    """生成审核提示中展示的人工动作摘要。"""
+    """生成审核提示中展示的人工动作摘要（自然语言，不含内部 ID）。"""
     actions = ctx.get_pending_actions(stage)
     if not actions:
         return 0, "无。"
 
-    lines = []
+    grouped: dict[str, dict] = {}
     for action in actions:
-        blocking = "阻断" if action.blocking else "非阻断"
-        lines.append(
-            f"- `{action.action_id}` v{action.stage_output_version} "
-            f"[{action.risk_level}/{action.action_type}/{blocking}] "
-            f"{action.title}：{action.trigger_reason or action.description}"
-        )
+        key = action.source_type or "human_action"
+        entry = grouped.setdefault(key, {"count": 0, "risks": set(), "blocking": False})
+        entry["count"] += 1
+        entry["risks"].add(action.risk_level)
+        entry["blocking"] = entry["blocking"] or action.blocking
+
+    lines = []
+    for source_type, info in grouped.items():
+        label = _ACTION_SOURCE_LABEL.get(source_type, "有事项需要人工处理")
+        risk_label = "、".join(_RISK_LABEL.get(r, r) for r in sorted(info["risks"], key=str))
+        count_note = f"（{info['count']} 项）" if info["count"] > 1 else ""
+        blocking_note = "" if info["blocking"] else "（不阻断推进）"
+        lines.append(f"- {label}{count_note}{blocking_note}，风险等级：{risk_label}")
     return len(actions), "\n".join(lines)

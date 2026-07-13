@@ -7,7 +7,7 @@
 | Path | Purpose |
 |---|---|
 | `api/` | FastAPI application — entry point `api/main.py` |
-| `api/routers/` | API route handlers (chat, session, stage, oversight, evidence, safety, eval, redteam, reports, traces, interrupts) |
+| `api/routers/` | API route handlers (chat, session, stage, oversight, evidence, safety, eval, eval_datasets, eval_experiments, redteam, reports, traces, interrupts) |
 | `auth/` | JWT authentication, password hashing, RBAC permissions |
 | `core/` | Business logic services, models, config, execution modes |
 | `core/gates/` | Stage advancement gate engine and pluggable rule system |
@@ -49,6 +49,7 @@
 | `scripts/version_check.py` | Validates pyproject.toml ↔ core/version.py alignment |
 | `scripts/gen_certs.sh` / `gen_certs.ps1` | TLS cert generation for local HTTPS |
 | `scripts/gen_secrets.sh` | .env secret generation |
+| `scripts/live_e2e_four_stage.py` | Four-stage full-process E2E test — automates stage advancement, action resolution, evidence verification, and redteam case handling |
 
 ## Excluded / Archived Paths
 

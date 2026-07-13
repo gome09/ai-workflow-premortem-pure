@@ -118,7 +118,7 @@ class Stage1EvidenceGapRule:
                         severity=fm.severity,
                         message=(
                             f"阶段1高风险失败模式 {fm.id} 引用的证据 {evidence_id} "
-                            "尚未 verified。dismiss action 只会关闭动作，不会解除该证据门控。"
+                            "尚未核验。仅关闭（dismiss）人工动作不会解除该证据门控。"
                         ),
                         source_type="evidence",
                         source_id=evidence_id,

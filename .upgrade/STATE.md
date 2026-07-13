@@ -2,31 +2,32 @@
 
 ## Current Phase
 
-Phase 0 — Not started
+Phase 0 — Not started (detailed plans for all phases now authored; ready to execute)
 
 ## Current Task
 
-Awaiting definition of Phase 0 upgrade requirements (see `docs/plan/improvement-roadmap.md` for candidate scope: 仓库治理 → 安全合规硬缺口 → AI 风险分类补强 → 治理平台化 → 社区打磨).
+None in flight. Next executable work is Phase 0 tasks per `docs/plan/phase-0-repo-governance.md` (T0.1 LICENSE decision is user-blocked; T0.2–T0.8 are unblocked).
 
 ## Last Completed
 
-- Mode 1: Initialized `.upgrade/` workspace, created `AGENTS.md` (no prior AI authority files found).
-- Mode 4: Scanned project root, moved 2 confirmed candidates into `.upgrade/`:
-  - `RELEASE_CLEANUP.md` → `.upgrade/decisions/RELEASE_CLEANUP.md`
-  - `release_manifest_v1.0.md` → `.upgrade/reports/release_manifest_v1.0.md`
-  - `show.md` reviewed and kept in project root per user decision (not an upgrade-process file).
-- Created `CLAUDE.md` at project root with project conventions + Upgrade Workspace Rules controlled block.
-- Restructured `docs/` into `docs/plan/`（improvement-roadmap.md）and `docs/spec/`（architecture.md, security-model.md, stage3-risk-adaptive-gate.md, api-reference.md）via `git mv`; updated all cross-references in `docs/README.md`, `CLAUDE.md`, `.upgrade/MANIFEST.md`, `.upgrade/STATE.md`.
+- **Design-plan authoring pass (2026-07-13, this session)**: expanded `docs/plan/improvement-roadmap.md` into a full plan/spec document set based on verified project state (5 parallel exploration agents over repo governance, taxonomy, storage/privacy, gates/auth/observability, docs) plus fresh external-standard verification via web search:
+  - New plan files: `docs/plan/phase-0-repo-governance.md`, `phase-1-security-compliance.md`, `phase-2-risk-taxonomy.md`, `phase-3-governance-platform.md`, `phase-4-community.md`.
+  - New spec files (all `Status: Designed, not implemented`): `docs/spec/supply-chain-security.md`, `data-classification-and-privacy.md`, `risk-taxonomy-engine.md`, `governance-platform.md`.
+  - `improvement-roadmap.md`: added §10 复核增补 (EU AI Act Omnibus new dates; OWASP Agentic ASI 2026; NIST agent initiatives; TC260 智能体部署使用安全指引 published — roadmap §8 question 2 resolved; factual correction: `university_mental_health` does NOT auto-escalate to HIGH, lands MEDIUM per `core/gates/risk_profile.py` keyword tables) + per-phase plan links.
+  - Updated `docs/README.md` index and `CLAUDE.md` 文档维护 section (outside controlled block, per explicit user request).
+- Earlier same day: Mode 1 init + Mode 4 scan/move + CLAUDE.md creation + docs/ split into plan/spec (see git history).
 
 ## Required Context Files
 
 - `.upgrade/MANIFEST.md`
-- `docs/plan/improvement-roadmap.md` — 分阶段改进路线图（中国监管合规 / 国际标准 / 开源工程健康度三条坐标轴，阶段0-4 任务清单）
-- `.upgrade/stages/` — phase planning documents (when created)
+- `docs/plan/improvement-roadmap.md` — roadmap; §10 supersedes conflicting body text
+- `docs/plan/phase-0-repo-governance.md` … `phase-4-community.md` — per-phase executable plans with acceptance checklists
+- `docs/spec/{supply-chain-security,data-classification-and-privacy,risk-taxonomy-engine,governance-platform}.md` — design-state specs backing the plans
 
 ## Blockers
 
-None.
+- Phase 0 T0.1 (LICENSE) blocked on user decision: MIT / Apache 2.0 / AGPL-3.0 (roadmap §8 question 1).
+- Phase 3 T3.6 (LLM Judge) gated on user confirming real demand for automated evaluation (roadmap §8 preserved condition).
 
 ## Active Stage Report
 
@@ -36,13 +37,14 @@ None.
 
 - `git status --short`
 - `git diff`
+- `make lint` / `make test` (unchanged by this docs-only pass)
 
 ## Next Action
 
-Define Phase 0 requirements doc (`.upgrade/stages/phase0-requirements.md`) scoping which items from `docs/plan/improvement-roadmap.md` 阶段0（仓库治理）to tackle first.
+Execute Phase 0 unblocked tasks (T0.2 SECURITY.md, T0.3 CONTRIBUTING.md, T0.4 CI permissions, T0.5 dependabot.yml, T0.6 CHANGELOG traceability note, T0.8 git tag), then T0.7 Scorecard baseline; ask user for LICENSE decision when convenient.
 
 ## Last Updated
 
 - Date: 2026-07-13
 - By: claude-code
-- Summary: Mode 1 init + Mode 4 scan/move (RELEASE_CLEANUP.md, release_manifest_v1.0.md) + CLAUDE.md created + docs/ split into plan/spec.
+- Summary: Authored full plan/spec design set (5 phase plans + 4 specs), roadmap §10 external-standards re-verification addendum, index/CLAUDE.md updates.

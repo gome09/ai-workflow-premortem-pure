@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   scorecard-baseline:
@@ -16,12 +15,17 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Install Scorecard CLI
+        run: |
+          curl -sSfL https://github.com/ossf/scorecard/releases/download/v5.5.0/scorecard_5.5.0_linux_amd64.tar.gz | tar -xzf - -C /usr/local/bin scorecard
+
       - name: Run Scorecard
-        uses: ossf/scorecard-action@v2
-        with:
-          results_file: scorecard-results.json
-          results_format: json
-          publish_results: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          scorecard --repo=gome09/ai-workflow-premortem-pure \
+            --format=json --show-details \
+            > scorecard-results.json
 
       - name: Upload Scorecard results
         uses: actions/upload-artifact@v4

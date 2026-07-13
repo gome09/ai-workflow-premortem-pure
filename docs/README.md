@@ -10,3 +10,4 @@
 | [demo-scenarios.md](demo-scenarios.md) | 内置场景机制说明 |
 | [security-model.md](security-model.md) | 安全模型 |
 | [stage3-risk-adaptive-gate.md](stage3-risk-adaptive-gate.md) | 风险自适应门禁详解 |
+| [acceptance_report.md](acceptance_report.md) | 四阶段全流程 E2E 测试验收报告 |

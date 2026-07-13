@@ -14,10 +14,7 @@ from core.context_manager import (
     parse_review_action,
 )
 from core.models import Message, MessageRole, ProjectContext, SessionState
-from core.oversight_service import (
-    bump_stage_output_version,
-    format_pending_actions_for_review,
-)
+from core.oversight_service import bump_stage_output_version
 from core.scenario_context import current_domain_profile
 from core.stage_advancement_coordinator import advance_stage_if_ready
 from core.stage_revision_service import (
@@ -143,10 +140,33 @@ def _append_user_message(ctx: ProjectContext, stage: int, content: str) -> None:
     ctx.append_message(stage, Message(role=MessageRole.USER, content=content))
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 实时人工监督占位标记
+#
+# 对话区历史消息是「冻结快照」，而左侧面板是「实时重算」。若把待处理动作 / 阻断器
+# 的数量与明细写死进历史消息，用户处理后左侧归零、右侧仍显示旧数字，就会出现
+# 不同步。为此，审核引导语与被阻断提示只写入一个稳定的单行标记，前端渲染时识别
+# 该标记并基于实时数据展开人工监督摘要。
+# 标记对 LLM 无害：它是一句自然语言，后续轮次被回放进上下文也不会误导模型。
+# ─────────────────────────────────────────────────────────────────────────────
+
+_LIVE_OVERSIGHT_PREFIX = "[[LIVE_OVERSIGHT"
+
+
+def live_oversight_marker(stage: int) -> str:
+    """返回内嵌在助手消息中的实时人工监督占位标记（含 stage 上下文）。"""
+    return f"{_LIVE_OVERSIGHT_PREFIX} stage={stage}]]"
+
+
 def _build_review_prompt(ctx: ProjectContext, stage: int) -> str:
-    """构建审核节点的引导文本"""
+    """构建审核节点的引导文本。
+
+    人工监督事项（待处理动作 / 阶段阻断器）的数量与明细**不再写死**进这条
+    消息，而是以 ``LIVE_OVERSIGHT`` 标记占位，由前端在渲染时基于实时的
+    pending_actions / stage_readiness 展开。这样对话区永远不会与左侧面板
+    出现「右边说 N 项、左边说 0 项」的历史快照漂移。
+    """
     pending_count, pending_text = format_pending_flags(ctx)
-    action_count, action_text = format_pending_actions_for_review(ctx, stage)
     template = get_stage_prompts(current_domain_profile(ctx))["review"][stage]
 
     kwargs = dict(
@@ -160,13 +180,7 @@ def _build_review_prompt(ctx: ProjectContext, stage: int) -> str:
         kwargs["test_conclusion"] = passed
 
     base_prompt = template.format(**kwargs)
-    return (
-        f"{base_prompt}\n"
-        f"🚦 待处理人工监督动作：{action_count} 条\n"
-        f"{action_text}\n\n"
-        "说明：存在阻断型人工动作时，输入「确认」不会进入下一阶段；"
-        "请先在前端待处理动作面板或 actions API 中处理 action_id。"
-    )
+    return f"{base_prompt}\n{live_oversight_marker(stage)}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -290,25 +304,6 @@ def node_stage_running(
     return state
 
 
-def _format_gate_blockers(result) -> str:
-    if not result.blockers:
-        return "阶段暂不能继续推进，但没有返回具体阻断项。"
-    lines = [f"当前阶段不能推进，共 {len(result.blockers)} 个阻断项："]
-    for idx, blocker in enumerate(result.blockers, start=1):
-        action = f"，action_id={blocker.action_id}" if blocker.action_id else ""
-        source = (
-            f"，source={blocker.source_type}:{blocker.source_id}"
-            if blocker.source_type or blocker.source_id
-            else ""
-        )
-        lines.append(
-            f"{idx}. [{blocker.severity}/{blocker.blocker_type}] "
-            f"{blocker.message}{action}{source}；required_resolution={blocker.required_resolution}"
-        )
-    lines.append("请先按 required_resolution 处理；如果是 stale_dependency，请重跑该阶段。")
-    return "\n".join(lines)
-
-
 def node_stage_review(
     state: ProjectContext,
     user_input: str,
@@ -330,22 +325,13 @@ def node_stage_review(
             source="graph_review",
         )
         if not decision.advanced:
-            blocker_text = _format_gate_blockers(decision.gate_result)
-            operation_lines = [
-                f"- {op.required_resolution}: {op.frontend_hint or op.api_hint}"
-                for op in decision.required_operations[:6]
-            ]
-            operations_text = (
-                "\n".join(operation_lines) if operation_lines else "暂无可绑定解除操作。"
-            )
             _append_assistant_message(
                 state,
                 stage,
-                "🚦 当前阶段暂不能继续推进。\n"
-                f"{blocker_text}\n"
-                f"\n建议解除操作：\n{operations_text}\n"
-                "请先在左侧「待处理人工动作」面板处理 action_id，"
-                "或输入「修改」/「回退」调整当前阶段。",
+                "🚦 当前阶段暂时不能继续推进。\n"
+                f"{live_oversight_marker(stage)}\n\n"
+                "请先在左侧「待处理人工动作」面板中逐项处理，"
+                "或者输入「修改」/「回退」调整当前阶段。",
             )
             logger.info(
                 "[%s] Stage %s approve blocked by StageAdvancementDecision: %s",

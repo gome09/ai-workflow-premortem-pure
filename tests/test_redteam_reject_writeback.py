@@ -92,7 +92,10 @@ def test_reject_approved_unsynced_redteam_case_action_writes_back_case_status():
     action = None
     for candidate in ctx.pending_actions:
         payload = candidate.payload_before or {}
-        if candidate.source_type == "redteam_case" and payload.get("gap_type") == "approved_redteam_case_not_synced":
+        if (
+            candidate.source_type == "redteam_case"
+            and payload.get("gap_type") == "approved_redteam_case_not_synced"
+        ):
             action = candidate
             break
     assert action is not None, "expected an approved_redteam_case_not_synced action to be created"

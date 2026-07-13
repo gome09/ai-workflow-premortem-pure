@@ -9,8 +9,7 @@ def render_redteam_panel(*, cases: list[dict], coverage: dict) -> None:
 
     st.subheader("红队覆盖")
     st.caption(
-        "阶段三推进前，红队用例草稿必须先批准、同步为评测用例，"
-        "并归入一个红队生成的评测数据集。"
+        "阶段三推进前，红队用例草稿必须先批准、同步为评测用例，并归入一个红队生成的评测数据集。"
     )
     cols = st.columns(4)
     cols[0].metric("红队用例", coverage.get("total_cases", len(cases)))

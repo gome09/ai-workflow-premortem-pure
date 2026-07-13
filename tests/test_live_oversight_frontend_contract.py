@@ -8,6 +8,7 @@
 
 只要这两点成立，前端渲染器就能把标记原位展开为与左侧面板一致的实时摘要。
 """
+
 from __future__ import annotations
 
 import os

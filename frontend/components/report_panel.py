@@ -19,9 +19,7 @@ def render_report_panel(report: dict) -> None:
     version = report.get("version", "")
     generated_at = report.get("generated_at", "")
     if report_id:
-        st.caption(
-            f"报告 ID：`{report_id}`  ·  版本：`{version}`  ·  生成时间：{generated_at}"
-        )
+        st.caption(f"报告 ID：`{report_id}`  ·  版本：`{version}`  ·  生成时间：{generated_at}")
 
     content_json = report.get("content_json") or {}
     content_md = report.get("content_markdown") or ""

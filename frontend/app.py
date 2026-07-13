@@ -7,11 +7,10 @@ import re
 
 import requests
 import streamlit as st
-from dotenv import load_dotenv
-
 from components.redteam_panel import render_redteam_panel
 from components.report_panel import render_report_panel
 from components.stage_message import render_assistant_message
+from dotenv import load_dotenv
 from labels import (
     action_source_zh,
     blocker_type_zh,
@@ -1066,9 +1065,7 @@ with st.sidebar:
                             f"{blocker_type_zh(blocker.get('blocker_type'))}] "
                             f"{blocker.get('message')}"
                         )
-                        st.caption(
-                            f"建议操作：{resolution_zh(blocker.get('required_resolution'))}"
-                        )
+                        st.caption(f"建议操作：{resolution_zh(blocker.get('required_resolution'))}")
 
                     stage_ops = advancement_decision.get("required_operations") or (
                         stage_resolution.get("by_stage") or {}
@@ -1178,9 +1175,7 @@ with st.sidebar:
                                 f"source={blocker.get('source_type') or '-'}:"
                                 f"{blocker.get('source_id') or '-'}"
                             )
-                            bits.append(
-                                f"required_resolution={blocker.get('required_resolution')}"
-                            )
+                            bits.append(f"required_resolution={blocker.get('required_resolution')}")
                             st.caption(" · ".join(bits))
                 else:
                     st.success("当前阶段没有阻断项。")
@@ -1503,15 +1498,12 @@ with st.sidebar:
                                 st.markdown(f"- {claim}")
                     if ev.get("used_by_failure_mode_ids"):
                         st.caption(
-                            "关联失败模式："
-                            + "、".join(ev.get("used_by_failure_mode_ids", []))
+                            "关联失败模式：" + "、".join(ev.get("used_by_failure_mode_ids", []))
                         )
                     if verified and ev.get("verification_note"):
                         st.caption(f"核验备注：{ev['verification_note']}")
                     if not verified and score < 0.4:
-                        st.warning(
-                            "可信度较低——未核验的弱来源可能削弱后续分析的可靠性。"
-                        )
+                        st.warning("可信度较低——未核验的弱来源可能削弱后续分析的可靠性。")
                     note_key = f"evidence_note_{ev.get('evidence_id')}"
                     ev_note = st.text_input("核验备注", key=note_key)
                     if not verified:
@@ -1555,9 +1547,7 @@ with st.sidebar:
                     st.caption(finding.get("description", ""))
                     st.caption("建议处理：" + finding.get("recommended_action", ""))
                     if is_high_crit:
-                        st.warning(
-                            "高危 / 危急安全发现尚未处理——可能阻断阶段推进或需要人工复核。"
-                        )
+                        st.warning("高危 / 危急安全发现尚未处理——可能阻断阶段推进或需要人工复核。")
                     finding_note = st.text_input(
                         "处理备注", key=f"safety_note_{finding.get('finding_id')}"
                     )

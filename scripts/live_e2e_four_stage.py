@@ -295,7 +295,9 @@ def generate_redteam_cases(sid: str, headers: dict) -> list[dict]:
         headers=headers,
     )
     if r is None or r.status_code != 200:
-        log(f"  redteam/generate FAIL: {r.status_code if r else 'None'} {r.text[:300] if r else ''}")
+        log(
+            f"  redteam/generate FAIL: {r.status_code if r else 'None'} {r.text[:300] if r else ''}"
+        )
         return []
     body = r.json()
     # Endpoint may return an envelope or a list directly
@@ -343,8 +345,7 @@ def handle_redteam_blockers(sid: str, headers: dict, stage_id: int) -> bool:
         return False
     required_ops = decision.get("required_operations") or []
     redteam_ops = [
-        op for op in required_ops
-        if op.get("required_resolution") == "generate_redteam_cases"
+        op for op in required_ops if op.get("required_resolution") == "generate_redteam_cases"
     ]
     if not redteam_ops:
         return False
@@ -542,7 +543,8 @@ def process_stage(sid: str, headers: dict, stage_id: int) -> bool:
 
                     # Categorize required operations
                     redteam_ops = [
-                        op for op in required_ops
+                        op
+                        for op in required_ops
                         if op.get("required_resolution") == "generate_redteam_cases"
                     ]
                     if redteam_ops:
@@ -570,7 +572,7 @@ def process_stage(sid: str, headers: dict, stage_id: int) -> bool:
                     time.sleep(2)
                     continue
             else:
-                log(f"  Advance returned None; sending confirm via chat")
+                log("  Advance returned None; sending confirm via chat")
                 send_chat(sid, headers, CONFIRM_INPUT)
 
             time.sleep(2)
@@ -617,7 +619,9 @@ def main() -> int:
         log(f"FAIL: /health did not return 200 (got {r.status_code if r else 'None'})")
         return 1
     health = r.json()
-    log(f"Health OK: mode={health.get('workflow_execution_mode')} scenario={health.get('default_scenario_id')}")
+    log(
+        f"Health OK: mode={health.get('workflow_execution_mode')} scenario={health.get('default_scenario_id')}"
+    )
 
     # Step 1: Auth
     headers = auth_headers()
@@ -671,7 +675,9 @@ def main() -> int:
     export_md_ok = False
     report_ok = False
 
-    r = api("GET", f"/sessions/{sid}/export", timeout=60, params={"format": "json"}, headers=headers)
+    r = api(
+        "GET", f"/sessions/{sid}/export", timeout=60, params={"format": "json"}, headers=headers
+    )
     if r and r.status_code == 200:
         save_json("session_export.json", r.json())
         export_json_ok = True

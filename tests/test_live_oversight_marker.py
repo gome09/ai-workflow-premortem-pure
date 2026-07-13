@@ -10,6 +10,7 @@ pending_actions / stage_readiness 展开。本测试锁定：
   2) 只保留稳定的、带 stage 上下文的标记；
   3) 处理（dismiss）动作后，历史消息文本保持不变（不产生快照漂移）。
 """
+
 from __future__ import annotations
 
 import re

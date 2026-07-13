@@ -630,7 +630,11 @@ def create_actions_from_trace_backfill_gaps(
             description=f"追踪回填的评测用例 {eval_id} 尚未纳入生产追踪评测数据集。",
             risk_level="high",
             trigger_reason="评测用例未纳入追踪数据集",
-            payload_before={"gap_type": "trace_eval_case_without_dataset", "eval_id": eval_id, **summary},
+            payload_before={
+                "gap_type": "trace_eval_case_without_dataset",
+                "eval_id": eval_id,
+                **summary,
+            },
             blocking=True,
             stage_output_version=stage_output_version,
         )
@@ -662,9 +666,7 @@ def create_actions_from_eval_regression(
             continue
         if not profile.require_eval_regression:
             dataset = dataset_by_id.get(decision.dataset_id)
-            dataset_gate_required = bool(
-                dataset and (dataset.metadata or {}).get("gate_required")
-            )
+            dataset_gate_required = bool(dataset and (dataset.metadata or {}).get("gate_required"))
             if not dataset_gate_required:
                 continue
 
@@ -984,7 +986,11 @@ def create_actions_from_redteam_gaps(
             description=f"已批准 RedTeamCase {case_id} 尚未同步为 EvalCase。",
             risk_level="high",
             trigger_reason="红队用例待同步",
-            payload_before={"gap_type": "approved_redteam_case_not_synced", "case_id": case_id, **summary},
+            payload_before={
+                "gap_type": "approved_redteam_case_not_synced",
+                "case_id": case_id,
+                **summary,
+            },
             blocking=True,
             stage_output_version=stage_output_version,
         )
@@ -1074,7 +1080,9 @@ def create_review_actions_for_stage(
         create_actions_from_eval_failures(ctx, stage, stage_output_version=stage_output_version)
     )
     created.extend(
-        create_actions_from_trace_backfill_gaps(ctx, stage, stage_output_version=stage_output_version)
+        create_actions_from_trace_backfill_gaps(
+            ctx, stage, stage_output_version=stage_output_version
+        )
     )
     created.extend(
         create_actions_from_eval_regression(ctx, stage, stage_output_version=stage_output_version)
@@ -1245,14 +1253,13 @@ def resolve_action(
                             break
 
             if action.source_type in {"redteam_gap", "redteam_case"} and decision == "approve":
+                from core.audit_service import append_audit_event
                 from core.redteam_service import (
                     approve_redteam_case,
-                    create_redteam_case,
                     create_redteam_dataset,
                     generate_redteam_cases,
                     redteam_case_to_eval_case,
                 )
-                from core.audit_service import append_audit_event
 
                 payload = action.payload_before or {}
                 gap_type = payload.get("gap_type")
@@ -1315,9 +1322,13 @@ def resolve_action(
             # graph/transition_policy.py 只允许 approve/reject 两种 decision（dismiss 会被
             # 策略层拒绝，走不到这里）；同时保留 dismiss/dismissed 分支是为了在未来该动作类型
             # 允许 dismiss 决策时不必再补这处回写。
-            if action.source_type == "redteam_case" and decision in {"reject", "dismiss", "dismissed"}:
-                from core.redteam_service import get_redteam_case, reject_redteam_case
+            if action.source_type == "redteam_case" and decision in {
+                "reject",
+                "dismiss",
+                "dismissed",
+            }:
                 from core.audit_service import append_audit_event
+                from core.redteam_service import get_redteam_case, reject_redteam_case
 
                 payload = action.payload_before or {}
                 case_id = payload.get("case_id") or action.source_id
@@ -1339,11 +1350,11 @@ def resolve_action(
                         )
 
             if action.source_type == "trace_backfill_gap" and decision == "approve":
+                from core.audit_service import append_audit_event
                 from core.trace_backfill_service import (
                     convert_trace_to_eval_case,
                     create_dataset_from_failed_traces,
                 )
-                from core.audit_service import append_audit_event
 
                 payload = action.payload_before or {}
                 gap_type = payload.get("gap_type")
@@ -1358,7 +1369,11 @@ def resolve_action(
                             event_type="trace_backfill_converted",
                             target_type="eval_case",
                             target_id=eval_case.eval_id,
-                            after={"trace_id": trace_id, "eval_id": eval_case.eval_id, "action_id": action.action_id},
+                            after={
+                                "trace_id": trace_id,
+                                "eval_id": eval_case.eval_id,
+                                "action_id": action.action_id,
+                            },
                             metadata={"note": note},
                         )
                 elif gap_type == "trace_eval_case_without_dataset":

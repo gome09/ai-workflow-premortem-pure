@@ -1,0 +1,15 @@
+# Dependabot 配置：覆盖 pip（uv 项目）与 github-actions 两个生态
+version: 2
+updates:
+  - package-ecosystem: "pip"          # uv 项目按 pip 生态识别 pyproject.toml
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+    open-pull-requests-limit: 5
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

@@ -4,7 +4,7 @@
 - 完成四阶段工作流引擎（失败模式识别 → 工作流设计 → 压力测试 → 触发策略）
 - 完成风险自适应门禁系统
 - 完成人机监督闭环（PendingHumanAction）
-- 完成 Eval 评估体系与 Red Team 对抗测试
+- 完成 Eval 评估体系（EvalCase/EvalRun、Eval 数据集管理、Eval 实验对比）与 Red Team 对抗测试
 - 完成证据核验与安全发现模块
 - 完成报告导出与审计追踪
 - Docker Compose 部署调通

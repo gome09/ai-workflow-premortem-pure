@@ -39,7 +39,7 @@
 
 ## 当前内置场景
 
-当前仓库内置了 3 个场景。
+当前仓库内置了 4 个场景。
 
 ### `generic_rag_demo`
 
@@ -86,6 +86,21 @@
 适合：
 - 展示高敏感场景下的风险门禁
 - 说明“同一领域 profile 可承载多个不同业务场景”
+
+### `student_course_selection`
+
+用途：
+- 演示高校学生选课管理系统的 AI 辅助选课推荐场景
+- 重点展示 AI 辅助选课系统在立项阶段的失败模式、人机协同审核流程和触发链路
+
+特点：
+- 输入样例：`examples/student_course_selection_input.md`
+- `domain_profile=default`
+- `mock_fixture=default`
+
+适合：
+- 展示 default profile 在非通用 RAG 场景下的复用能力
+- 演示教育行业中一个更贴近业务流程（而非知识问答）的立项风险评估案例
 
 ---
 
@@ -146,7 +161,7 @@
 当前已存在：
 - `default`
 - `university_ai`
-- `medical_ai`
+- `medical_ai`（仅作为可复用 profile 存在，当前 4 个内置场景均未引用，尚无对应内置 manifest）
 
 ### `mock_fixture`
 

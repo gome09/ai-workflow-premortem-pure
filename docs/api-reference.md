@@ -1,7 +1,7 @@
 # API 接口参考
 
 > 本文档按当前源码静态提取整理。
-> 当前仓库可直接识别的 HTTP 路由总数为 `78`（含 `/health*` 与 `/auth/*`）。
+> 当前仓库可直接识别的 HTTP 路由总数为 `79`（`api/routers/*.py` 70 条 + `auth/router.py` 5 条 + `/health*`/`/health` 3 条 + `/metrics` 1 条）。
 
 ---
 
@@ -33,6 +33,8 @@
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/sessions/` | 创建新会话 |
+| GET | `/sessions/scenarios` | 列出内置场景（须在 `/sessions/{session_id}` 之前注册，否则会被后者的路径参数捕获） |
+| GET | `/sessions/scenarios/{scenario_id}` | 查看单个内置场景详情 |
 | GET | `/sessions/` | 列出会话 |
 | GET | `/sessions/{session_id}` | 获取完整会话上下文 |
 | POST | `/chat/{session_id}` | 发送消息并推进一个执行回合 |

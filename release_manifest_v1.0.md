@@ -7,7 +7,7 @@
 | Path | Purpose |
 |---|---|
 | `api/` | FastAPI application — entry point `api/main.py` |
-| `api/routers/` | API route handlers (chat, session, stage, oversight, evidence, safety, eval, redteam, reports, traces, interrupts) |
+| `api/routers/` | API route handlers (chat, session, stage, oversight, evidence, safety, eval, eval_datasets, eval_experiments, redteam, reports, traces, interrupts) |
 | `auth/` | JWT authentication, password hashing, RBAC permissions |
 | `core/` | Business logic services, models, config, execution modes |
 | `core/gates/` | Stage advancement gate engine and pluggable rule system |

@@ -375,7 +375,7 @@ make lite-up      # 自动应用 .env.demo，SQLite + Mock LLM
 
 ## 八、测试与质量保障
 
-- **单元测试** — 384 passed / 5 skipped（pytest 8.0+）
+- **单元测试** — 388 passed / 1 skipped（完整依赖环境，pytest 9.0+）；未安装 `prometheus_fastapi_instrumentator` 时为 376 passed / 6 skipped
 - **代码规范** — ruff 0.8+（line-length 100，target Python 3.11）
 - **端到端验收** — `make e2e-mock`（5 秒） / `make e2e-full-test`（8 秒）
 - **Schema 校验** — 所有跨层数据走 Pydantic v2 强类型校验

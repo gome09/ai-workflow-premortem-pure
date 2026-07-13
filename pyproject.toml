@@ -1,7 +1,7 @@
 # pyproject.toml
 [project]
 name = "ai-workflow-tool"
-version = "1.0.0"
+version = "1.0.2"
 description = "A human-AI collaborative workflow tool for project inception"
 readme = "README.md"
 requires-python = ">=3.11"

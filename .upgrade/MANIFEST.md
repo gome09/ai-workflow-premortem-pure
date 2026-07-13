@@ -64,5 +64,10 @@ Before cleanup, classify each file as one of:
 
 | Original Path | New Path | Reason | Risk | Follow-up Needed |
 |---|---|---|---|---|
-| `RELEASE_CLEANUP.md` | `.upgrade/decisions/RELEASE_CLEANUP.md` | 记录 v1.0 发布前组件移除/归档决策及理由，属于升级/清理过程记录，非当前产品文档 | medium (referenced only by `docs/improvement-roadmap.md` prose mention, no machine refs) | 如后续文档引用该路径需更新链接 |
+| `RELEASE_CLEANUP.md` | `.upgrade/decisions/RELEASE_CLEANUP.md` | 记录 v1.0 发布前组件移除/归档决策及理由，属于升级/清理过程记录，非当前产品文档 | medium (referenced only by `docs/plan/improvement-roadmap.md` prose mention, no machine refs) | 如后续文档引用该路径需更新链接 |
+| `docs/improvement-roadmap.md` | `docs/plan/improvement-roadmap.md` | docs/ 拆分 plan/spec 子目录，路线图归入 plan/ | low (internal docs reorg, references updated in docs/README.md/CLAUDE.md/.upgrade/) | 无 |
+| `docs/architecture.md` | `docs/spec/architecture.md` | docs/ 拆分 plan/spec 子目录，架构设计文档归入 spec/ | low | 无 |
+| `docs/security-model.md` | `docs/spec/security-model.md` | docs/ 拆分 plan/spec 子目录，安全模型文档归入 spec/ | low | 无 |
+| `docs/stage3-risk-adaptive-gate.md` | `docs/spec/stage3-risk-adaptive-gate.md` | docs/ 拆分 plan/spec 子目录，门禁设计文档归入 spec/ | low | 文件内引用 `archive/verification-reports/risk_adaptive_gate_final_validation.md` 已同步改为 `../archive/...`，但该目标文件本身在仓库中不存在（既有悬空引用，非本次移动引入） |
+| `docs/api-reference.md` | `docs/spec/api-reference.md` | docs/ 拆分 plan/spec 子目录，API 参考文档归入 spec/ | low | 无 |
 | `release_manifest_v1.0.md` | `.upgrade/reports/release_manifest_v1.0.md` | v1.0 生产文件范围快照，属于一次性发布报告，非持续维护文档 | low (no refs found) | 无 |

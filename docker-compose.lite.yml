@@ -1,0 +1,33 @@
+# Lightweight compose for SQLite + no-Docker-services mode.
+# Use this for demos, thesis evaluation, or development without PostgreSQL/Redis.
+# Does NOT replace docker-compose.yml for production use.
+
+services:
+  api:
+    build: .
+    env_file: .env
+    environment:
+      - STORAGE_BACKEND=sqlite
+      - LLM_MODE=mock
+      - DEFAULT_SCENARIO_ID=generic_rag_demo
+      - UVICORN_WORKERS=1
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: streamlit run frontend/app.py --server.port 8501 --server.address 0.0.0.0
+    env_file: .env
+    environment:
+      - API_BASE=http://api:8000
+      - STORAGE_BACKEND=sqlite
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api
+    restart: unless-stopped

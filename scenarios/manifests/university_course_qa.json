@@ -1,0 +1,19 @@
+{
+  "scenario_id": "university_course_qa",
+  "name": "University Course QA",
+  "description": "高校课程知识问答系统示例，复用 university_ai domain profile 与 mock fixture。",
+  "input_sample_path": "examples/university_ai_course_qa_input.md",
+  "domain_profile": "university_ai",
+  "mock_fixture": "university_ai",
+  "default_config": {
+    "auto_bootstrap_input": true,
+    "stage_context_note": "演示重点：学术诚信、课程内容治理、教学辅助场景的高校立项评估。"
+  },
+  "applicable_stages": [
+    "init",
+    "stage_1",
+    "stage_2",
+    "stage_3",
+    "stage_4"
+  ]
+}

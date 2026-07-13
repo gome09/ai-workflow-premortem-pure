@@ -1,0 +1,19 @@
+{
+  "scenario_id": "generic_rag_demo",
+  "name": "Generic RAG Demo",
+  "description": "通用企业知识库问答助手示例，使用 default profile 和 default mock fixture。",
+  "input_sample_path": "examples/sample_project_input.md",
+  "domain_profile": "default",
+  "mock_fixture": "default",
+  "default_config": {
+    "auto_bootstrap_input": true,
+    "stage_context_note": "演示重点：通用 AI 项目在立项阶段的失败模式、审核流程和触发链路。"
+  },
+  "applicable_stages": [
+    "init",
+    "stage_1",
+    "stage_2",
+    "stage_3",
+    "stage_4"
+  ]
+}

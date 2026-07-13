@@ -1,0 +1,23 @@
+{
+  "schema_version": "0.8.0-alpha.11",
+  "project_info": {
+    "research_target": "Customer support RAG assistant",
+    "domain": "Enterprise customer support",
+    "goal": "Identify failure modes, oversight workflow, stress tests, triggers, and audit-ready report."
+  },
+  "eval_summary": {
+    "failure_mode_coverage": {
+      "total_failure_modes": 0,
+      "covered_failure_modes": 0,
+      "coverage_rate": 0.0
+    },
+    "high_risk_node_coverage": {
+      "total_high_risk_nodes": 0,
+      "covered_high_risk_nodes": 0,
+      "coverage_rate": 0.0
+    }
+  },
+  "disclaimer": "AI-generated outputs must be reviewed by humans before real-world use. This local-preview package is not production-ready.",
+  "release_label": "v0.9.0-alpha.5",
+  "status_scope": "example_only_not_runtime_evidence"
+}

@@ -1,0 +1,77 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --frozen
+
+      - name: Lint
+        run: make lint
+
+      - name: Unit tests (sqlite + mock)
+        run: |
+          cp -f .env.demo .env
+          uv run pytest tests/ -v
+
+  docker-lite-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Prepare env file
+        run: cp -f .env.demo .env
+
+      - name: Prepare data directory
+        run: |
+          mkdir -p data
+          chmod 777 data
+
+      - name: Build and start lite stack
+        run: docker compose -f docker-compose.lite.yml up --build -d
+
+      - name: Wait for api to become healthy
+        run: |
+          timeout 90 bash -c 'until curl -sf http://localhost:8000/health/live; do sleep 2; done'
+
+      - name: Smoke test api
+        run: |
+          curl -sf http://localhost:8000/health/live
+          curl -sf http://localhost:8000/health
+
+      - name: Smoke test frontend
+        run: |
+          timeout 90 bash -c 'until curl -sf -o /dev/null http://localhost:8501; do sleep 2; done'
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.lite.yml logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.lite.yml down -v

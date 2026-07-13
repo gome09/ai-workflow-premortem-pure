@@ -19,13 +19,22 @@ jobs:
         run: |
           curl -sSfL https://github.com/ossf/scorecard/releases/download/v5.5.0/scorecard_5.5.0_linux_amd64.tar.gz | tar -xzf - -C /usr/local/bin scorecard
 
-      - name: Run Scorecard
+      - name: Run Scorecard (JSON)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           scorecard --repo=gome09/ai-workflow-premortem-pure \
             --format=json --show-details \
             > scorecard-results.json
+          echo "===SCORECARD_JSON_START==="
+          cat scorecard-results.json
+          echo "===SCORECARD_JSON_END==="
+
+      - name: Run Scorecard (default readable)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          scorecard --repo=gome09/ai-workflow-premortem-pure --show-details || true
 
       - name: Upload Scorecard results
         uses: actions/upload-artifact@v4

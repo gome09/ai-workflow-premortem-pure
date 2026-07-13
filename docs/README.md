@@ -11,3 +11,4 @@
 | [security-model.md](security-model.md) | 安全模型 |
 | [stage3-risk-adaptive-gate.md](stage3-risk-adaptive-gate.md) | 风险自适应门禁详解 |
 | [acceptance_report.md](acceptance_report.md) | 四阶段全流程 E2E 测试验收报告 |
+| [improvement-roadmap.md](improvement-roadmap.md) | 分阶段改进路线图：合规映射（中国监管+国际标准）、企业内部工具标准、开源社区工程健康度对照 |

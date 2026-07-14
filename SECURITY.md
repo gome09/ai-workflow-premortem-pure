@@ -24,3 +24,7 @@
 - 通过 DeepSeek / Tavily 等第三方 API 触发的问题，请直报对应厂商。
 - 本项目在 `LLM_MODE=mock` 演示模式下的非生产路径问题。
 - 已在最新版本修复且已发布的问题。
+
+## 应急响应
+
+发生或疑似发生数据泄露事件时，按 [docs/compliance/incident-response.md](docs/compliance/incident-response.md) 的 checklist 处置。

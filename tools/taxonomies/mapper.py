@@ -14,8 +14,11 @@ from tools.taxonomies.microsoft_agent_failure_modes import (
     MICROSOFT_AGENT_ATTACK_REFS,
     MICROSOFT_AGENT_RISK_REFS,
 )
+from tools.taxonomies.nist_ai_600_1 import NIST_GAI_ACTION_REFS
 from tools.taxonomies.nist_ai_rmf import NIST_ATTACK_REFS, NIST_RISK_REFS
+from tools.taxonomies.owasp_agentic_2026 import ASI_ATTACK_REFS, ASI_RISK_REFS
 from tools.taxonomies.owasp_llm_2025 import OWASP_ATTACK_REFS, OWASP_RISK_REFS
+from tools.taxonomies.tc260_agent_deployment import TC260_RISK_REFS
 from tools.taxonomies.university_ai_edu import (
     UNIV_CONTROL_REFS,
     UNIV_RISK_REFS,
@@ -32,7 +35,10 @@ def refs_for_risk_type(risk_type: str | None) -> list[str]:
         INTERNAL_RISK_REFS.get(key, [])
         + OWASP_RISK_REFS.get(key, [])
         + NIST_RISK_REFS.get(key, [])
+        + NIST_GAI_ACTION_REFS.get(key, [])
         + MICROSOFT_AGENT_RISK_REFS.get(key, [])
+        + ASI_RISK_REFS.get(key, [])
+        + TC260_RISK_REFS.get(key, [])
     )
 
 
@@ -43,6 +49,7 @@ def refs_for_attack_type(attack_type: str | None) -> list[str]:
         + OWASP_ATTACK_REFS.get(key, [])
         + NIST_ATTACK_REFS.get(key, [])
         + MICROSOFT_AGENT_ATTACK_REFS.get(key, [])
+        + ASI_ATTACK_REFS.get(key, [])
     )
 
 

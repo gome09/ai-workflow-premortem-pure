@@ -8,6 +8,9 @@ NIST_RISK_REFS: dict[str, list[str]] = {
     "unsafe_instruction": ["NIST_AI_RMF:MANAGE"],
     "source_untrusted": ["NIST_AI_RMF:MAP", "NIST_AI_RMF:MEASURE"],
     "policy_gap": ["NIST_AI_RMF:GOVERN", "NIST_AI_RMF:MANAGE"],
+    "improper_output_handling": ["NIST_AI_RMF:MEASURE", "NIST_AI_RMF:MANAGE"],
+    "system_prompt_leakage": ["NIST_AI_RMF:MAP", "NIST_AI_RMF:MANAGE"],
+    "unbounded_consumption": ["NIST_AI_RMF:MEASURE", "NIST_AI_RMF:MANAGE"],
 }
 
 NIST_ATTACK_REFS: dict[str, list[str]] = {

@@ -217,7 +217,7 @@ class TestGetRiskDescriptionsMedicalAi:
         from tools.risk_taxonomy import get_risk_descriptions
 
         result = get_risk_descriptions("medical_ai")
-        assert len(result) == 13  # 7 base + 6 new
+        assert len(result) == 16  # 10 base + 6 new
 
     def test_medical_ai_misdiagnosis_description_is_non_empty(self):
         from tools.risk_taxonomy import get_risk_descriptions

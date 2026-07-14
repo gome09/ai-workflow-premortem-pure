@@ -85,7 +85,7 @@ class AuditActor(StrEnum):
     AI = "ai"
 
 
-CONTEXT_SCHEMA_VERSION = "0.8.0"
+CONTEXT_SCHEMA_VERSION = "0.9.0"
 ACTION_SCHEMA_VERSION = "0.7.0"
 
 
@@ -422,6 +422,9 @@ class SafetyFinding(BaseModel):
         "unsafe_instruction",
         "source_untrusted",
         "policy_gap",
+        "improper_output_handling",  # LLM05 (T2.1)
+        "system_prompt_leakage",  # LLM07 (T2.1)
+        "unbounded_consumption",  # LLM10 (T2.1)
     ]
     severity: Literal["low", "medium", "high", "critical"]
     location: str
@@ -839,6 +842,10 @@ class ProjectContext(BaseModel):
     # ── 迭代控制 ────────────────────────────────────
     iteration_count: int = 0
     max_iterations: int = 3  # 单阶段最大回退次数，超出则强制提示用户
+
+    # ── LLM 用量计数（T2.1 LLM10 Unbounded Consumption）────────
+    llm_call_count: int = 0
+    llm_token_estimate: int = 0
 
     # ── 错误信息 ────────────────────────────────────
     last_error: str | None = None

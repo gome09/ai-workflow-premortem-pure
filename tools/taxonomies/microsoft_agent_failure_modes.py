@@ -8,6 +8,9 @@ MICROSOFT_AGENT_RISK_REFS: dict[str, list[str]] = {
     "unsafe_instruction": ["MS_AGENT_FAILURE:POLICY_BYPASS"],
     "source_untrusted": ["MS_AGENT_FAILURE:UNTRUSTED_TOOL_OR_SOURCE_OUTPUT"],
     "policy_gap": ["MS_AGENT_FAILURE:MISSING_HUMAN_OVERSIGHT"],
+    "improper_output_handling": ["MS_AGENT_FAILURE:UNSAFE_OUTPUT"],
+    "system_prompt_leakage": ["MS_AGENT_FAILURE:PROMPT_INJECTION"],
+    "unbounded_consumption": ["MS_AGENT_FAILURE:EXCESSIVE_AGENCY"],
 }
 
 MICROSOFT_AGENT_ATTACK_REFS: dict[str, list[str]] = {

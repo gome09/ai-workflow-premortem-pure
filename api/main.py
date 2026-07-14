@@ -28,6 +28,7 @@ from api.routers import (
     traces,
 )
 from auth.router import router as auth_router
+from core.audit_service import append_audit_event
 from core.config import settings
 from core.execution_mode import WorkflowExecutionMode
 from core.version import APP_STATUS, APP_VERSION
@@ -96,7 +97,35 @@ _instrumentator.instrument(app)
 # Each protected route uses @limiter.limit(...) explicitly.
 # app.state.limiter is required by slowapi to resolve the limiter instance at request time.
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+def _rate_limit_audit_handler(request, exc):
+    """T2.1 LLM10: 429 事件记入审计日志（接入 audit_service），作为租户级滥用证据。"""
+    try:
+        session_id = (request.path_params or {}).get("session_id") or ""
+        if session_id:
+            ctx = session_store.load(session_id)
+            if ctx is not None:
+                append_audit_event(
+                    ctx,
+                    actor="system",
+                    event_type="rate_limit_exceeded",
+                    target_type="tenant",
+                    target_id=getattr(ctx, "tenant_id", "") or "unknown",
+                    metadata={
+                        "path": request.url.path,
+                        "method": request.method,
+                        "client": request.client.host if request.client else "",
+                        "limit_detail": str(getattr(exc, "limit", "")),
+                    },
+                )
+                session_store.save(ctx)
+    except Exception:
+        logger.warning("Could not persist rate_limit_exceeded audit event", exc_info=True)
+    return _rate_limit_exceeded_handler(request, exc)
+
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_audit_handler)
 
 origins = [o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()]
 app.add_middleware(

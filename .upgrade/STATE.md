@@ -2,14 +2,15 @@
 
 ## Current Phase
 
-Phase 1 — **全部完成** (T1.1–T1.9 done)。Ready for Phase 2.
+Phase 2 — **进行中** (Wave 1 T2.2 done by Agent B)。Phase 1 全部完成 (T1.1–T1.9)。
 
 ## Current Task
 
-None in flight. Next executable work is Phase 2 tasks per `docs/plan/phase-2-security-enhancements.md`.
+T2.2 (NIST AI 600-1 Generative AI Profile 动作项引用) 已完成，待 Wave 1 集成验证后统一 commit。
 
 ## Last Completed
 
+- **Phase 2 Wave 1 T2.2 (2026-07-14, Agent B)** — 新建 `tools/taxonomies/nist_ai_600_1.py` + `.upgrade/reports/nist-ai-600-1-action-summary.md` + `tests/test_taxonomy_nist_ai_600_1.py`。6 个动作项（MS-2.7-008/GV-1.3-002 已 Web 核实，MS-2.10-002/MS-2.5-005/MS-2.5-003/MS-2.11-001 标 [存疑]）。6 tests passed。
 - **Phase 1 Wave 5 (2026-07-14)** — T1.6 + T1.7 并行完成：
   - T1.6: 数据生命周期（DELETE 端点、审计归档、Alembic V004、两后端实现、6 个测试用例）→ commit `6851c3a`
   - T1.7: PIA 文档（平台自评 + 用户模板 + 高敏现场）→ commit `33d24fa`
@@ -76,5 +77,5 @@ Enter Phase 2 (security-enhancements) per `docs/plan/phase-2-security-enhancemen
 ## Last Updated
 
 - Date: 2026-07-14
-- By: trae-agent
-- Summary: Phase 1 fully complete (T1.1–T1.9). 7 commits across 6 Waves. Version bumped to v1.0.3. All tests pass.
+- By: trae-agent (Agent B)
+- Summary: Phase 2 Wave 1 T2.2 完成——NIST AI 600-1 动作项标签表新建，6 tests passed，待统一 commit。Phase 1 全部完成 (T1.1–T1.9)，7 commits across 6 Waves，version v1.0.3。

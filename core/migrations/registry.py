@@ -7,7 +7,7 @@ from typing import Any
 from core.migrations.base import ContextMigration, MigrationFn
 from core.models import ProjectContext
 
-CURRENT_CONTEXT_SCHEMA_VERSION = "0.8.0"
+CURRENT_CONTEXT_SCHEMA_VERSION = "0.9.0"
 LEGACY_CONTEXT_SCHEMA_VERSION = "0.6.0-alpha.8"
 
 _MIGRATIONS: list[ContextMigration] = []

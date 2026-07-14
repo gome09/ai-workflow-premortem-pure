@@ -8,6 +8,9 @@ INTERNAL_RISK_REFS: dict[str, list[str]] = {
     "unsafe_instruction": ["INTERNAL:AI_GOV:POLICY_BYPASS"],
     "source_untrusted": ["INTERNAL:AI_GOV:SOURCE_TRUST"],
     "policy_gap": ["INTERNAL:AI_GOV:HUMAN_OVERSIGHT_GAP"],
+    "improper_output_handling": ["INTERNAL:AI_GOV:UNSAFE_OUTPUT"],
+    "system_prompt_leakage": ["INTERNAL:AI_GOV:SYSTEM_PROMPT_LEAKAGE"],
+    "unbounded_consumption": ["INTERNAL:AI_GOV:UNBOUNDED_CONSUMPTION"],
 }
 
 INTERNAL_ATTACK_REFS: dict[str, list[str]] = {
@@ -32,6 +35,9 @@ DEFAULT_CONTROL_REFS: dict[str, list[str]] = {
     "unsafe_instruction": ["CONTROL:POLICY_ENFORCEMENT", "CONTROL:HUMAN_REVIEW_GATE"],
     "source_untrusted": ["CONTROL:SOURCE_CREDIBILITY_CHECK", "CONTROL:EVIDENCE_VERIFICATION"],
     "policy_gap": ["CONTROL:OVERSIGHT_POLICY_REQUIRED", "CONTROL:STAGE_GATE_BLOCKER"],
+    "improper_output_handling": ["CONTROL:OUTPUT_SANITIZATION", "CONTROL:HUMAN_REVIEW_GATE"],
+    "system_prompt_leakage": ["CONTROL:SYSTEM_PROMPT_PROTECTION", "CONTROL:HUMAN_REVIEW_GATE"],
+    "unbounded_consumption": ["CONTROL:RATE_LIMITING", "CONTROL:USAGE_MONITORING"],
 }
 
 ATTACK_CONTROL_REFS: dict[str, list[str]] = {

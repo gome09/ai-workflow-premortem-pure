@@ -9,6 +9,7 @@ from core.migrations.registry import (
 )
 from core.migrations.v060_alpha8_to_v070 import migrate_v060_alpha8_to_v070
 from core.migrations.v070_to_v080 import migrate_v070_to_v080
+from core.migrations.v080_to_v090 import migrate_v080_to_v090
 
 register_migration(
     LEGACY_CONTEXT_SCHEMA_VERSION,
@@ -18,8 +19,14 @@ register_migration(
 
 register_migration(
     "0.7.0",
-    CURRENT_CONTEXT_SCHEMA_VERSION,
+    "0.8.0",
     migrate_v070_to_v080,
+)
+
+register_migration(
+    "0.8.0",
+    CURRENT_CONTEXT_SCHEMA_VERSION,
+    migrate_v080_to_v090,
 )
 
 __all__ = [

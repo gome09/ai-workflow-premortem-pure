@@ -4,8 +4,9 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
+from core.config import settings
 from core.models import EvidenceSource, ProjectContext, SafetyFinding
-from tools.prompt_injection_scanner import has_prompt_injection
+from tools.prompt_injection_scanner import classify_injection
 from tools.risk_taxonomy import RISK_DESCRIPTIONS
 from tools.taxonomies.mapper import apply_taxonomy_to_safety_finding
 
@@ -56,6 +57,15 @@ STRONG_ASSERTION_PATTERNS = [
     r"proven",
     r"will always",
     r"never fails",
+]
+
+UNSAFE_OUTPUT_PATTERNS = [
+    r"<script\b",
+    r"javascript:",
+    r"\bon\w+\s*=",
+    r"(?:;|\||&&)\s*(?:rm|del|delete)\s+",
+    r"\$\(",
+    r"\b(?:DROP|DELETE|INSERT|UPDATE|ALTER|CREATE)\s+(?:TABLE|DATABASE)\b",
 ]
 
 
@@ -169,7 +179,8 @@ def scan_text(
     if not content:
         return findings
 
-    if has_prompt_injection(content):
+    injection_class = classify_injection(content)
+    if injection_class == "injection":
         findings.append(
             _finding(
                 ctx,
@@ -179,6 +190,18 @@ def scan_text(
                 location=location,
                 description=RISK_DESCRIPTIONS["prompt_injection"],
                 recommended_action="人工检查该文本是否试图覆盖系统流程或绕过审核门。",
+            )
+        )
+    elif injection_class == "leakage":
+        findings.append(
+            _finding(
+                ctx,
+                stage_id=stage_id,
+                risk_type="system_prompt_leakage",
+                severity="high",
+                location=location,
+                description=RISK_DESCRIPTIONS["system_prompt_leakage"],
+                recommended_action="人工检查是否为对抗性探测；系统提示词含门禁策略描述，泄露即绕过线索。",
             )
         )
 
@@ -251,6 +274,21 @@ def scan_text(
                 recommended_action="人工确认是否允许该指令进入后续阶段；必要时删除或改写。",
             )
         )
+
+    # LLM05 Improper Output Handling：仅对 AI 输出位置启用，避免误伤用户材料中的演示代码
+    if "ai_output" in location:
+        if any(re.search(p, content, flags=re.IGNORECASE | re.S) for p in UNSAFE_OUTPUT_PATTERNS):
+            findings.append(
+                _finding(
+                    ctx,
+                    stage_id=stage_id,
+                    risk_type="improper_output_handling",
+                    severity="medium",
+                    location=location,
+                    description=RISK_DESCRIPTIONS["improper_output_handling"],
+                    recommended_action="人工确认是否为演示性内容；如非演示，对输出做转义/净化后再交付下游渲染或执行。",
+                )
+            )
 
     if stage_id in {1, 2, 4}:
         findings.extend(
@@ -488,3 +526,43 @@ def scan_stage3_test_cases(ctx: ProjectContext) -> list[SafetyFinding]:
                     finding.severity = "high"
                     finding.requires_human_review = True
     return findings
+
+
+def scan_unbounded_consumption(ctx: ProjectContext) -> SafetyFinding | None:
+    """T2.1 LLM10: 会话级用量超阈值产出 unbounded_consumption finding。
+
+    幂等：同一会话只产 1 条（location 固定为 session.llm_usage）。
+    severity=medium, requires_human_review=False（告警不阻断）。
+    """
+    location = "session.llm_usage"
+    # 幂等：已存在则跳过
+    if any(
+        f.risk_type == "unbounded_consumption" and f.location == location
+        for f in ctx.safety_findings
+    ):
+        return None
+
+    call_exceeded = getattr(ctx, "llm_call_count", 0) >= settings.llm_call_count_threshold
+    token_exceeded = getattr(ctx, "llm_token_estimate", 0) >= settings.llm_token_estimate_threshold
+    if not (call_exceeded or token_exceeded):
+        return None
+
+    triggers = []
+    if call_exceeded:
+        triggers.append(f"calls={ctx.llm_call_count}>={settings.llm_call_count_threshold}")
+    if token_exceeded:
+        triggers.append(f"tokens={ctx.llm_token_estimate}>={settings.llm_token_estimate_threshold}")
+
+    finding = _finding(
+        ctx,
+        stage_id=None,
+        risk_type="unbounded_consumption",
+        severity="medium",
+        location=location,
+        description=f"{RISK_DESCRIPTIONS['unbounded_consumption']} 触发：{', '.join(triggers)}。",
+        recommended_action="人工核查会话是否异常长；必要时设置会话级用量上限或终止会话。",
+    )
+    finding.requires_human_review = False  # 告警不阻断
+    # _finding 只构造不 append，需手动 append
+    ctx.safety_findings.append(finding)
+    return finding

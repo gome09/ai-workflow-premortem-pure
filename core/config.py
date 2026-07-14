@@ -94,6 +94,11 @@ class Settings(BaseSettings):
     audit_retention_days: int = 183  # 6 months, aligns with 等保
     session_retention_days: int = 0  # 0 = forever
 
+    # LLM10 Unbounded Consumption thresholds (T2.1)
+    # 单会话累计调用次数 / token 估算告警阈值；命中产出 medium finding（不阻断）
+    llm_call_count_threshold: int = 200
+    llm_token_estimate_threshold: int = 500_000
+
     # CORS
     cors_allow_origins: str = "https://localhost"
 

@@ -194,7 +194,7 @@ class TestGetRiskDescriptions:
         from tools.risk_taxonomy import get_risk_descriptions
 
         result = get_risk_descriptions("university_ai")
-        assert len(result) == 13  # 7 base + 6 new
+        assert len(result) == 16  # 10 base + 6 new
 
     def test_unknown_profile_returns_base_only(self):
         from tools.risk_taxonomy import RISK_DESCRIPTIONS, get_risk_descriptions

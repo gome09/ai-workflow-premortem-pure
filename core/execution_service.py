@@ -16,12 +16,40 @@ logger = logging.getLogger(__name__)
 
 def execute_one_turn(ctx: ProjectContext) -> ProjectContext:
     """Run exactly one user turn through the configured execution mode."""
+    ctx.llm_call_count = getattr(ctx, "llm_call_count", 0) + 1
     mode = WorkflowExecutionMode.normalize(settings.workflow_execution_mode)
     if mode == WorkflowExecutionMode.SINGLE_STEP:
-        return run_one_step(ctx)
-    if mode == WorkflowExecutionMode.LANGGRAPH_INTERRUPT:
-        return invoke_one_turn_with_interrupts(ctx)
-    raise ValueError(f"Unsupported workflow execution mode in {APP_VERSION}: {mode}")
+        result = run_one_step(ctx)
+    elif mode == WorkflowExecutionMode.LANGGRAPH_INTERRUPT:
+        result = invoke_one_turn_with_interrupts(ctx)
+    else:
+        raise ValueError(f"Unsupported workflow execution mode in {APP_VERSION}: {mode}")
+
+    # T2.1 LLM10: 从既有 traces 聚合 token 估算（forward-only，不回溯历史）
+    result.llm_token_estimate = _sum_trace_tokens(result)
+    _check_unbounded_consumption(result)
+    return result
+
+
+def _sum_trace_tokens(ctx: ProjectContext) -> int:
+    """Aggregate input+output token counts from llm_traces."""
+    total = 0
+    for trace in getattr(ctx, "llm_traces", []) or []:
+        if trace.input_token_count:
+            total += int(trace.input_token_count)
+        if trace.output_token_count:
+            total += int(trace.output_token_count)
+    return total
+
+
+def _check_unbounded_consumption(ctx: ProjectContext) -> None:
+    """T2.1 LLM10: 超阈值产出 unbounded_consumption finding（告警不阻断）。"""
+    from tools.safety_classifier import scan_unbounded_consumption
+
+    try:
+        scan_unbounded_consumption(ctx)
+    except Exception:
+        logger.exception("unbounded_consumption check failed; non-fatal")
 
 
 def sync_execution_after_action_resolution(

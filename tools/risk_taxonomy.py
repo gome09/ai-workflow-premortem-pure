@@ -9,6 +9,9 @@ RISK_DESCRIPTIONS = {
     "unsafe_instruction": "文本包含不安全或不合规的执行建议。",
     "source_untrusted": "高风险结论依赖低可信或未知来源。",
     "policy_gap": "当前输出暴露了人工监督或治理策略缺口。",
+    "improper_output_handling": "AI 输出包含未净化的可执行内容（脚本、SQL、shell 命令），下游直接消费可能导致注入。",
+    "system_prompt_leakage": "输入试图诱导系统泄露其系统提示词/初始指令，构成门禁策略绕过线索。",
+    "unbounded_consumption": "会话级 LLM 调用次数或 token 消耗超过阈值，存在资源滥用或成本失控风险。",
 }
 
 _UNIVERSITY_AI_EXTRA: dict[str, str] = {

@@ -183,7 +183,7 @@ def test_migration_v070_to_v080_backfills_business_internal():
         "selected_scenario_id": None,
     }
     ctx = migrate_context(raw)
-    assert ctx.context_schema_version == "0.8.0"
+    assert ctx.context_schema_version == "0.9.0"
     assert ctx.data_classification == "business_internal"
 
 
@@ -194,7 +194,7 @@ def test_migration_v070_to_v080_backfills_public_demo_for_scenario():
         "selected_scenario_id": "generic_rag_demo",
     }
     ctx = migrate_context(raw)
-    assert ctx.context_schema_version == "0.8.0"
+    assert ctx.context_schema_version == "0.9.0"
     assert ctx.data_classification == "public_demo"
 
 
@@ -202,6 +202,9 @@ def test_migration_v070_to_v080_records_history():
     raw = {"context_schema_version": "0.7.0", "session_id": "test-session"}
     ctx = migrate_context(raw)
     assert ctx.migration_history
-    last = ctx.migration_history[-1]
-    assert last.from_version == "0.7.0"
-    assert last.to_version == "0.8.0"
+    # 迁移链 0.7.0 → 0.8.0 → 0.9.0 会跑到底；验证 v070→v080 这步被记录
+    v070_to_v080 = [
+        h for h in ctx.migration_history
+        if h.from_version == "0.7.0" and h.to_version == "0.8.0"
+    ]
+    assert v070_to_v080, "v0.7.0 → v0.8.0 migration record should exist"

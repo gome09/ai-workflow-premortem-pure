@@ -202,7 +202,7 @@
 
 在 `examples/` 下新增一个输入样例文件，例如：
 
-`examples/your_scenario_input.md`
+`your_scenario_input.md`
 
 建议这个文件直接写出：
 
@@ -226,7 +226,7 @@
 
 例如：
 
-- `stages/domain_profiles/finance_ai.py`
+- `finance_ai.py`
 
 该 profile 应至少提供：
 
@@ -264,7 +264,7 @@
 
 例如：
 
-`scenarios/manifests/finance_risk_demo.json`
+`finance_risk_demo.json`
 
 只要 manifest 合法、路径存在、profile 和 fixture 可导入，前后端就会自动识别。
 

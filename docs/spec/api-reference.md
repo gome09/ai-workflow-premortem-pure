@@ -1,7 +1,7 @@
 # API 接口参考
 
 > 本文档按当前源码静态提取整理。
-> 当前仓库可直接识别的 HTTP 路由总数为 `79`（`api/routers/*.py` 70 条 + `auth/router.py` 5 条 + `/health*`/`/health` 3 条 + `/metrics` 1 条）。
+> 当前仓库可直接识别的 HTTP 路由总数为 `84`（`api/routers/*.py` 75 条 + `auth/router.py` 5 条 + `/health*`/`/health` 3 条 + `/metrics` 1 条）。
 
 ---
 
@@ -165,3 +165,15 @@
 |------|------|------|
 | GET | `/sessions/{session_id}/interrupt-records` | 列出 interrupt records |
 | GET | `/sessions/{session_id}/interrupt-records/{interrupt_id}` | 查看单条 interrupt record |
+
+---
+
+## 组织级治理（T3.4）
+
+> 租户级聚合视图，支撑 ISO/IEC 42001 式的组织级 AI 治理台账。详见 [governance-platform.md](governance-platform.md)。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/governance/overview` | 治理总览：租户内项目数 / 风险等级分布 / 门禁通过率 / 待处理人工动作总览 |
+| GET | `/governance/gate-trends` | 门禁通过率趋势（基于 `gate_evaluation_records` 聚合） |
+| GET | `/governance/actions-backlog` | 待处理人工动作积压清单 |

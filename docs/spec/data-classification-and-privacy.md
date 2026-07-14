@@ -1,7 +1,7 @@
 # 数据分类分级与隐私保护设计规格
 
-> Status: Designed, not implemented（落地任务见 [../plan/phase-1-security-compliance.md](../plan/phase-1-security-compliance.md)）
-> Last updated: 2026-07-13
+> Status: Implemented（v1.0.3 落地 T1.1–T1.9：数据分级 / 字段加密 / PII 掩码 / AI 生成标识 / PIA。落地任务见 [../plan/phase-1-security-compliance.md](../plan/phase-1-security-compliance.md)）
+> Last updated: 2026-07-14
 > 合规依据：PIPL 第 28/51/55/56/57 条、DSL 第 21 条、《人工智能生成合成内容标识办法》（2025-09-01 施行）、EU AI Act Art.50 透明度义务（2026-08-02 生效）、GB/T 22239-2019 日志留存要求
 
 ---

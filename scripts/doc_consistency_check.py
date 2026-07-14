@@ -94,8 +94,23 @@ def check_file(source: Path, make_targets: set[str]) -> list[str]:
     except (OSError, UnicodeDecodeError):
         return violations
 
+    in_fence = False
+    fence_marker = ""
     for lineno, line in enumerate(lines, start=1):
         rel = source.relative_to(REPO_ROOT).as_posix()
+
+        # 围栏代码块（``` 或 ~~~）内为示例代码/嵌入的文档草稿，不做链接/路径校验，
+        # 否则示例内容会大量误报（设计约束：误报率高于约 5% 就收窄规则）。
+        stripped = line.lstrip()
+        if stripped.startswith(("```", "~~~")):
+            marker = stripped[:3]
+            if not in_fence:
+                in_fence, fence_marker = True, marker
+            elif stripped.startswith(fence_marker):
+                in_fence, fence_marker = False, ""
+            continue  # 围栏标记行本身不检查
+        if in_fence:
+            continue
 
         # 规则 1：链接存在性
         for m in LINK_RE.finditer(line):

@@ -14,6 +14,20 @@ from __future__ import annotations
 # ── 严重程度 ────────────────────────────────────────────────────────────────
 SEVERITY_ZH = {"critical": "危急", "high": "高", "medium": "中", "low": "低"}
 
+# ── 安全发现风险类型（与 core/models.py SafetyFinding.risk_type 枚举对齐）─────
+RISK_TYPE_ZH = {
+    "prompt_injection": "提示词注入",
+    "sensitive_info": "敏感信息泄露",
+    "unsupported_claim": "缺乏证据支撑",
+    "over_autonomy": "过度自主",
+    "unsafe_instruction": "不安全指令",
+    "source_untrusted": "来源不可信",
+    "policy_gap": "策略覆盖缺口",
+    "improper_output_handling": "输出处理不当",  # LLM05
+    "system_prompt_leakage": "系统提示词泄露",  # LLM07
+    "unbounded_consumption": "资源无限消耗",  # LLM10
+}
+
 # ── 阻断类型（简洁名词，用于标签展示）──────────────────────────────────────
 BLOCKER_TYPE_ZH = {
     "missing_stage_output": "缺少阶段结果",
@@ -113,6 +127,22 @@ STATUS_ZH = {
     "unknown": "未知",
 }
 
+# ── 工作流执行模式 / 中断适配器状态（/health 字段）──────────────────────────
+EXEC_MODE_ZH = {
+    "single_step": "单步（稳定）",
+    "langgraph_interrupt": "LangGraph 中断（实验）",
+    "unknown": "未知",
+}
+
+ADAPTER_STATUS_ZH = {
+    "healthy": "正常",
+    "degraded": "降级",
+    "unavailable": "不可用",
+    "disabled": "未启用",
+    "not_configured": "未配置",
+    "unknown": "未知",
+}
+
 # ── 决策原因（内部代码，仅少数常见值做友好化，其余回退原值）────────────────
 DECISION_REASON_ZH = {
     "read_stage_advancement_decision": "读取阶段推进判定",
@@ -136,6 +166,18 @@ def zh(mapping: dict[str, str], key: object, default: str | None = None) -> str:
 
 def severity_zh(value: object) -> str:
     return zh(SEVERITY_ZH, value)
+
+
+def risk_type_zh(value: object) -> str:
+    return zh(RISK_TYPE_ZH, value)
+
+
+def exec_mode_zh(value: object) -> str:
+    return zh(EXEC_MODE_ZH, value)
+
+
+def adapter_status_zh(value: object) -> str:
+    return zh(ADAPTER_STATUS_ZH, value)
 
 
 def blocker_type_zh(value: object) -> str:

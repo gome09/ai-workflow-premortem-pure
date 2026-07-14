@@ -75,7 +75,7 @@ make setup && make prod-up   # 生产模式（PostgreSQL + Redis + 真实 LLM）
 - 修改 `docs/` 下文档后请同步检查 [docs/README.md](docs/README.md) 索引是否需要更新条目。
 - `docs/plan/improvement-roadmap.md` 是持续维护的分阶段改进路线图（合规映射/企业工程/开源社区三条坐标轴），涉及安全或合规相关改动时应参照其差距清单；其第 10 节是外部标准复核增补，与正文冲突处以第 10 节为准。
 - 路线图已展开为五份分阶段实施计划：[docs/plan/phase-0-repo-governance.md](docs/plan/phase-0-repo-governance.md) ~ [docs/plan/phase-4-community.md](docs/plan/phase-4-community.md)。**执行任一改进任务前先读对应阶段计划及其关联 spec**；任务完成后同步勾选该计划文件中的验收清单。
-- `docs/spec/` 存放系统设计与规格文档，分两类：**已实现**（architecture / api-reference / security-model / stage3-risk-adaptive-gate）与**设计态**（supply-chain-security / data-classification-and-privacy / risk-taxonomy-engine / governance-platform，文件头有 `Status: Designed, not implemented` 标注）。实现设计态规格后必须更新其 Status 行。
+- `docs/spec/` 存放系统设计与规格文档，当前**全部已实现**（architecture / api-reference / security-model / stage3-risk-adaptive-gate / supply-chain-security / data-classification-and-privacy / risk-taxonomy-engine / governance-platform，文件头 `Status:` 行标注落地版本；曾经的四份"设计态"规格已随 Phase 1–4 落地并翻转为 `Status: Implemented`）。今后新增设计态规格时用 `Status: Designed, not implemented` 标注，实现后必须更新其 Status 行。
 - `docs/plan/` 存放规划与路线图文档。外部标准动态（NIST 修订 / TC260 征求意见 / EU AI Act）有时效性，启动新阶段前按路线图第 10 节的清单重新核实。
 
 <!-- project-upgrade:start -->

@@ -126,7 +126,7 @@ docker compose -f docker-compose.lite.yml up --build
 
 ## 当前已知注意事项
 
-- 未安装 `prometheus_fastapi_instrumentator` 时，`python -m pytest tests/ -q` 结果为 `376 passed, 6 skipped`；执行 `uv sync --all-extras` 补齐该依赖后为 `388 passed, 1 skipped`（该依赖实际位于 `pyproject.toml` 主依赖列表，而非可选依赖组）。
+- 执行 `uv sync --all-extras` 补齐依赖后，全量 `python -m pytest tests/ -q` 结果为 `642 passed, 1 skipped`（v1.2.1 实测）。未安装 `prometheus_fastapi_instrumentator` 时会多跳过 5 个依赖该库的测试（合计 `6 skipped`）；该依赖实际位于 `pyproject.toml` 主依赖列表，而非可选依赖组。
 - 未安装该依赖时的 `6 skipped` 中，4 个来自 `tests/test_gate_report.py` 对 `prometheus_fastapi_instrumentator` 的显式 `importorskip`，1 个来自 `tests/test_api.py` 对同一依赖的模块级 `importorskip`，1 个来自 `tests/test_health.py` 的其他依赖条件。
 - `/health/ready` 在 `sqlite` 模式下会跳过 Redis 检查。
 - 文档中所有 `.env.acceptance`、`.env.lite` 的旧提法均已失效，当前仓库实际跟踪的环境模板只有 `.env.example` 和 `.env.demo`。

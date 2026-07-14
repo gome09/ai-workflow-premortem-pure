@@ -1,7 +1,7 @@
 # 供应链与 CI 安全设计规格
 
-> Status: Designed, not implemented（落地任务见 [../plan/phase-0-repo-governance.md](../plan/phase-0-repo-governance.md) 与 [../plan/phase-4-community.md](../plan/phase-4-community.md)）
-> Last updated: 2026-07-13
+> Status: Implemented（Phase 0 + Phase 4 落地：CI 权限最小化 / Dependabot / SAST / pip-audit / 文档一致性检查 / Scorecard；分支保护待维护者在 GitHub 后台开启。落地任务见 [../plan/phase-0-repo-governance.md](../plan/phase-0-repo-governance.md) 与 [../plan/phase-4-community.md](../plan/phase-4-community.md)）
+> Last updated: 2026-07-14
 > 对标依据：OpenSSF Scorecard 18 项检查（v5.5.0，2026-04）、GitHub Actions 安全加固最佳实践
 
 本规格定义仓库供应链安全与 CI 安全的目标形态，覆盖：CI 权限最小化、依赖自动更新、SAST、依赖漏洞审计、文档-代码一致性检查、Scorecard 水位管理。

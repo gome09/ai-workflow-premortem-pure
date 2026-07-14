@@ -101,11 +101,11 @@ T1.6（独立）
 
 ## 6. 阶段验收清单
 
-- [ ] `university_mental_health` 场景实测升为 HIGH 及以上（回归测试固化）
-- [ ] 数据分级字段生效且有覆写审计
-- [ ] 存储层敏感字段加密在代码里生效（可验证密文），非"计划做"
-- [ ] PII 检测 finding 可产出；掩码开关可用
-- [ ] 报告首屏中文 AI 标识可见
-- [ ] PIA 三份文档存档（含 `university_mental_health` 实测一份）
-- [ ] CI 中 SAST + pip-audit 真实运行有结果
-- [ ] 泄露应急响应 checklist 与会话删除能力就位
+- [x] `university_mental_health` 场景实测升为 HIGH 及以上（回归测试固化）
+- [x] 数据分级字段生效且有覆写审计
+- [x] 存储层敏感字段加密在代码里生效（可验证密文），非"计划做"
+- [x] PII 检测 finding 可产出；掩码开关可用
+- [x] 报告首屏中文 AI 标识可见
+- [x] PIA 三份文档存档（含 `university_mental_health` 实测一份）
+- [x] CI 中 SAST + pip-audit 真实运行有结果
+- [x] 泄露应急响应 checklist 与会话删除能力就位

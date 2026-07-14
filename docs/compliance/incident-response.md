@@ -1,7 +1,7 @@
 # 数据泄露应急响应 Checklist
 
 > 适用范围：本平台（ai-workflow-premortem）发生或疑似发生数据泄露事件。
-> 互链：[../SECURITY.md](../SECURITY.md)（漏洞报告渠道）。
+> 互链：[SECURITY.md](../../SECURITY.md)（漏洞报告渠道）。
 > 依据：PIPL 第 57 条（事件通知义务）、《网络安全事件应急预案》。
 
 ## 1. 发现与确认（0-1h）

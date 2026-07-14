@@ -1,6 +1,6 @@
 # Security Model
 
-> **Last updated:** 2026-06-08
+> **Last updated:** 2026-07-14
 
 This project has two security layers:
 
@@ -111,6 +111,17 @@ Nginx 配置来自：
 | Restart policy | `restart: unless-stopped` |
 | Structured logs | 应用日志为 JSON 输出 |
 
+### Data Security（数据分级 / 字段加密 / PII 掩码）
+
+Phase 1（v1.0.3，T1.1–T1.4）落地的数据安全能力，完整设计见 [data-classification-and-privacy.md](data-classification-and-privacy.md)：
+
+| 能力 | 实现 | 位置 |
+|------|------|------|
+| 数据分类分级 | `ProjectContext` 落库数据打三级标签（公开示例 / 客户业务材料 / 敏感个人信息），支持覆写并留审计 | `core/models.py` `data_classification` 字段；`PATCH /sessions/{id}/data-classification` |
+| 字段级加密 | 存储层对敏感字段做 Fernet 对称加密（可验证密文），密钥来自 `DATA_ENCRYPTION_KEY` | `storage/field_security.py` |
+| PII 掩码 | LLM 调用前对材料做 PII 检测与掩码（`PII_MASK_BEFORE_LLM` 开关），命中产出 finding | `tools/safety_classifier.py`（`PII_PATTERNS`） |
+| AI 生成标识 | 报告导出首屏中文免责声明，对齐《生成合成内容标识办法》 | `core/report_service.py` |
+
 ### What This Deployment Still Does NOT Provide
 
 - 面向公网的完整安全基线
@@ -127,7 +138,7 @@ Nginx 配置来自：
 
 ### SafetyFinding Types
 
-当前核心安全发现类型包括：
+当前核心安全发现类型（`core/models.py` 中 `SafetyFinding.risk_type` 的权威枚举，共 10 项）：
 
 - `prompt_injection`
 - `sensitive_info`
@@ -136,6 +147,9 @@ Nginx 配置来自：
 - `unsafe_instruction`
 - `source_untrusted`
 - `policy_gap`
+- `improper_output_handling` —— OWASP LLM05 Improper Output Handling（T2.1 新增）
+- `system_prompt_leakage` —— OWASP LLM07 System Prompt Leakage（T2.1 新增）
+- `unbounded_consumption` —— OWASP LLM10 Unbounded Consumption（T2.1 新增）
 
 ### Blocking Behavior
 

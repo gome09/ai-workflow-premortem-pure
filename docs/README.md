@@ -18,10 +18,10 @@
 | [spec/api-reference.md](spec/api-reference.md) | API 接口参考 |
 | [spec/security-model.md](spec/security-model.md) | 安全模型 |
 | [spec/stage3-risk-adaptive-gate.md](spec/stage3-risk-adaptive-gate.md) | 风险自适应门禁详解 |
-| [spec/supply-chain-security.md](spec/supply-chain-security.md) | 供应链与 CI 安全设计规格（权限最小化 / Dependabot / SAST / Scorecard / 文档一致性检查）·设计态 |
-| [spec/data-classification-and-privacy.md](spec/data-classification-and-privacy.md) | 数据分类分级与隐私保护设计规格（分级 / 字段加密 / PII 掩码 / AI 生成标识 / PIA）·设计态 |
-| [spec/risk-taxonomy-engine.md](spec/risk-taxonomy-engine.md) | 风险分类体系升级设计规格（OWASP LLM 2025 补齐 / Agentic ASI 2026 / NIST-AI-600-1 / TC260 智能体指引）·设计态 |
-| [spec/governance-platform.md](spec/governance-platform.md) | 组织级治理平台设计规格（门禁规则版本化 / 治理视图 / 业务指标 / LLM Judge）·设计态 |
+| [spec/supply-chain-security.md](spec/supply-chain-security.md) | 供应链与 CI 安全规格（权限最小化 / Dependabot / SAST / Scorecard / 文档一致性检查）·已实现（Phase 0+4） |
+| [spec/data-classification-and-privacy.md](spec/data-classification-and-privacy.md) | 数据分类分级与隐私保护规格（分级 / 字段加密 / PII 掩码 / AI 生成标识 / PIA）·已实现（v1.0.3） |
+| [spec/risk-taxonomy-engine.md](spec/risk-taxonomy-engine.md) | 风险分类体系升级规格（OWASP LLM 2025 补齐 / Agentic ASI 2026 / NIST-AI-600-1 / TC260 智能体指引）·已实现（v1.1.0） |
+| [spec/governance-platform.md](spec/governance-platform.md) | 组织级治理平台规格（门禁规则版本化 / 治理视图 / 业务指标 / LLM Judge）·已实现（v1.2.0，LLM Judge 可选未启用） |
 
 ## compliance/ — 合规文档
 
@@ -32,6 +32,7 @@
 | [compliance/pia-university-mental-health.md](compliance/pia-university-mental-health.md) | university_mental_health 场景实测 PIA 存档 |
 | [compliance/incident-response.md](compliance/incident-response.md) | 数据泄露应急响应 checklist（T1.9 产物） |
 | [compliance/backup.md](compliance/backup.md) | 生产部署备份指引（T1.6 产物） |
+| [compliance/iso42001-mapping.md](compliance/iso42001-mapping.md) | ISO/IEC 42001:2023 条款映射表（25 条款映射 + 缺口清单，T3.7 产物） |
 
 ## plan/ — 规划与路线图文档
 

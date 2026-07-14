@@ -1,7 +1,7 @@
 # 风险分类体系升级设计规格
 
-> Status: Designed, not implemented（落地任务见 [../plan/phase-2-risk-taxonomy.md](../plan/phase-2-risk-taxonomy.md)）
-> Last updated: 2026-07-13
+> Status: Implemented（v1.1.0 落地 T2.1–T2.6；LLM08 依赖 RAG 组件，明确缓办。落地任务见 [../plan/phase-2-risk-taxonomy.md](../plan/phase-2-risk-taxonomy.md)）
+> Last updated: 2026-07-14
 > 对标依据：OWASP LLM Top 10 2025 (v2.0)、OWASP Top 10 for Agentic Applications 2026 (ASI)、NIST-AI-600-1 Generative AI Profile、TC260《智能体部署使用安全指引》（2026-07 发布）
 
 ---
@@ -69,8 +69,8 @@ stages/base.py:scan_stage_io / core/session_service.py:scan_user_materials 等
 ### 3.4 LLM10：Unbounded Consumption 接入
 
 把"有基础设施但未接入分类体系"接通，分两层：
-- **计数层**：`core/context_manager.py` 已控制单次调用 `max_tokens`；新增会话级累计计数——`ProjectContext` 增加 `llm_call_count` / `llm_token_estimate` 字段（由 `core/execution_service.execute_one_turn` 递增），阈值配置进 settings（默认：单会话 200 次调用 / 500k tokens 告警）。
-- **判定层**：超阈值时产出 `unbounded_consumption` finding（severity=medium，requires_human_review=False——告警不阻断，避免误伤长会话）；同时 slowapi 429 事件在 `api/limiter.py` 的 exception handler 中记入审计日志（接入 `core/audit_service`），作为租户级滥用证据。
+- **计数层**：`core/context_manager.py` 已控制单次调用 `max_tokens`；新增会话级累计计数——`ProjectContext` 增加 `llm_call_count` / `llm_token_estimate` 字段（由 `core/execution_service.py` 的 `execute_one_turn` 递增），阈值配置进 settings（默认：单会话 200 次调用 / 500k tokens 告警）。
+- **判定层**：超阈值时产出 `unbounded_consumption` finding（severity=medium，requires_human_review=False——告警不阻断，避免误伤长会话）；同时 slowapi 429 事件在 `api/limiter.py` 的 exception handler 中记入审计日志（接入 `core/audit_service.py`），作为租户级滥用证据。
 
 ### 3.5 LLM08 明确缓办
 

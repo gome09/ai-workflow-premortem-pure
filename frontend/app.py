@@ -14,11 +14,14 @@ from components.stage_message import render_assistant_message
 from dotenv import load_dotenv
 from labels import (
     action_source_zh,
+    adapter_status_zh,
     blocker_type_zh,
     decision_reason_zh,
+    exec_mode_zh,
     hard_blocker_zh,
     lifecycle_zh,
     resolution_zh,
+    risk_type_zh,
     severity_zh,
     status_zh,
 )
@@ -851,9 +854,8 @@ with st.sidebar:
     st.session_state.health = get_health()
     if st.session_state.health:
         st.caption(
-            "Execution: "
-            f"`{st.session_state.health.get('workflow_execution_mode', 'unknown')}` · "
-            f"{st.session_state.health.get('interrupt_adapter_status', 'unknown')}"
+            f"执行模式：{exec_mode_zh(st.session_state.health.get('workflow_execution_mode', 'unknown'))}"
+            f" · 中断适配器：{adapter_status_zh(st.session_state.health.get('interrupt_adapter_status', 'unknown'))}"
         )
     st.divider()
 
@@ -1226,7 +1228,8 @@ with st.sidebar:
                 blocking = "阻断" if action.get("blocking", True) else "非阻断"
                 version = action.get("stage_output_version", 1)
                 with st.expander(
-                    f"[阶段{action.get('stage_id')} v{version}] {risk}/{action_type}/{blocking} · {title}",
+                    f"[阶段{action.get('stage_id')} v{version}] "
+                    f"{severity_zh(risk)}/{resolution_zh(action_type)}/{blocking} · {title}",
                     expanded=False,
                 ):
                     st.code(action_id, language="text")
@@ -1543,7 +1546,7 @@ with st.sidebar:
                     }.get(severity, "⚪")
                     st.markdown(
                         f"{severity_icon} **`{finding.get('finding_id')}`** · 阶段{finding.get('stage_id')} · "
-                        f"{severity_zh(severity)} / {finding.get('risk_type')}"
+                        f"{severity_zh(severity)} / {risk_type_zh(finding.get('risk_type'))}"
                     )
                     st.caption(finding.get("description", ""))
                     st.caption("建议处理：" + finding.get("recommended_action", ""))
@@ -2039,9 +2042,9 @@ if st.session_state.get("nav_page") == "治理总览":
 elif not st.session_state.session_id:
     # ── 欢迎页 ────────────────────────────────────────────────────────────────
     st.markdown("""
-    # 👋 欢迎使用 AI Workflow Review Workbench
+    # 👋 欢迎使用 AI 工作流风险复核工作台
 
-    面向 AI 项目立项阶段的 **Pre-mortem、Human Oversight、Evidence、Safety、Eval 与 Audit-ready Report** 工作台。
+    面向 AI 项目立项阶段的 **预验尸（Pre-mortem）、人机监督、证据治理、安全发现、评测与可审计报告** 工作台。
 
     ---
 
@@ -2055,20 +2058,20 @@ elif not st.session_state.session_id:
 
     | 阶段 | 内容 | 重点 |
     |------|------|------|
-    | 阶段一 | Failure Mode Pre-mortem | 结合证据识别失败模式，并保留 `evidence_ids` |
-    | 阶段二 | Human Oversight Workflow | 针对高风险节点设计人工审核策略 |
-    | 阶段三 | Stress Test / Eval Cases | 生成压测用例并沉淀覆盖率指标 |
-    | 阶段四 | Trigger Methods | 输出触发方式，并检查高风险触发是否需要人工复核 |
+    | 阶段一 | 失败模式预验尸 | 结合证据识别失败模式，并保留证据引用（`evidence_ids`） |
+    | 阶段二 | 人机协同监督工作流 | 针对高风险节点设计人工审核策略 |
+    | 阶段三 | 压力测试 / 评测用例 | 生成压测用例并沉淀覆盖率指标 |
+    | 阶段四 | 触发策略生成 | 输出触发方式，并检查高风险触发是否需要人工复核 |
 
     ---
 
     ## 💡 核心特性
 
-    - **Human Oversight Action Queue**：阻断型人工动作会阻止阶段自动推进
-    - **Evidence-grounded Risk Analysis**：搜索资料和用户补充资料都会进入 EvidenceSource
-    - **Safety Findings**：轻量检测 prompt injection、unsupported claim、policy gap 等风险
-    - **Eval Coverage Summary**：统计失败模式覆盖率、高风险节点覆盖率等指标
-    - **Audit-ready Reports**：导出包含证据、安全、审核、压测和开放风险的报告
+    - **人工监督动作队列**：阻断型人工动作会阻止阶段自动推进
+    - **基于证据的风险分析**：搜索资料与用户补充材料都会进入证据来源（EvidenceSource）
+    - **安全风险发现**：轻量检测提示词注入、缺乏证据支撑、策略覆盖缺口等风险
+    - **评测覆盖率总览**：统计失败模式覆盖率、高风险节点覆盖率等指标
+    - **可审计报告**：导出包含证据、安全、审核、压测与开放风险的报告
     """)
 
 else:

@@ -69,7 +69,7 @@
 
 ### T0.7 OpenSSF Scorecard 基线扫描
 
-- **内容**：运行 `scorecard` CLI（需仓库已推送到 GitHub），将 18 项检查的量化结果存档至 `.upgrade/reports/scorecard-baseline-YYYYMMDD.md`。注意 Scorecard v5.5.0（2026-04）起支持按仓库类型跳过不适用检查。
+- **内容**：运行 `scorecard` CLI（需仓库已推送到 GitHub），将 18 项检查的量化结果存档至 `.upgrade/reports/` 下（命名格式 scorecard-baseline-YYYYMMDD.md，如 scorecard-baseline-20260713.md）。注意 Scorecard v5.5.0（2026-04）起支持按仓库类型跳过不适用检查。
 - **同时人工确认**（本地无法检测的项）：GitHub 后台的 Branch Protection 与强制 Code Review 设置状态，一并记录进基线报告。
 - **验收**：基线报告存档，含总分与逐项分数；阶段 4 以此为对照基线。
 - 工作量：M（含环境准备）
@@ -96,9 +96,9 @@ T0.7  （建议放最后跑：让前面的改进先反映到分数里）
 
 ## 6. 阶段验收清单
 
-- [ ] LICENSE / SECURITY.md / CONTRIBUTING.md 三个文件都存在且内容非模板占位
-- [ ] `ci.yml` 有显式 `permissions` 最小化声明且 CI 全绿
-- [ ] `.github/dependabot.yml` 已激活
-- [ ] CHANGELOG 头部有历史追溯说明
-- [ ] Scorecard CLI 量化基线报告已存档至 `.upgrade/reports/`
-- [ ] 当前版本已打 git tag
+- [x] LICENSE / SECURITY.md / CONTRIBUTING.md 三个文件都存在且内容非模板占位
+- [x] `ci.yml` 有显式 `permissions` 最小化声明且 CI 全绿
+- [x] `.github/dependabot.yml` 已激活
+- [x] CHANGELOG 头部有历史追溯说明
+- [x] Scorecard CLI 量化基线报告已存档至 `.upgrade/reports/`
+- [x] 当前版本已打 git tag

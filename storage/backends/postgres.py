@@ -1133,3 +1133,205 @@ class PostgresSessionStore:
             ).fetchone()
             conn.commit()
             return dict(row) if row else None
+
+    # ── Governance trend analytics (T3.2) ─────────────────────────────────────
+
+    def record_gate_evaluation(
+        self,
+        *,
+        session_id: str,
+        tenant_id: str,
+        stage_id: int,
+        risk_tier: str,
+        passed: bool,
+        blocking_rule_ids: list,
+        rule_versions: dict,
+    ) -> None:
+        """旁路写入单行评估记录——治理趋势数据源。"""
+        import uuid
+
+        record_id = str(uuid.uuid4())[:8]
+        sql = """
+            INSERT INTO gate_evaluation_records (
+                record_id, session_id, tenant_id, stage_id, risk_tier, passed,
+                blocking_rule_ids, rule_versions, evaluated_at
+            ) VALUES (%s, %s, %s::uuid, %s, %s, %s, %s, %s, NOW())
+        """
+        with self._get_conn() as conn:
+            conn.execute(
+                sql,
+                (
+                    record_id,
+                    session_id,
+                    tenant_id or None,
+                    stage_id,
+                    risk_tier,
+                    passed,
+                    json.dumps(blocking_rule_ids, default=str),
+                    json.dumps(rule_versions, default=str),
+                ),
+            )
+            conn.commit()
+
+    def gate_trends(self, tenant_id: str, weeks: int = 8) -> list[dict]:
+        """按周聚合门禁评估趋势。空 tenant_id 不开放跨租户查询。"""
+        if not tenant_id:
+            return []
+        sql = """
+            SELECT date_trunc('week', evaluated_at)::date::text AS week,
+                   passed,
+                   blocking_rule_ids
+            FROM gate_evaluation_records
+            WHERE tenant_id = %s::uuid
+              AND evaluated_at >= NOW() - (%s || ' weeks')::INTERVAL
+            ORDER BY week DESC
+        """
+        with self._get_conn() as conn:
+            rows = conn.execute(sql, (tenant_id, str(weeks))).fetchall()
+        return _aggregate_gate_trends(rows)
+
+    def governance_overview(self, tenant_id: str) -> dict:
+        """租户内治理总览聚合。空 tenant_id 返回零值字典。"""
+        zero = {
+            "sessions_total": 0,
+            "state_distribution": {},
+            "risk_tier_distribution": {},
+            "open_safety_findings": 0,
+            "pending_actions": 0,
+            "reports_exported": 0,
+        }
+        if not tenant_id:
+            return zero
+        with self._get_conn() as conn:
+            state_rows = conn.execute(
+                "SELECT current_state, COUNT(*) AS n FROM sessions "
+                "WHERE tenant_id = %s::uuid GROUP BY current_state",
+                (tenant_id,),
+            ).fetchall()
+            ctx_rows = conn.execute(
+                "SELECT session_id, context_json FROM sessions WHERE tenant_id = %s::uuid",
+                (tenant_id,),
+            ).fetchall()
+            eval_rows = conn.execute(
+                "SELECT session_id, risk_tier, evaluated_at "
+                "FROM gate_evaluation_records WHERE tenant_id = %s::uuid",
+                (tenant_id,),
+            ).fetchall()
+        return _aggregate_governance_overview(state_rows, ctx_rows, eval_rows, zero)
+
+    def actions_backlog(self, tenant_id: str, limit: int = 50) -> list[dict]:
+        """待处理人工动作明细，按 risk_level + 等待时长排序。空 tenant_id 返回空列表。"""
+        if not tenant_id:
+            return []
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                "SELECT session_id, context_json FROM sessions WHERE tenant_id = %s::uuid",
+                (tenant_id,),
+            ).fetchall()
+        return _aggregate_actions_backlog(rows, limit)
+
+
+def _aggregate_gate_trends(rows: list[dict]) -> list[dict]:
+    """Shared weekly-bucket aggregation for gate_trends."""
+    from collections import Counter
+
+    buckets: dict[str, dict] = {}
+    for row in rows:
+        week = row["week"]
+        bucket = buckets.setdefault(week, {"evaluations": 0, "passed": 0, "rules": []})
+        bucket["evaluations"] += 1
+        if row["passed"]:
+            bucket["passed"] += 1
+        br_ids = row["blocking_rule_ids"]
+        if isinstance(br_ids, str):
+            br_ids = json.loads(br_ids) if br_ids else []
+        bucket["rules"].extend(br_ids or [])
+
+    result = []
+    for week, data in sorted(buckets.items(), reverse=True):
+        evaluations = data["evaluations"]
+        passed = data["passed"]
+        rule_counts = Counter(data["rules"]).most_common(5)
+        result.append(
+            {
+                "week": week,
+                "evaluations": evaluations,
+                "passed": passed,
+                "pass_rate": passed / evaluations if evaluations else 0.0,
+                "top_blocking_rules": [{"rule_id": r, "count": c} for r, c in rule_counts],
+            }
+        )
+    return result
+
+
+def _aggregate_governance_overview(
+    state_rows: list[dict], ctx_rows: list[dict], eval_rows: list[dict], zero: dict
+) -> dict:
+    """Shared governance-overview aggregation."""
+    state_distribution: dict[str, int] = {}
+    sessions_total = 0
+    for row in state_rows:
+        state = row["current_state"]
+        cnt = row["n"]
+        state_distribution[state] = cnt
+        sessions_total += cnt
+
+    # risk_tier_distribution: latest risk_tier per session
+    latest_by_session: dict[str, tuple] = {}
+    for row in eval_rows:
+        sid = row["session_id"]
+        evaluated_at = row["evaluated_at"]
+        cur = latest_by_session.get(sid)
+        if cur is None or evaluated_at > cur[0]:
+            latest_by_session[sid] = (evaluated_at, row["risk_tier"])
+    risk_tier_distribution: dict[str, int] = {}
+    for _, tier in latest_by_session.values():
+        risk_tier_distribution[tier] = risk_tier_distribution.get(tier, 0) + 1
+
+    open_safety_findings = 0
+    pending_actions = 0
+    reports_exported = 0
+    for row in ctx_rows:
+        raw = row.get("context_json") or "{}"
+        ctx_data = json.loads(raw) if isinstance(raw, str) else raw
+        for finding in ctx_data.get("safety_findings", []) or []:
+            if finding.get("status") == "open":
+                open_safety_findings += 1
+        for action in ctx_data.get("pending_actions", []) or []:
+            if action.get("status") == "pending":
+                pending_actions += 1
+        if ctx_data.get("report_artifacts"):
+            reports_exported += 1
+
+    return {
+        "sessions_total": sessions_total,
+        "state_distribution": state_distribution,
+        "risk_tier_distribution": risk_tier_distribution,
+        "open_safety_findings": open_safety_findings,
+        "pending_actions": pending_actions,
+        "reports_exported": reports_exported,
+    }
+
+
+def _aggregate_actions_backlog(rows: list[dict], limit: int) -> list[dict]:
+    """Shared actions-backlog aggregation."""
+    risk_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+    actions: list[dict] = []
+    for row in rows:
+        session_id = row["session_id"]
+        raw = row.get("context_json") or "{}"
+        ctx_data = json.loads(raw) if isinstance(raw, str) else raw
+        for action in ctx_data.get("pending_actions", []) or []:
+            if action.get("status") == "pending":
+                actions.append(
+                    {
+                        "session_id": session_id,
+                        "action_id": action.get("action_id"),
+                        "title": action.get("title"),
+                        "risk_level": action.get("risk_level", "medium"),
+                        "stage_id": action.get("stage_id"),
+                        "created_at": action.get("created_at"),
+                    }
+                )
+    actions.sort(key=lambda a: (risk_order.get(a["risk_level"], 4), a.get("created_at") or ""))
+    return actions[:limit]

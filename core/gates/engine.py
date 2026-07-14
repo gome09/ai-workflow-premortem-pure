@@ -90,6 +90,7 @@ def evaluate_stage_gate(
             build_report,
         )
         from core.gates.risk_profile import classify_project_risk
+        from core.gates.rules.manifest import get_rule_version
 
     blockers = []
     evaluated_rule_ids: list[str] = []
@@ -104,6 +105,7 @@ def evaluate_stage_gate(
                         display_name=_display_name(rule.rule_id),
                         status="skipped",
                         skipped_reason=f"Rule does not apply to stage {stage}.",
+                        rule_version=get_rule_version(rule.rule_id),
                     )
                 )
             continue
@@ -124,6 +126,7 @@ def evaluate_stage_gate(
                         status="blocked",
                         severity=getattr(first, "severity", None),
                         reason=getattr(first, "message", None),
+                        rule_version=get_rule_version(rule.rule_id),
                     )
                 )
             else:
@@ -132,6 +135,7 @@ def evaluate_stage_gate(
                         rule_id=rule.rule_id,
                         display_name=_display_name(rule.rule_id),
                         status="passed",
+                        rule_version=get_rule_version(rule.rule_id),
                     )
                 )
 
@@ -155,6 +159,9 @@ def evaluate_stage_gate(
     # mutating ProjectContext during normal readiness calculations.
     result.__dict__["_rules_evaluated"] = evaluated_rule_ids
 
+    # T3.2 旁路落表：治理趋势数据源，失败不阻断主路径
+    _try_persist_gate_evaluation(ctx, stage, deduped)
+
     if detailed:
         risk_tier, _ = classify_project_risk(ctx)
         report: GateReport = build_report(
@@ -169,3 +176,39 @@ def evaluate_stage_gate(
         result.__dict__["report"] = None
 
     return result
+
+
+def _try_persist_gate_evaluation(ctx: ProjectContext, stage: int, blockers) -> None:
+    """旁路写入 gate_evaluation_records——治理趋势数据源。
+
+    失败只打日志，不抛异常（治理数据缺一行可接受，评估被卡死不可接受）。
+    """
+    try:
+        from core.gates.risk_profile import classify_project_risk
+        from core.gates.rules.manifest import get_rule_version
+        from storage.session_store import session_store as _store
+
+        session_id = getattr(ctx, "session_id", "") or ""
+        if not session_id:
+            return
+        tenant_id = getattr(ctx, "tenant_id", "") or ""
+        risk_tier, _ = classify_project_risk(ctx)
+        blocking_rule_ids = sorted({b.rule_id for b in blockers if b.rule_id})
+        rule_versions = (
+            {rid: get_rule_version(rid) for rid in blocking_rule_ids} if blocking_rule_ids else {}
+        )
+        _store.record_gate_evaluation(
+            session_id=session_id,
+            tenant_id=tenant_id,
+            stage_id=stage,
+            risk_tier=str(risk_tier),
+            passed=not blockers,
+            blocking_rule_ids=blocking_rule_ids,
+            rule_versions=rule_versions,
+        )
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "gate_evaluation_records persist failed; non-fatal", exc_info=True
+        )

@@ -20,6 +20,7 @@ class RuleDetail(BaseModel):
     severity: Literal["critical", "high", "medium", "low"] | None = None
     reason: str | None = None  # populated when blocked
     skipped_reason: str | None = None  # populated when skipped
+    rule_version: str = "0.0.0"  # T3.2: carried from manifest for governance provenance
 
 
 class GateReportSummary(BaseModel):
@@ -47,7 +48,15 @@ class GateReport(BaseModel):
 class _RuleEvalRecord:
     """Transient, not serialised — used only inside engine.py."""
 
-    __slots__ = ("rule_id", "display_name", "status", "severity", "reason", "skipped_reason")
+    __slots__ = (
+        "rule_id",
+        "display_name",
+        "status",
+        "severity",
+        "reason",
+        "skipped_reason",
+        "rule_version",
+    )
 
     def __init__(
         self,
@@ -57,6 +66,7 @@ class _RuleEvalRecord:
         severity: str | None = None,
         reason: str | None = None,
         skipped_reason: str | None = None,
+        rule_version: str = "0.0.0",
     ) -> None:
         self.rule_id = rule_id
         self.display_name = display_name
@@ -64,6 +74,7 @@ class _RuleEvalRecord:
         self.severity = severity
         self.reason = reason
         self.skipped_reason = skipped_reason
+        self.rule_version = rule_version
 
 
 # ─────────────────────────────────────────────
@@ -128,6 +139,7 @@ def build_report(
                 severity=severity,
                 reason=rec.reason,
                 skipped_reason=rec.skipped_reason,
+                rule_version=rec.rule_version,
             )
         )
         if rec.status == "passed":

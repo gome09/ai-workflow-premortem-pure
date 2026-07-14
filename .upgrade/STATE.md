@@ -2,14 +2,16 @@
 
 ## Current Phase
 
-Phase 2 — **全部完成** (T2.1–T2.6, 5 Waves)。Phase 1 全部完成 (T1.1–T1.9)。
+Phase 3 Wave 2 — T3.2 完成。Phase 2 全部完成 (T2.1–T2.6, 5 Waves)。Phase 1 全部完成 (T1.1–T1.9)。
 
 ## Current Task
 
-Phase 2 收尾完成，等待进入 Phase 3。
+T3.2（判定结果携带规则版本 + 评估记录持久化）已完成，等待 Wave 3。
 
 ## Last Completed
 
+- **Phase 3 Wave 2 (2026-07-14)** — T3.2 判定结果携带规则版本 + 评估记录持久化：GateReport.RuleDetail 携带 rule_version；gate_evaluation_records 旁路落表；postgres/sqlite 双后端新增 record_gate_evaluation/gate_trends/governance_overview/actions_backlog 四方法；V005 迁移；20 新测试全通过
+- **Phase 3 Wave 1 (2026-07-14)** — T3.1 门禁规则元数据清单（manifest）：core/gates/rules/manifest.py + get_rule_version/is_safety_bottom_line + 11 测试
 - **Phase 2 Wave 5 (2026-07-14)** — 收尾：version bump 1.0.3→1.1.0、CHANGELOG v1.1.0、STATE.md 更新
 - **Phase 2 Wave 4 (2026-07-14)** — T2.6 标准动态跟踪记录（`.upgrade/logs/standard-tracking-2026-07-14.md`，7 标准基线 + 6 跟踪项）
 - **Phase 2 Wave 3 (2026-07-14, commit 56272f2)** — T2.5 领域扩展标签接入生产链路：`apply_taxonomy_to_safety_finding` 加 domain 参数；`_finding`/`add_findings_dedup`/`resolve_safety_finding` 透传 domain；20 新测试
@@ -86,10 +88,10 @@ Phase 2 AI 风险分类体系补强全部完成。核心成果：
 
 ## Next Action
 
-Enter Phase 3 (governance-platform) per `docs/plan/phase-3-governance-platform.md`.
+Phase 3 Wave 3：T3.3+ 治理平台后续任务（api/main.py 接入 governance 端点等）。
 
 ## Last Updated
 
 - Date: 2026-07-14
-- By: trae-agent (Wave 5 收尾)
-- Summary: Phase 2 全部完成（T2.1–T2.6, 5 Waves, 3 commits: ca42811 / 318d58a / 56272f2），version v1.1.0。524 unit tests + 63 e2e-mock passed。Phase 1 全部完成 (T1.1–T1.9)，version v1.0.3。
+- By: trae-agent (Phase 3 Wave 2)
+- Summary: T3.2 完成——GateReport 携带 rule_version，gate_evaluation_records 旁路落表（detailed 真假均落），postgres/sqlite 双后端 4 方法 + V005 迁移。90 单元测试 + 63 e2e-mock 全通过，lint clean。

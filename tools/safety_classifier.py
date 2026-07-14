@@ -6,6 +6,7 @@ from collections.abc import Iterable
 
 from core.config import settings
 from core.models import EvidenceSource, ProjectContext, SafetyFinding
+from core.scenario_context import current_domain_profile
 from tools.prompt_injection_scanner import classify_injection
 from tools.risk_taxonomy import RISK_DESCRIPTIONS
 from tools.taxonomies.mapper import apply_taxonomy_to_safety_finding
@@ -125,7 +126,7 @@ def _finding(
         recommended_action=recommended_action,
         requires_human_review=severity in {"high", "critical"},
     )
-    return apply_taxonomy_to_safety_finding(finding)
+    return apply_taxonomy_to_safety_finding(finding, domain=current_domain_profile(ctx))
 
 
 def _scan_unsupported_claims(
@@ -310,7 +311,7 @@ def add_findings_dedup(ctx: ProjectContext, findings: list[SafetyFinding]) -> in
     for finding in findings:
         key = (finding.stage_id, finding.risk_type, finding.location, finding.description)
         if key not in existing:
-            apply_taxonomy_to_safety_finding(finding)
+            apply_taxonomy_to_safety_finding(finding, domain=current_domain_profile(ctx))
             ctx.safety_findings.append(finding)
             existing.add(key)
             count += 1

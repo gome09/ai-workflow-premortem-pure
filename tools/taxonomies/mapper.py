@@ -78,15 +78,21 @@ def mitigation_status_from_state(status: str | None) -> str:
     return "open"
 
 
-def apply_taxonomy_to_safety_finding(finding: Any) -> Any:
+def apply_taxonomy_to_safety_finding(finding: Any, domain: str = "default") -> Any:
     existing_refs = list(getattr(finding, "taxonomy_refs", []) or [])
     existing_controls = list(getattr(finding, "control_refs", []) or [])
-    finding.taxonomy_refs = _dedupe(
-        existing_refs + refs_for_risk_type(getattr(finding, "risk_type", None))
-    )
-    finding.control_refs = _dedupe(
-        existing_controls + controls_for_risk_type(getattr(finding, "risk_type", None))
-    )
+    risk_type = getattr(finding, "risk_type", None)
+
+    refs = refs_for_risk_type(risk_type)
+    controls = controls_for_risk_type(risk_type)
+
+    # T2.5: domain 命中 university_ai/medical_ai 时叠加领域专属标签
+    if domain in {"university_ai", "medical_ai"}:
+        refs = refs + refs_for_risk_type_extended(risk_type, domain)
+        controls = controls + controls_for_risk_type_extended(risk_type, domain)
+
+    finding.taxonomy_refs = _dedupe(existing_refs + refs)
+    finding.control_refs = _dedupe(existing_controls + controls)
     if not getattr(finding, "mitigation_status", None) or finding.mitigation_status == "open":
         finding.mitigation_status = mitigation_status_from_state(getattr(finding, "status", None))
     if not getattr(finding, "residual_risk", None) or finding.residual_risk == "unknown":

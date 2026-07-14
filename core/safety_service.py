@@ -7,6 +7,7 @@ from typing import Literal
 from core.audit_service import append_audit_event
 from core.models import HumanActionStatus, ProjectContext, SafetyFinding
 from core.oversight_service import resolve_action
+from core.scenario_context import current_domain_profile
 from tools.taxonomies.mapper import apply_taxonomy_to_safety_finding
 
 
@@ -54,7 +55,7 @@ def resolve_safety_finding(
         finding.resolved_at = datetime.utcnow()
         finding.mitigation_status = "mitigated" if status == "resolved" else "dismissed"
         finding.residual_risk = "low" if status == "resolved" else "unknown"
-        apply_taxonomy_to_safety_finding(finding)
+        apply_taxonomy_to_safety_finding(finding, domain=current_domain_profile(ctx))
 
         append_audit_event(
             ctx,

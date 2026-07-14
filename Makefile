@@ -1,6 +1,6 @@
 # Makefile（本地开发快捷命令）
 
-.PHONY: install clean dev-db dev-api dev-frontend dev docker-up docker-down lint test setup setup-win prod-up prod-down prod-logs demo-api demo-frontend demo-ui lite-up e2e-mock e2e-full-test version-check
+.PHONY: install clean dev-db dev-api dev-frontend dev docker-up docker-down lint test setup setup-win prod-up prod-down prod-logs demo-api demo-frontend demo-ui lite-up e2e-mock e2e-full-test version-check audit security-check
 
 # 安装依赖
 install:
@@ -53,6 +53,13 @@ docker-down:
 lint:
 	uv run ruff check .
 	uv run ruff format --check .
+
+# 依赖漏洞审计（非阻断）
+audit:
+	uv run pip-audit --strict
+
+# SAST + 漏洞审计组合
+security-check: lint audit
 
 # 版本元数据一致性检查（pyproject.toml 与 core/version.py 对齐）
 version-check:

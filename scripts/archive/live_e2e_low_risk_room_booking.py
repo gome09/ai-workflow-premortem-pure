@@ -461,7 +461,7 @@ def run_docker_log_check():
 
     try:
         result = subprocess.run(
-            ["docker", "compose", "logs", "--tail=200", "api", "frontend", "postgres", "redis"],
+            ["docker", "compose", "logs", "--tail=200", "api", "frontend", "postgres", "redis"],  # noqa: S607  # docker expected on PATH in e2e script
             capture_output=True,
             text=True,
             timeout=30,

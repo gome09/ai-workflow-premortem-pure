@@ -20,7 +20,7 @@ def _secret() -> str:
 
         if settings.jwt_secret:
             return settings.jwt_secret
-    except Exception:
+    except Exception:  # noqa: S110  # settings 未就绪时回退到环境变量
         pass
     secret = os.environ.get("JWT_SECRET", "")
     if not secret:
@@ -55,7 +55,7 @@ def create_refresh_token(
     return jwt.encode({**data, "exp": expire, "type": "refresh"}, _secret(), algorithm=ALGORITHM)
 
 
-def verify_token(token: str, token_type: str = "access") -> TenantContext:
+def verify_token(token: str, token_type: str = "access") -> TenantContext:  # noqa: S107  # 令牌类型标签（access/refresh），非密码
     try:
         payload = jwt.decode(token, _secret(), algorithms=[ALGORITHM])
         if payload.get("type") != token_type:

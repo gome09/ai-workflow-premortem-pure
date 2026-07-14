@@ -70,7 +70,7 @@ class AuthService:
 
     def refresh(self, refresh_token: str) -> dict:
         """Exchange refresh_token for new access_token."""
-        ctx = verify_token(refresh_token, token_type="refresh")
+        ctx = verify_token(refresh_token, token_type="refresh")  # noqa: S106  # 令牌类型标签，非密码
         token_data = {"sub": ctx.user_id, "tenant_id": ctx.tenant_id, "role": ctx.role}
         return {
             "access_token": create_access_token(token_data),

@@ -48,7 +48,7 @@ import requests
 BASE_URL = "http://127.0.0.1:8000"
 EVIDENCE_DIR = Path("artifacts/live_e2e_four_stage")
 DEMO_EMAIL = "demo@example.com"
-DEMO_PASSWORD = "demo-password-123"
+DEMO_PASSWORD = "demo-password-123"  # noqa: S105  # demo credential for local e2e, not a real secret
 MAX_LOOP = 60
 
 INITIAL_INPUT = """我想分析一个通用 RAG 演示系统。

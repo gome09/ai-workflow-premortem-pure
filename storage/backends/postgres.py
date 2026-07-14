@@ -38,7 +38,7 @@ class PostgresSessionStore:
         alembic_bin = shutil.which("alembic") or str(
             __import__("pathlib").Path(sys.executable).parent / "alembic"
         )
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603  # alembic command, input is controlled
             [alembic_bin, "upgrade", "head"],
             capture_output=True,
             text=True,

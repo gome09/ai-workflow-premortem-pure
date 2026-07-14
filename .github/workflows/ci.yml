@@ -36,6 +36,10 @@ jobs:
       - name: Lint
         run: make lint
 
+      - name: Dependency vulnerability audit (non-blocking)
+        run: uv run pip-audit --strict
+        continue-on-error: true   # 先告警不阻断，观察一轮后再评估升级
+
       - name: Unit tests (sqlite + mock)
         run: |
           cp -f .env.demo .env

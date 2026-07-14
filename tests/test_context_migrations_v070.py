@@ -18,7 +18,7 @@ def test_v060_minimal_context_can_migrate_to_v070_contract():
     raw = json.loads((FIXTURE_DIR / "v060_alpha8_minimal.json").read_text())
     ctx = migrate_context(raw)
 
-    assert ctx.context_schema_version == "0.7.0"
+    assert ctx.context_schema_version == "0.8.0"
     assert hasattr(ctx, "migration_history")
     assert hasattr(ctx, "action_resolution_logs")
     assert hasattr(ctx, "llm_traces")

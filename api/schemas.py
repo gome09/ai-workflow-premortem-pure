@@ -232,3 +232,8 @@ class TraceToEvalDatasetRequest(BaseModel):
     description: str = "EvalCases generated from failed/parser/safety traces for regression gating."
     version: str = "0.1"
     owner: str = "system"
+
+
+class UpdateDataClassificationRequest(BaseModel):
+    data_classification: Literal["public_demo", "business_internal", "sensitive_personal"]
+    note: str = ""

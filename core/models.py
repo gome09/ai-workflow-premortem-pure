@@ -85,7 +85,7 @@ class AuditActor(StrEnum):
     AI = "ai"
 
 
-CONTEXT_SCHEMA_VERSION = "0.7.0"
+CONTEXT_SCHEMA_VERSION = "0.8.0"
 ACTION_SCHEMA_VERSION = "0.7.0"
 
 
@@ -787,6 +787,11 @@ class ProjectContext(BaseModel):
     domain: str = ""  # 具体领域（如：法律文书生成）
     goal: str = ""  # 具体目标（如：提高合同起草准确率）
     user_materials: list[str] = Field(default_factory=list)  # 人工补充资料
+
+    # ── 数据分类分级（DSL 21 条 / PIPL 51 条）────────
+    data_classification: Literal["public_demo", "business_internal", "sensitive_personal"] = (
+        "business_internal"
+    )
 
     # ── 各阶段结构化输出（逐步填充）────────────────
     stage_1_output: Stage1Output | None = None

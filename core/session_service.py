@@ -122,6 +122,8 @@ class SessionService:
         """创建新会话"""
         ctx = ProjectContext(tenant_id=tenant_id)
         ctx = attach_scenario_to_context(ctx, scenario_id or settings.default_scenario_id or None)
+        # T1.1: 数据分类分级——场景会话 public_demo，用户会话 business_internal
+        ctx.data_classification = "public_demo" if ctx.selected_scenario_id else "business_internal"
         session_store.save(ctx)
         context_cache.set(ctx)
         logger.info(f"Session created: {ctx.session_id}")

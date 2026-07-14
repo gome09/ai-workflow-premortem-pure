@@ -47,6 +47,7 @@ nginx/certs/*
 
 # 报告输出
 exports/
+artifacts/
 *.json.bak
 
 # Streamlit

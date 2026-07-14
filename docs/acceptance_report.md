@@ -6,10 +6,12 @@
 |------|------|
 | 测试类型 | 本地离线全流程 E2E 测试 |
 | 测试环境 | SQLite + Mock LLM（无需真实 LLM，无需 Docker） |
-| 会话 ID | `65876b6a-c11b-48b8-abdf-f303421d1373` |
-| 测试时间 | 2026-07-13T15:21:26 - 2026-07-13T15:21:43 |
+| 会话 ID | `91e799e4-15d1-4af3-baa9-79a8be890eb5` |
+| 测试时间 | 2026-07-14T15:20:00 - 2026-07-14T15:20:18 |
 | 测试结果 | ✅ PASS |
-| 修复版本 | v1.0.2（修复证据门控与红队测试覆盖门控与人工动作状态不联通问题） |
+| 当前版本 | v1.2.1（含 Phase 1 安全合规 + Phase 2 风险分类 + Phase 3 治理平台 + Phase 4 社区打磨） |
+| 前端验证 | ✅ Streamlit 工作台正常渲染，JWT 自动登录，无控制台错误，无失败网络请求 |
+| 后端监控 | ✅ 全部 HTTP 200 OK，无 WARNING / ERROR / Exception |
 
 ## 问题修复记录
 
@@ -49,37 +51,29 @@
    - `approved_redteam_case_not_synced` → 调用 `redteam_case_to_eval_case`
    - `redteam_eval_case_not_in_dataset` → 调用 `create_redteam_dataset`
 
-## 四阶段测试结果
+## 四阶段测试结果（2026-07-14 v1.2.1 复测）
 
 ### 阶段 1：失败模式识别
 - **失败模式数量**: 2 个
-- **高风险**: FM-MOCK-001 (Hallucination)
-- **中风险**: FM-MOCK-002 (Context Loss)
-- **证据核验**: 2 个证据源，全部 verified（修复后通过处理 verify_evidence 动作自动更新）
-- **人机监督**: 4 个 human_action，全部 resolved
-- **推进结果**: ✅ 成功进入阶段 2
+- **证据核验**: 通过处理 verify_evidence 动作自动更新（v1.0.2 修复后持续有效）
+- **人机监督**: pending actions 全部 resolved
+- **推进结果**: ✅ 成功进入阶段 2（hard_blockers=0）
 
 ### 阶段 2：人机协同工作流设计
 - **工作流节点数量**: 2 个
-- **NODE-MOCK-001**: Input Validation Gate
-- **NODE-MOCK-002**: Output Verification Gate
 - **人机监督**: 1 个 human_action，已 resolved
-- **推进结果**: ✅ 成功进入阶段 3
+- **推进结果**: ✅ 成功进入阶段 3（hard_blockers=0）
 
 ### 阶段 3：压力测试 / EvalCase 生成
-- **Eval Cases**: 6 个 (normal: 1, adversarial: 5)
-- **Red Team Cases**: 4 个，全部 approved 并 synced to eval
-- **失败模式覆盖率**: 100% (2/2)
-- **高风险节点覆盖率**: 100% (1/1)
-- **人机监督**: 3 个 human_action，全部 resolved
-- **推进结果**: ✅ 成功进入阶段 4
+- **Eval Cases**: 通过 /eval-cases 端点获取（端点返回 200，数据存在）
+- **Red Team Cases**: /redteam/cases 与 /redteam/coverage 端点均返回 200
+- **人机监督**: 1 个 human_action，已 resolved
+- **推进结果**: ✅ 成功进入阶段 4（hard_blockers=0）
 
 ### 阶段 4：触发策略与部署建议
 - **触发方法数量**: 2 个
-- **NODE-MOCK-001**: POST /api/v1/workflow/trigger (无需人工审核)
-- **NODE-MOCK-002**: POST /api/v1/workflow/verify (需人工审核)
 - **人机监督**: 2 个 human_action，全部 resolved
-- **推进结果**: ✅ 流程完成
+- **推进结果**: ✅ 流程完成（current_state=complete）
 
 ## 最终状态面板
 
@@ -101,6 +95,22 @@
 | audit_events | ✅ 通过 |
 | reports | ✅ 通过 |
 | traces | ✅ 通过 |
+
+## 前后端链路验证（2026-07-14 新增）
+
+| 验证项 | 结果 |
+|------|------|
+| 后端 /health | ✅ 200 OK，version=1.2.1，mode=single_step |
+| 后端 /health/live | ✅ 200 OK |
+| 前端 Streamlit 页面 | ✅ 200 OK，正常渲染欢迎页 |
+| 前端 JWT 自动登录 | ✅ demo 用户注册/登录成功，access_token 写入 session_state |
+| 前端→后端 API 调用 | ✅ 16 个 panel 端点全部返回 200（stage-readiness / stage-resolution / actions / evidence / safety-findings / eval-cases / eval-runs / eval-datasets / eval-experiments / interrupt-records / reports / audit-events / traces / redteam-cases / redteam-coverage / advancement-decision） |
+| 治理 API（T3.4） | ✅ /governance/overview、/governance/gate-trends、/governance/actions-backlog 均返回 200 |
+| 浏览器控制台 | ✅ 无 JavaScript 错误 |
+| 浏览器网络请求 | ✅ 无失败请求 |
+| 后端日志监控 | ✅ 全部 200 OK，无 WARNING / ERROR / Exception |
+| 报告导出 | ✅ JSON + Markdown 双格式导出成功 |
+| 报告快照 | ✅ RPT-c4e668a3 创建并读取成功 |
 
 ## 安全发现汇总
 
@@ -130,6 +140,7 @@
 
 ---
 
-*报告生成时间: 2026-07-13T15:01:07*
-*报告架构版本: 1.0.0*
-*修复版本: v1.0.1*
+*报告生成时间: 2026-07-14T15:20:18*
+*报告架构版本: 1.2.1*
+*历史修复版本: v1.0.1 / v1.0.2（证据门控与红队覆盖门控联通）*
+*复测覆盖: Phase 1 安全合规 + Phase 2 风险分类 + Phase 3 治理平台 + Phase 4 社区打磨*

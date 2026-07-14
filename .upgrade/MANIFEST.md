@@ -53,10 +53,17 @@ Before cleanup, classify each file as one of:
 
 | File | Status | Lifecycle | Notes |
 |---|---|---|---|
-| `.upgrade/STATE.md` | active | permanent | |
-| `.upgrade/MANIFEST.md` | active | permanent | |
+| `.upgrade/STATE.md` | active | permanent | 当前升级状态（Phase 0-4 全部完成，v1.2.1） |
+| `.upgrade/MANIFEST.md` | active | permanent | 本文件 |
 | `.upgrade/decisions/RELEASE_CLEANUP.md` | active | permanent | v1.0 发布前组件清理决策记录（移除/归档了哪些组件及原因），moved from project root 2026-07-13 |
+| `.upgrade/decisions/branch-protection.md` | active | permanent | Phase 4 T4.2 main 分支保护策略决策（GitHub 后台手动操作步骤） |
+| `.upgrade/decisions/doc-check-stage3-dangling-ref.md` | active | permanent | Phase 4 T4.1 stage3 文档悬空引用补档决策 |
+| `.upgrade/decisions/scorecard-baseline.md` | active | permanent | Phase 4 T4.3 Scorecard 基线扫描决策 |
 | `.upgrade/reports/release_manifest_v1.0.md` | active | keep-until-superseded | v1.0 生产文件范围清单，moved from project root 2026-07-13 |
+| `.upgrade/reports/scorecard-baseline-20260713.md` | active | keep-until-superseded | Phase 4 T4.3 Scorecard 基线报告（2026-07-13 快照） |
+| `.upgrade/reports/scorecard-trend-20260714.md` | active | keep-until-superseded | Phase 4 T4.3 Scorecard 趋势报告（基线对照 + 18 项预期变化） |
+| `.upgrade/reports/nist-ai-600-1-action-summary.md` | active | keep-until-superseded | Phase 2 T2.2 NIST AI 600-1 动作项映射摘要（4 项标存疑） |
+| `.upgrade/reports/tc260-agent-deployment-summary.md` | active | keep-until-superseded | Phase 2 T2.4 TC260 智能体部署使用安全指引映射摘要 |
 
 ## Moved from Project
 

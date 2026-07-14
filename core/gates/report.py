@@ -95,6 +95,7 @@ _DISPLAY_NAMES: dict[str, str] = {
     "eval_regression": "评测回归",
     "trace_backfill_gap": "追踪回填缺口",
     "stage4_final_governance": "阶段四最终治理",
+    "expert_review": "CRITICAL 专家复核",
 }
 
 

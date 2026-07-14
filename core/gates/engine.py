@@ -1,11 +1,14 @@
 # core/gates/engine.py
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from core.gates.rules import registered_rules
 from core.models import ProjectContext
 from core.stage_readiness_service import StageGateResult, _current_version
+
+logger = logging.getLogger(__name__)
 
 
 def build_gate_trace_metadata(
@@ -81,6 +84,12 @@ def evaluate_stage_gate(
     if stage < 1 or stage > 4:
         raise ValueError(f"stage must be 1..4, got {stage}")
 
+    # T3.3 规则禁用治理：解析显式禁用集合；安全底线规则忽略禁用并告警
+    from core.config import settings
+    from core.gates.rules.manifest import is_safety_bottom_line
+
+    disabled = settings.gate_rules_disabled_set
+
     # Imports deferred to avoid circular imports at module load time.
     if detailed:
         from core.gates.report import (
@@ -109,6 +118,26 @@ def evaluate_stage_gate(
                     )
                 )
             continue
+
+        # T3.3 规则禁用治理
+        if rule.rule_id in disabled:
+            if is_safety_bottom_line(rule.rule_id):
+                logger.warning(
+                    "Rule %s is safety-bottom-line; GATE_RULES_DISABLED entry ignored.",
+                    rule.rule_id,
+                )
+            else:
+                if detailed:
+                    rule_records.append(
+                        _RuleEvalRecord(
+                            rule_id=rule.rule_id,
+                            display_name=_display_name(rule.rule_id),
+                            status="skipped",
+                            skipped_reason="Rule disabled via GATE_RULES_DISABLED.",
+                            rule_version=get_rule_version(rule.rule_id),
+                        )
+                    )
+                continue
 
         evaluated_rule_ids.append(rule.rule_id)
         rule_blockers = rule.evaluate(ctx, stage)
@@ -184,8 +213,9 @@ def _try_persist_gate_evaluation(ctx: ProjectContext, stage: int, blockers) -> N
     失败只打日志，不抛异常（治理数据缺一行可接受，评估被卡死不可接受）。
     """
     try:
+        from core.config import settings
         from core.gates.risk_profile import classify_project_risk
-        from core.gates.rules.manifest import get_rule_version
+        from core.gates.rules.manifest import get_rule_version, is_safety_bottom_line
         from storage.session_store import session_store as _store
 
         session_id = getattr(ctx, "session_id", "") or ""
@@ -197,6 +227,11 @@ def _try_persist_gate_evaluation(ctx: ProjectContext, stage: int, blockers) -> N
         rule_versions = (
             {rid: get_rule_version(rid) for rid in blocking_rule_ids} if blocking_rule_ids else {}
         )
+        # T3.3 标注被禁用规则
+        disabled = settings.gate_rules_disabled_set
+        for rid in disabled:
+            if not is_safety_bottom_line(rid):
+                rule_versions.setdefault(rid, "disabled")
         _store.record_gate_evaluation(
             session_id=session_id,
             tenant_id=tenant_id,

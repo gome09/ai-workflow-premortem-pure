@@ -7,6 +7,7 @@ from core.gates.base import GateRule
 from core.gates.rules import (
     action_state,
     eval_regression,
+    expert_review,
     missing_output,
     parser_error,
     redteam_coverage,
@@ -37,6 +38,7 @@ def registered_rules() -> list[GateRule]:
         eval_regression.rule,
         trace_backfill_gap.rule,
         stage4_final_governance.rule,
+        expert_review.rule,
     ]
     _verify_manifest_integrity(rules)
     return rules

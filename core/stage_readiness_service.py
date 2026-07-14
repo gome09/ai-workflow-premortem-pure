@@ -24,6 +24,7 @@ BlockerType = Literal[
     "eval_regression",
     "trace_backfill_gap",
     "final_governance",
+    "expert_review",
 ]
 
 # Keep this Literal synchronized with
@@ -52,6 +53,7 @@ RequiredResolution = Literal[
     "create_redteam_dataset",
     "trace_to_eval_case",
     "create_trace_backfill_dataset",
+    "approve_expert_review",
 ]
 
 Severity = Literal["low", "medium", "high", "critical"]

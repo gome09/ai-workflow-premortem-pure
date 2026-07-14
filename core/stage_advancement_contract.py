@@ -36,6 +36,7 @@ BLOCKER_TYPES: Final[tuple[str, ...]] = (
     "eval_regression",
     "trace_backfill_gap",
     "final_governance",
+    "expert_review",
 )
 
 REQUIRED_RESOLUTIONS: Final[tuple[str, ...]] = (
@@ -60,6 +61,7 @@ REQUIRED_RESOLUTIONS: Final[tuple[str, ...]] = (
     "create_redteam_dataset",
     "trace_to_eval_case",
     "create_trace_backfill_dataset",
+    "approve_expert_review",
 )
 
 # Source of truth for blocker -> expected resolution semantics.
@@ -132,6 +134,11 @@ STAGE_ADVANCEMENT_CONTRACT: Final[dict[str, dict[str, object]]] = {
     "final_governance": {
         "required_resolution": "resolve_safety_finding",
         "description": "最终报告的完成被尚未闭环的治理事项阻断。",
+        "approval_override_allowed": True,
+    },
+    "expert_review": {
+        "required_resolution": "approve_expert_review",
+        "description": "CRITICAL 风险项目必须经专家复核批准后才能通过 Stage 3。",
         "approval_override_allowed": True,
     },
 }
@@ -323,6 +330,14 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         "api_method": "POST",
         "api_path_template": "/sessions/{session_id}/traces/to-eval-dataset",
         "payload_hint": {"name": "Trace backfill regression dataset", "version": "0.1"},
+    },
+    "approve_expert_review": {
+        "frontend_hint": "CRITICAL 风险项目须由专家复核批准后才能推进。",
+        "api_hint": "POST /sessions/{session_id}/actions/{action_id}/resolve with decision=approve.",
+        "can_execute_via_api": True,
+        "api_method": "POST",
+        "api_path_template": "/sessions/{session_id}/actions/{action_id}/resolve",
+        "payload_hint": {"decision": "approve", "note": "专家复核已批准"},
     },
 }
 

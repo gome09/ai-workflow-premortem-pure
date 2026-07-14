@@ -2,15 +2,15 @@
 
 ## Current Phase
 
-Phase 3 Wave 2 — T3.2 完成。Phase 2 全部完成 (T2.1–T2.6, 5 Waves)。Phase 1 全部完成 (T1.1–T1.9)。
+Phase 3 Wave 3 — T3.4 完成。Phase 2 全部完成 (T2.1–T2.6, 5 Waves)。Phase 1 全部完成 (T1.1–T1.9)。
 
 ## Current Task
 
-T3.2（判定结果携带规则版本 + 评估记录持久化）已完成，等待 Wave 3。
+T3.4（组织级聚合 API 与前端治理页）已完成。
 
 ## Last Completed
 
-- **Phase 3 Wave 2 (2026-07-14)** — T3.2 判定结果携带规则版本 + 评估记录持久化：GateReport.RuleDetail 携带 rule_version；gate_evaluation_records 旁路落表；postgres/sqlite 双后端新增 record_gate_evaluation/gate_trends/governance_overview/actions_backlog 四方法；V005 迁移；20 新测试全通过
+- **Phase 3 Wave 3 (2026-07-14)** — T3.4 组织级聚合 API 与前端治理页：api/routers/governance.py 三个只读端点（overview/gate-trends/actions-backlog，viewer 可读）；api/main.py 接入 governance router；frontend/components/governance_overview.py 治理总览页（三卡片+风险分布+通过率趋势+积压动作表）；frontend/app.py 侧边栏追加"治理总览"导航；tests/test_governance_api_v110.py 24 测试全通过
 - **Phase 3 Wave 1 (2026-07-14)** — T3.1 门禁规则元数据清单（manifest）：core/gates/rules/manifest.py + get_rule_version/is_safety_bottom_line + 11 测试
 - **Phase 2 Wave 5 (2026-07-14)** — 收尾：version bump 1.0.3→1.1.0、CHANGELOG v1.1.0、STATE.md 更新
 - **Phase 2 Wave 4 (2026-07-14)** — T2.6 标准动态跟踪记录（`.upgrade/logs/standard-tracking-2026-07-14.md`，7 标准基线 + 6 跟踪项）
@@ -88,10 +88,10 @@ Phase 2 AI 风险分类体系补强全部完成。核心成果：
 
 ## Next Action
 
-Phase 3 Wave 3：T3.3+ 治理平台后续任务（api/main.py 接入 governance 端点等）。
+Phase 3 Wave 3 后续：T3.3/T3.5/T3.6 等治理平台任务（core/ 层 + LLM Judge 等）。
 
 ## Last Updated
 
 - Date: 2026-07-14
-- By: trae-agent (Phase 3 Wave 2)
-- Summary: T3.2 完成——GateReport 携带 rule_version，gate_evaluation_records 旁路落表（detailed 真假均落），postgres/sqlite 双后端 4 方法 + V005 迁移。90 单元测试 + 63 e2e-mock 全通过，lint clean。
+- By: trae-agent (Phase 3 Wave 3, Agent D)
+- Summary: T3.4 完成——治理只读 API 三端点（viewer 可读、tenant 隔离）、前端治理总览页、24 新测试全通过，e2e-mock 63 通过，lint clean。

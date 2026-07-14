@@ -7,6 +7,7 @@ import re
 
 import requests
 import streamlit as st
+from components.governance_overview import render_governance_overview
 from components.redteam_panel import render_redteam_panel
 from components.report_panel import render_report_panel
 from components.stage_message import render_assistant_message
@@ -2032,7 +2033,10 @@ with st.sidebar:
 # 主区域
 # ─────────────────────────────────────────────────────────────────────────────
 
-if not st.session_state.session_id:
+if st.session_state.get("nav_page") == "治理总览":
+    token = st.session_state.get("access_token") or ""
+    render_governance_overview(API_BASE, token)
+elif not st.session_state.session_id:
     # ── 欢迎页 ────────────────────────────────────────────────────────────────
     st.markdown("""
     # 👋 欢迎使用 AI Workflow Review Workbench

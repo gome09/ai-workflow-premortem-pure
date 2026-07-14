@@ -1,7 +1,7 @@
 # Stage 3 Risk-Adaptive Gate
 
-> **Last updated:** 2026-07-12
-> **Status:** Implemented and validated (except `expert review` for CRITICAL tier — see Gate Behavior Matrix note)
+> **Last updated:** 2026-07-14
+> **Status:** Implemented and validated (including `expert review` for CRITICAL tier — T3.3)
 > **Tests:** 26/26 PASS, 3 smokes PASS
 
 ---
@@ -69,9 +69,9 @@ Implemented risk-adaptive Stage 3 gate that classifies projects into risk tiers 
 | eval regression (gate_required) | ✅ block | ✅ block | ✅ block | ✅ block |
 | eval regression (non-gated) | — | — | ✅ block | ✅ block |
 | trace backfill | — | — | ✅ block | ✅ block |
-| expert review | — | — | — | ⚠️ not implemented |
+| expert review | — | — | — | ✅ block (T3.3) |
 
-> **Note:** `Stage3GateProfile.require_expert_review` (`core/gates/risk_profile.py`) is set to `True` for CRITICAL tier, but no gate rule currently reads or enforces this field — `core/gates/engine.py`'s `registered_rules()` has no rule that consumes it. Expert-review blocking is therefore **not yet functional**; treat the CRITICAL row above as a planned/unimplemented behavior, not current system behavior.
+> **Note:** `Stage3GateProfile.require_expert_review` is now consumed by the `expert_review` gate rule (`core/gates/rules/expert_review.py`, T3.3). CRITICAL-risk projects must have an approved expert-review action before advancing past Stage 3.
 
 ---
 

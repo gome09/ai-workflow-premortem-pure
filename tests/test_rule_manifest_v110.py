@@ -38,10 +38,10 @@ def test_all_manifest_entries_have_implementation():
     assert missing == set(), f"manifest entries without implementation: {sorted(missing)}"
 
 
-def test_registered_rules_count_is_twelve():
-    """契约：当前共 12 条门禁规则。"""
-    assert len(_implemented_rule_ids()) == 12
-    assert len(RULE_MANIFEST) == 12
+def test_registered_rules_count_is_thirteen():
+    """契约：当前共 13 条门禁规则（T3.3 新增 expert_review）。"""
+    assert len(_implemented_rule_ids()) == 13
+    assert len(RULE_MANIFEST) == 13
 
 
 @pytest.mark.parametrize("rule_id", sorted(RULE_MANIFEST.keys()))
@@ -81,8 +81,8 @@ def test_get_rule_version_unknown_is_zero():
     assert get_rule_version("nonexistent") == "0.0.0"
 
 
-def test_safety_bottom_line_rules_exactly_six():
-    """safety_bottom_line=True 的规则恰好是 6 条。"""
+def test_safety_bottom_line_rules_exactly_seven():
+    """safety_bottom_line=True 的规则恰好是 7 条（T3.3 新增 expert_review）。"""
     expected = {
         "missing_output",
         "stale_dependency",
@@ -90,7 +90,8 @@ def test_safety_bottom_line_rules_exactly_six():
         "parser_error",
         "safety_finding",
         "stage4_final_governance",
+        "expert_review",
     }
     actual = {rid for rid, meta in RULE_MANIFEST.items() if meta.safety_bottom_line}
     assert actual == expected
-    assert len(actual) == 6
+    assert len(actual) == 7

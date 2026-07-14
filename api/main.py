@@ -18,6 +18,7 @@ from api.routers import (
     eval_datasets,
     eval_experiments,
     evidence,
+    governance,
     interrupts,
     oversight,
     redteam,
@@ -149,6 +150,7 @@ app.include_router(eval_datasets.router)
 app.include_router(eval_experiments.router)
 app.include_router(redteam.router)
 app.include_router(traces.router)
+app.include_router(governance.router)
 
 
 @app.get("/health/live", include_in_schema=False)
@@ -202,4 +204,7 @@ def health():
         "data_encryption": "enabled" if is_encryption_enabled() else "disabled",
         "audit_retention_days": settings.audit_retention_days,
         "session_retention_days": settings.session_retention_days,
+        "gate_rules_disabled": sorted(settings.gate_rules_disabled_set)
+        if settings.gate_rules_disabled_set
+        else [],
     }

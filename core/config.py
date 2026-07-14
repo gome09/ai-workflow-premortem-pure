@@ -99,6 +99,9 @@ class Settings(BaseSettings):
     llm_call_count_threshold: int = 200
     llm_token_estimate_threshold: int = 500_000
 
+    # T3.3 门禁规则禁用治理：显式禁用规则需配置；安全底线规则不可禁用（配置也忽略+告警）
+    gate_rules_disabled: str = ""  # 逗号分隔 rule_id
+
     # CORS
     cors_allow_origins: str = "https://localhost"
 
@@ -143,6 +146,10 @@ class Settings(BaseSettings):
         if self.redis_password:
             return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/{self.redis_db}"
         return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
+
+    @property
+    def gate_rules_disabled_set(self) -> set[str]:
+        return {s.strip() for s in self.gate_rules_disabled.split(",") if s.strip()}
 
 
 # 全局单例

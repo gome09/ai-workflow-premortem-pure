@@ -14,6 +14,21 @@
 - Docker Compose 部署调通
 - Streamlit Review Workbench 前端
 
+## v1.2.0 (2026-07-14)
+- **Phase 3 组织级治理平台（T3.1–T3.5, T3.7；T3.6 可选未启用）**：
+  - **T3.1 门禁规则元数据清单（manifest）**：新建 `core/gates/rules/manifest.py`，13 条规则每条声明 `version`/`owner`/`rationale`/`standard_refs`/`changelog`/`safety_bottom_line`；`registered_rules()` 启动双向完整性校验（WARNING-only 不阻断）。回答 ISO/IEC 42001 "谁定的、改过几次、为什么"提问，规则保持代码化不引入 DB 存储
+  - **T3.2 判定结果携带规则版本 + 评估记录持久化**：`GateReport`/`RuleDetail` 新增 `rule_version` 字段；新建 `gate_evaluation_records` 表（alembic V005 + SQLite DDL），每次阶段评估旁路落一行（失败不阻断主路径，有降级测试）；存储层新增 `record_gate_evaluation`/`gate_trends`/`governance_overview`/`actions_backlog` 聚合方法（强制 tenant 过滤）
+  - **T3.3 规则禁用显式治理 + expert_review 落地**：新增 `GATE_RULES_DISABLED` 配置（安全底线规则 7 类不可禁用，配置也忽略+WARNING）；新建 `core/gates/rules/expert_review.py` 消费 CRITICAL 档 `require_expert_review`（补 [stage3-risk-adaptive-gate.md](docs/spec/stage3-risk-adaptive-gate.md) 历史欠账——CRITICAL 会话不经专家 approve 无法通过 Stage 3）；`/health` 暴露被禁用规则列表
+  - **T3.4 组织级聚合 API 与前端治理页**：新建 `api/routers/governance.py`（3 个只读端点 `/governance/overview`/`/governance/gate-trends`/`/governance/actions-backlog`，viewer 可读，tenant 隔离）；新建 Streamlit 治理总览页（项目数/风险分布/通过率趋势/积压动作表）
+  - **T3.5 业务指标接入 Prometheus/Grafana**：新建 `api/metrics.py`（6 个 `premortem_*` 指标：sessions/gate-evals/blocks/pending-actions/llm-calls/llm-tokens）；`engine`+`execution_service` 评估与 LLM 路径打点；新建 `monitoring/grafana/dashboards/governance-overview.json`（4 panel，provisioning 自动加载）
+  - **T3.7 ISO/IEC 42001 条款映射表**：新建 `docs/compliance/iso42001-mapping.md`（25 条款映射，21 已覆盖 / 4 部分覆盖 / 4 未覆盖缺口）；修正 spec 两处过时表述（V004→V005、expert_review 状态）
+  - **T3.6 LLM Judge（可选，未启用）**：设计完成（spec §5），flag 默认关，待企业需求确认后作为独立 Wave 启动
+- **门禁规则数**：12 → 13（新增 `expert_review`）
+- **新增测试**：`test_rule_manifest_v110.py`(44)、`test_gate_evaluation_records_v110.py`(20)、`test_expert_review_gate_v110.py`(11)、`test_governance_api_v110.py`(24)、`test_metrics_v110.py`(16)
+- **数据库迁移**：alembic V005（`gate_evaluation_records` 表 + 2 索引）
+- **测试验证**：642 passed + 1 skipped（unit）；63 passed（e2e-mock）；lint + format clean
+- **详细设计方案**：[docs/plan/phase-3-design.md](docs/plan/phase-3-design.md)
+
 ## v1.1.0 (2026-07-14)
 - **Phase 2 AI 风险分类体系补强（T2.1–T2.6）**：
   - **T2.1 OWASP LLM Top 10 2025 补齐 + Context schema v0.9.0**：risk_type Literal 7→10（新增 `improper_output_handling`(LLM05) / `system_prompt_leakage`(LLM07) / `unbounded_consumption`(LLM10)）；`prompt_injection_scanner.py` 重写为 `classify_injection()`（injection/leakage 分流）；`safety_classifier.py` 新增 LLM05 输出净化检测 + LLM10 资源消耗监控；`execution_service.py` 包裹 LLM 调用计数与 token 估算；Context schema v0.8.0→v0.9.0 迁移（`core/migrations/v080_to_v090.py`）；slowapi 429 审计事件接入

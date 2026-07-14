@@ -2,65 +2,79 @@
 
 ## Current Phase
 
-Phase 2 — **进行中** (Wave 1 T2.2 done by Agent B)。Phase 1 全部完成 (T1.1–T1.9)。
+Phase 2 — **全部完成** (T2.1–T2.6, 5 Waves)。Phase 1 全部完成 (T1.1–T1.9)。
 
 ## Current Task
 
-T2.2 (NIST AI 600-1 Generative AI Profile 动作项引用) 已完成，待 Wave 1 集成验证后统一 commit。
+Phase 2 收尾完成，等待进入 Phase 3。
 
 ## Last Completed
 
-- **Phase 2 Wave 1 T2.2 (2026-07-14, Agent B)** — 新建 `tools/taxonomies/nist_ai_600_1.py` + `.upgrade/reports/nist-ai-600-1-action-summary.md` + `tests/test_taxonomy_nist_ai_600_1.py`。6 个动作项（MS-2.7-008/GV-1.3-002 已 Web 核实，MS-2.10-002/MS-2.5-005/MS-2.5-003/MS-2.11-001 标 [存疑]）。6 tests passed。
-- **Phase 1 Wave 5 (2026-07-14)** — T1.6 + T1.7 并行完成：
-  - T1.6: 数据生命周期（DELETE 端点、审计归档、Alembic V004、两后端实现、6 个测试用例）→ commit `6851c3a`
-  - T1.7: PIA 文档（平台自评 + 用户模板 + 高敏现场）→ commit `33d24fa`
-- **Phase 1 Wave 4 (2026-07-14)** — T1.4 PII 检测与掩码（PII_MASK_BEFORE_LLM=false）→ commit `3622e2c`
-- **Phase 1 Wave 3 (2026-07-14)** — T1.3 存储层字段级加密（Fernet + enc:v1: 前缀）→ commit `a27ad1d`
-- **Phase 1 Wave 2 (2026-07-14)** — T1.1 数据分类分级（字段 + 迁移链 + 覆写端点）→ commit `56208e7`
-- **Phase 1 Wave 1 (2026-07-14)** — T1.2 + T1.5 + T1.8 + T1.9 并行完成：
-  - T1.2: 敏感场景风险升档（心理/精神/学生/未成年人关键词）→ commit `9f5c6cf`
-  - T1.5: 报告 AI 生成内容标识（ai_generated_notice 字段）→ commit `9f5c6cf`
-  - T1.8: SAST (ruff S 规则) + pip-audit + CodeQL 工作流 → commit `8336eaa`
-  - T1.9: 数据泄露应急响应 checklist → commit `9ccf5da`
-- **Phase 1 Design Plan (2026-07-14)** — 详细设计方案 `docs/plan/phase-1-design.md` → commit `7ec4bdf`
+- **Phase 2 Wave 5 (2026-07-14)** — 收尾：version bump 1.0.3→1.1.0、CHANGELOG v1.1.0、STATE.md 更新
+- **Phase 2 Wave 4 (2026-07-14)** — T2.6 标准动态跟踪记录（`.upgrade/logs/standard-tracking-2026-07-14.md`，7 标准基线 + 6 跟踪项）
+- **Phase 2 Wave 3 (2026-07-14, commit 56272f2)** — T2.5 领域扩展标签接入生产链路：`apply_taxonomy_to_safety_finding` 加 domain 参数；`_finding`/`add_findings_dedup`/`resolve_safety_finding` 透传 domain；20 新测试
+- **Phase 2 Wave 2 (2026-07-14, commit 318d58a)** — mapper.py 三表聚合接入（NIST_GAI+ASI+TC260）+ 17 集成测试
+- **Phase 2 Wave 1 (2026-07-14, commit ca42811)** — T2.1+T2.2+T2.3+T2.4 四任务并行：32 files +2115/-29；OWASP LLM 2025 补齐(LLM05/07/10) + Context schema v0.9.0 + NIST AI 600-1 + OWASP ASI 2026 + TC260 智能体指引
+- **Phase 2 Design Plan (2026-07-14)** — 详细设计方案 `docs/plan/phase-2-design.md`
+- **Phase 1 全部完成 (2026-07-14, v1.0.3)** — T1.1–T1.9 安全与合规硬缺口修复，7 commits across 6 Waves
 
 ## Required Context Files
 
 - `.upgrade/MANIFEST.md`
 - `docs/plan/phase-1-design.md` — Phase 1 详细设计方案
+- `docs/plan/phase-2-design.md` — Phase 2 详细设计方案
 - `docs/plan/phase-1-security-compliance.md` — Phase 1 实施计划
-- `docs/plan/phase-2-security-enhancements.md` — Phase 2 实施计划（下一步）
-- `docs/plan/improvement-roadmap.md` — roadmap（已更新 3.5 节修订说明）
+- `docs/plan/phase-2-risk-taxonomy.md` — Phase 2 实施计划
+- `docs/plan/phase-3-governance-platform.md` — Phase 3 实施计划（下一步）
+- `docs/plan/improvement-roadmap.md` — roadmap（第 10 节为 2026-07-13 外部标准复核增补）
+- `docs/spec/risk-taxonomy-engine.md` — 风险分类体系升级设计规格
 - `docs/compliance/` — PIA 文档 + 应急响应 + 备份指引
+- `.upgrade/logs/standard-tracking-2026-07-14.md` — 标准动态跟踪记录
+- `.upgrade/reports/nist-ai-600-1-action-summary.md` — NIST AI 600-1 动作项摘要
+- `.upgrade/reports/tc260-agent-deployment-summary.md` — TC260 智能体部署指引摘要
 
 ## Blockers
 
 - Phase 3 T3.6 (LLM Judge) gated on user confirming real demand for automated evaluation (roadmap §8 preserved condition).
+- NIST AI 600-1 中 4 项动作项编号标 [存疑]（MS-2.10-002 / MS-2.5-005 / MS-2.5-003 / GV-1.3-002），待 NIST 发布修订版后核对。
+- TC260《智能体部署使用安全指引》条款文字基于二手摘要，待补全文核对。
 
 ## Active Stage Report
 
-Phase 1 安全与合规硬缺口修复全部完成。核心成果：
+Phase 2 AI 风险分类体系补强全部完成。核心成果：
 
-### PIPL 合规达成
-| 条款 | 对应任务 | 状态 |
+### OWASP LLM Top 10 2025 补齐
+| LLM 条目 | 对应 risk_type | 状态 |
 |---|---|---|
-| 第28条（敏感个人信息） | T1.2 + T1.4 | ✅ university_mental_health 自动升档 HIGH；PII 检测命中自动升级数据分级 |
-| 第51条（分类管理/加密） | T1.1 + T1.3 | ✅ data_classification 字段；Fernet 字段级加密 |
-| 第55/56条（PIA） | T1.7 | ✅ 三份 PIA 文档，含第56条三要素评估 |
-| 第57条（应急响应） | T1.9 | ✅ 六段式应急响应 checklist |
+| LLM01 Prompt Injection | prompt_injection | ✅ 既有 |
+| LLM02 Sensitive Information | sensitive_info | ✅ 既有 |
+| LLM05 Improper Output Handling | improper_output_handling | ✅ T2.1 新增 |
+| LLM06 Excessive Agency | over_autonomy | ✅ 既有 |
+| LLM07 System Prompt Leakage | system_prompt_leakage | ✅ T2.1 新增 |
+| LLM09 Misinformation | unsupported_claim | ✅ 既有 |
+| LLM10 Unbounded Consumption | unbounded_consumption | ✅ T2.1 新增 |
+| LLM08 Vector/Embeddings | — | ⏸️ 暂缓（项目无 RAG 组件） |
 
-### DSL 第21条（数据安全）
-- T1.6: 会话删除 + 审计归档（audit_events_archive 无 FK，保留审计链）
+### 新标准映射
+| 标准 | 代码位置 | 覆盖 | 备注 |
+|---|---|---|---|
+| NIST AI 600-1 GAI Profile | `nist_ai_600_1.py` | 10 risk_type 全覆盖 | 4 项 [存疑] |
+| OWASP ASI 2026 | `owasp_agentic_2026.py` | 5 risk + 8 attack | ASI07 已修正 |
+| TC260 智能体指引 | `tc260_agent_deployment.py` | 5 阶段 + 6 control + 6 risk | 停用=None |
 
-### AI 生成内容标识（2025-09-01 新规）
-- T1.5: 报告 metadata 新增 ai_generated_notice 字段
+### 领域扩展标签
+- `apply_taxonomy_to_safety_finding(finding, domain)` 命中 university_ai/medical_ai 时叠加 PIPL/HIPAA 等领域专属标签
+- 生产链路三处调用点（_finding / add_findings_dedup / resolve_safety_finding）均透传 domain
 
-### 供应链安全
-- T1.8: ruff S rules + pip-audit + CodeQL workflow
+### Context schema 升级
+- v0.8.0 → v0.9.0（ProjectContext 新增 llm_call_count / llm_token_estimate）
+- 迁移链：v0.6.0 → v0.7.0 → v0.8.0 → v0.9.0
 
 ### 测试验证
-- 全量测试：434 passed, 1 skipped
-- 新增测试：test_data_classification.py, test_field_encryption.py, test_pii_detection.py, test_risk_profile_mental_health.py, test_report_ai_notice.py, test_session_lifecycle.py
+- 全量测试：524 passed, 1 skipped
+- e2e-mock：63 passed
+- 新增测试文件：7 个（共 90 个新测试用例）
+- lint + format：clean
 
 ## Validation Commands
 
@@ -68,14 +82,14 @@ Phase 1 安全与合规硬缺口修复全部完成。核心成果：
 - `uv run python scripts/version_check.py`
 - `uv run ruff check . && uv run ruff format --check .`
 - `Copy-Item -Force .env.demo .env; uv run pytest tests/ -q`
-- `git tag --list` (expect `v1.0.2`, `v1.0.3`)
+- `git tag --list` (expect `v1.0.2`, `v1.0.3`, `v1.1.0`)
 
 ## Next Action
 
-Enter Phase 2 (security-enhancements) per `docs/plan/phase-2-security-enhancements.md`.
+Enter Phase 3 (governance-platform) per `docs/plan/phase-3-governance-platform.md`.
 
 ## Last Updated
 
 - Date: 2026-07-14
-- By: trae-agent (Agent B)
-- Summary: Phase 2 Wave 1 T2.2 完成——NIST AI 600-1 动作项标签表新建，6 tests passed，待统一 commit。Phase 1 全部完成 (T1.1–T1.9)，7 commits across 6 Waves，version v1.0.3。
+- By: trae-agent (Wave 5 收尾)
+- Summary: Phase 2 全部完成（T2.1–T2.6, 5 Waves, 3 commits: ca42811 / 318d58a / 56272f2），version v1.1.0。524 unit tests + 63 e2e-mock passed。Phase 1 全部完成 (T1.1–T1.9)，version v1.0.3。

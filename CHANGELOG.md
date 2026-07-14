@@ -14,6 +14,19 @@
 - Docker Compose 部署调通
 - Streamlit Review Workbench 前端
 
+## v1.1.0 (2026-07-14)
+- **Phase 2 AI 风险分类体系补强（T2.1–T2.6）**：
+  - **T2.1 OWASP LLM Top 10 2025 补齐 + Context schema v0.9.0**：risk_type Literal 7→10（新增 `improper_output_handling`(LLM05) / `system_prompt_leakage`(LLM07) / `unbounded_consumption`(LLM10)）；`prompt_injection_scanner.py` 重写为 `classify_injection()`（injection/leakage 分流）；`safety_classifier.py` 新增 LLM05 输出净化检测 + LLM10 资源消耗监控；`execution_service.py` 包裹 LLM 调用计数与 token 估算；Context schema v0.8.0→v0.9.0 迁移（`core/migrations/v080_to_v090.py`）；slowapi 429 审计事件接入
+  - **T2.2 NIST AI 600-1 Generative AI Profile**：新建 `tools/taxonomies/nist_ai_600_1.py`，10 个 risk_type 全覆盖动作项映射（4 项标 [存疑] 待人工核对），含 `.upgrade/reports/nist-ai-600-1-action-summary.md`
+  - **T2.3 OWASP Agentic Security Initiative Top 10 2026**：新建 `tools/taxonomies/owasp_agentic_2026.py`，8 个 attack_type + 5 个 risk_type 映射；ASI07 经核实为 Insecure Inter-Agent Communication（非 Resource Abuse），已删除错误映射
+  - **T2.4 TC260《智能体部署使用安全指引》**：新建 `tools/taxonomies/tc260_agent_deployment.py`，五阶段（评估/准备/部署/使用/停用）+ 6 control + 6 risk_type；停用阶段=None 标产品缺口；含 `.upgrade/reports/tc260-agent-deployment-summary.md`
+  - **T2.5 领域扩展标签接入生产链路**：`apply_taxonomy_to_safety_finding` 新增 `domain` 参数，命中 `university_ai`/`medical_ai` 时叠加领域专属标签（PIPL/HIPAA 等）；`safety_classifier._finding` + `safety_classifier.add_findings_dedup` + `safety_service.resolve_safety_finding` 透传 `domain=current_domain_profile(ctx)`
+  - **T2.6 标准动态跟踪记录**：新建 `.upgrade/logs/standard-tracking-2026-07-14.md`，记录 7 项已落地标准基线 + 6 项跟踪项（未成年人指南/TC260 分行业/NIST AI RMF 修订/OWASP ASI 正式版/PIPL 实施细则/GENAI 立法）
+  - **mapper.py 三表聚合接入**：`refs_for_risk_type` 追加 NIST_GAI + ASI + TC260 三表；`refs_for_attack_type` 追加 ASI
+- **新增测试**：`test_owasp_llm_completion.py`(19)、`test_context_migrations_v090.py`(6)、`test_taxonomy_nist_ai_600_1.py`(6)、`test_taxonomy_owasp_agentic_2026.py`(12)、`test_taxonomy_tc260_agent_deployment.py`(10)、`test_taxonomy_mapper_aggregation.py`(17)、`test_domain_labels_production.py`(20)
+- **Context schema 升级**：v0.8.0 → v0.9.0（`ProjectContext` 新增 `llm_call_count`/`llm_token_estimate` 字段）
+- **测试验证**：524 passed + 1 skipped（unit）；63 passed（e2e-mock）；lint + format clean
+
 ## v1.0.3 (2026-07-14)
 - **Phase 1 安全与合规硬缺口修复（T1.1–T1.9）**：
   - **T1.1 数据分类分级**：新增 `data_classification` 字段（public_demo / business_internal / sensitive_personal），实现应用层迁移链 v0.7.0→v0.8.0，提供数据分级覆写端点与审计记录

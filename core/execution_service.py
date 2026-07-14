@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 def execute_one_turn(ctx: ProjectContext) -> ProjectContext:
     """Run exactly one user turn through the configured execution mode."""
     ctx.llm_call_count = getattr(ctx, "llm_call_count", 0) + 1
+    # T3.5 记录前一次 token 估算，用于推算本轮 token_delta
+    prev_token_estimate = getattr(ctx, "llm_token_estimate", 0) or 0
     mode = WorkflowExecutionMode.normalize(settings.workflow_execution_mode)
     if mode == WorkflowExecutionMode.SINGLE_STEP:
         result = run_one_step(ctx)
@@ -28,6 +30,14 @@ def execute_one_turn(ctx: ProjectContext) -> ProjectContext:
     # T2.1 LLM10: 从既有 traces 聚合 token 估算（forward-only，不回溯历史）
     result.llm_token_estimate = _sum_trace_tokens(result)
     _check_unbounded_consumption(result)
+    # T3.5 LLM 用量指标打点（失败不阻断主路径）
+    try:
+        from api.metrics import record_llm_usage
+
+        token_delta = max(0, (result.llm_token_estimate or 0) - prev_token_estimate)
+        record_llm_usage(call_count_delta=1, token_delta=token_delta)
+    except Exception:
+        logger.debug("record_llm_usage failed; non-fatal", exc_info=True)
     return result
 
 

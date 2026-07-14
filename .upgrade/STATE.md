@@ -2,15 +2,15 @@
 
 ## Current Phase
 
-Phase 3 Wave 3 — T3.4 完成。Phase 2 全部完成 (T2.1–T2.6, 5 Waves)。Phase 1 全部完成 (T1.1–T1.9)。
+Phase 3 Wave 4 — T3.7 完成（ISO/IEC 42001 条款映射表）。Phase 2 全部完成 (T2.1–T2.6, 5 Waves)。Phase 1 全部完成 (T1.1–T1.9)。
 
 ## Current Task
 
-T3.4（组织级聚合 API 与前端治理页）已完成。
+T3.7（ISO/IEC 42001 条款映射表，纯文档）已完成。
 
 ## Last Completed
 
-- **Phase 3 Wave 3 (2026-07-14)** — T3.4 组织级聚合 API 与前端治理页：api/routers/governance.py 三个只读端点（overview/gate-trends/actions-backlog，viewer 可读）；api/main.py 接入 governance router；frontend/components/governance_overview.py 治理总览页（三卡片+风险分布+通过率趋势+积压动作表）；frontend/app.py 侧边栏追加"治理总览"导航；tests/test_governance_api_v110.py 24 测试全通过
+- **Phase 3 Wave 4 (2026-07-14)** — T3.7 ISO/IEC 42001 条款映射表：新建 `docs/compliance/iso42001-mapping.md`（25 条款映射 + 4 缺口 + 7 审计提问索引）；修正 `docs/spec/governance-platform.md` 两处过时表述（§3.2/§7 alembic V004→V005；§1/§3.4 expert_review "无消费方/计划中未实现"→"已落地 T3.3"）。纯文档无代码改动。
 - **Phase 3 Wave 1 (2026-07-14)** — T3.1 门禁规则元数据清单（manifest）：core/gates/rules/manifest.py + get_rule_version/is_safety_bottom_line + 11 测试
 - **Phase 2 Wave 5 (2026-07-14)** — 收尾：version bump 1.0.3→1.1.0、CHANGELOG v1.1.0、STATE.md 更新
 - **Phase 2 Wave 4 (2026-07-14)** — T2.6 标准动态跟踪记录（`.upgrade/logs/standard-tracking-2026-07-14.md`，7 标准基线 + 6 跟踪项）

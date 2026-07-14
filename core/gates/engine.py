@@ -241,6 +241,16 @@ def _try_persist_gate_evaluation(ctx: ProjectContext, stage: int, blockers) -> N
             blocking_rule_ids=blocking_rule_ids,
             rule_versions=rule_versions,
         )
+        # T3.5 业务指标打点（import 在函数内避免循环依赖；失败被外层 try 兜底）
+        try:
+            from api.metrics import record_gate_evaluation_metrics
+
+            record_gate_evaluation_metrics(
+                passed=not blockers,
+                blocking_rule_ids=blocking_rule_ids,
+            )
+        except Exception:
+            logger.debug("record_gate_evaluation_metrics failed; non-fatal", exc_info=True)
     except Exception:
         import logging
 

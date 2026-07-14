@@ -12,7 +12,7 @@
 |---|---|---|
 | 1 | 门禁规则纯硬编码：12 条规则类在 `core/gates/rules/` 中实现，`registered_rules()` 硬编码列表注册；无版本号、无 owner、无"谁定的/何时改过"的应用层记录 | `core/gates/rules/__init__.py:21-35`、`core/gates/engine.py:98` |
 | 2 | `AuditEvent`/`ActionResolutionLog` 只审计运行时人工动作，不审计规则定义变更 | `core/models.py:271-300` |
-| 3 | CRITICAL 档的 `require_expert_review` 开关无任何规则消费（文档已如实标注"计划中/未实现"） | `core/gates/risk_profile.py:37-48`、[stage3-risk-adaptive-gate.md](stage3-risk-adaptive-gate.md) |
+| 3 | CRITICAL 档的 `require_expert_review` 开关已由 expert_review 规则消费（T3.3 落地：Stage 3 就绪评估自动创建 escalate 阻断 PendingHumanAction，source_type=`expert_review`） | `core/gates/rules/expert_review.py`、[stage3-risk-adaptive-gate.md](stage3-risk-adaptive-gate.md) |
 | 4 | 可观测性只有 HTTP 通用指标（prometheus_fastapi_instrumentator 自动生成），无任何业务指标；Grafana 仅一块 FastAPI Overview 面板 | `api/main.py:37-48,72-92`、`monitoring/grafana/dashboards/fastapi-overview.json` |
 | 5 | 全仓无按 tenant/项目的聚合查询（唯一 GROUP BY 是数用户总数）；存储层 `list_sessions(tenant_id="")` 跨租户分支存在但无 API 暴露 | `storage/backends/postgres.py:947-972,1024` |
 | 6 | `eval_judge.py` 纯规则判分、刻意不做语义判定；`human_calibrations` 表已建但校准闭环未成体系 | `core/eval_judge.py:7-67`、`alembic/versions/V003_schema_alignment.py` |
@@ -56,7 +56,7 @@ RULE_MANIFEST = {
 ### 3.2 判定结果携带规则版本
 
 - `GateReport`/`RuleDetail`（`core/gates/report.py`）增加 `rule_version` 字段；`build_report_dict` 导出的报告随之携带——历史报告可回答"这份结论是哪个版本的规则判的"。
-- 新增轻量持久化表 `gate_evaluation_records`（alembic V004）：每次阶段推进评估落一行 `(session_id, tenant_id, stage_id, risk_tier, passed, blocking_rule_ids, rule_versions, evaluated_at)`。这是①中"门禁通过率趋势"的数据源；现有 evaluate 路径是纯计算无痕迹，趋势分析必须有这张表。
+- 新增轻量持久化表 `gate_evaluation_records`（alembic V005）：每次阶段推进评估落一行 `(session_id, tenant_id, stage_id, risk_tier, passed, blocking_rule_ids, rule_versions, evaluated_at)`。这是①中"门禁通过率趋势"的数据源；现有 evaluate 路径是纯计算无痕迹，趋势分析必须有这张表。
 
 ### 3.3 规则禁用的显式治理
 
@@ -65,7 +65,7 @@ RULE_MANIFEST = {
 
 ### 3.4 expert_review 落地（补历史欠账）
 
-CRITICAL 档 `require_expert_review=True` 时，Stage 3 就绪评估自动创建一条 `escalate` 类型的阻断 `PendingHumanAction`（source_type=`expert_review`，幂等键复用现有机制）；按 `graph/transition_policy.py` 既有约束，escalate 必须显式 approve 才能放行。落地后同步更新 [stage3-risk-adaptive-gate.md](stage3-risk-adaptive-gate.md) 中"计划中/未实现"的脚注。
+CRITICAL 档 `require_expert_review=True` 时，Stage 3 就绪评估自动创建一条 `escalate` 类型的阻断 `PendingHumanAction`（source_type=`expert_review`，幂等键复用现有机制）；按 `graph/transition_policy.py` 既有约束，escalate 必须显式 approve 才能放行。已落地（T3.3）；[stage3-risk-adaptive-gate.md](stage3-risk-adaptive-gate.md) 中"计划中/未实现"的脚注已同步更新为"已落地"。
 
 ## 4. 子系统①：组织级治理视图
 
@@ -121,6 +121,6 @@ Streamlit 新增"治理总览"页：三张卡片（项目数/风险分布/积压
 
 ## 7. 兼容性与验证
 
-- alembic V004（`gate_evaluation_records` 表 + EvalRun 建议字段）；SQLite 内联 DDL 同步。
+- alembic V005（`gate_evaluation_records` 表 + EvalRun 建议字段）；SQLite 内联 DDL 同步。
 - 现有 `evaluate_stage_gate` 签名不变，落表为旁路写入（失败不阻断评估主路径，只打日志）。
 - 验收口径（对应路线图阶段 3）：一个界面看到"几个项目在评估、各处于什么风险等级、通过率如何"；任一规则能回答版本与变更历史；LLM Judge 若启用，有一致率数据支撑。

@@ -1,0 +1,137 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom"},
+        "tooltip": {"mode": "single"}
+      },
+      "targets": [
+        {
+          "expr": "rate(premortem_gate_evaluations_total{result=\"passed\"}[1h]) / clamp_min(rate(premortem_gate_evaluations_total[1h]), 1)",
+          "legendFormat": "passed ratio",
+          "refId": "A"
+        }
+      ],
+      "title": "Gate Pass Rate (1h)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "options": {
+        "showHeader": true,
+        "sortBy": [{"displayName": "Value", "desc": true}],
+        "footer": {"show": false}
+      },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (rule_id) (increase(premortem_gate_blocked_total[24h])))",
+          "legendFormat": "{{rule_id}}",
+          "refId": "A",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "title": "Top Blocking Rules (24h)",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "id": 3,
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom"},
+        "tooltip": {"mode": "single"}
+      },
+      "targets": [
+        {
+          "expr": "premortem_pending_actions",
+          "legendFormat": "risk={{risk_level}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Pending Human Actions by Risk Level",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "tokens/s"},
+            "properties": [{"id": "unit", "value": "cps"}]
+          }
+        ]
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "id": 4,
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom"},
+        "tooltip": {"mode": "single"}
+      },
+      "targets": [
+        {
+          "expr": "rate(premortem_llm_calls_total[5m])",
+          "legendFormat": "calls/s",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(premortem_llm_tokens_total[5m])",
+          "legendFormat": "tokens/s",
+          "refId": "B"
+        }
+      ],
+      "title": "LLM Usage (calls + tokens / 5m)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": ["premortem", "governance", "v1.1.0"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Premortem Governance Overview",
+  "uid": "governance-overview",
+  "version": 1
+}

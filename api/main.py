@@ -79,6 +79,14 @@ _instrumentator = Instrumentator()
 async def lifespan(app: FastAPI):
     session_store.initialize()
     _instrumentator.expose(app, endpoint="/metrics", include_in_schema=False)
+    # T3.5 启动时刷新业务 Gauge 指标（prometheus_client 默认 REGISTRY 已通过
+    # instrumentator 的 /metrics 端点一并暴露）
+    try:
+        from api.metrics import refresh_gauge_metrics
+
+        refresh_gauge_metrics()
+    except Exception:
+        logger.warning("refresh_gauge_metrics failed on startup; non-fatal", exc_info=True)
     logger.info("App started.")
     yield
     logger.info("App shutting down.")

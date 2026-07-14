@@ -23,6 +23,16 @@
 | [spec/risk-taxonomy-engine.md](spec/risk-taxonomy-engine.md) | 风险分类体系升级设计规格（OWASP LLM 2025 补齐 / Agentic ASI 2026 / NIST-AI-600-1 / TC260 智能体指引）·设计态 |
 | [spec/governance-platform.md](spec/governance-platform.md) | 组织级治理平台设计规格（门禁规则版本化 / 治理视图 / 业务指标 / LLM Judge）·设计态 |
 
+## compliance/ — 合规文档
+
+| 文档 | 说明 |
+|------|------|
+| [compliance/pia-platform.md](compliance/pia-platform.md) | 平台自身 PIA（PIPL 55/56 条评估，含材料→DeepSeek 数据流披露） |
+| [compliance/pia-template.md](compliance/pia-template.md) | PIA 模板（用户填写用） |
+| [compliance/pia-university-mental-health.md](compliance/pia-university-mental-health.md) | university_mental_health 场景实测 PIA 存档 |
+| [compliance/incident-response.md](compliance/incident-response.md) | 数据泄露应急响应 checklist（T1.9 产物） |
+| [compliance/backup.md](compliance/backup.md) | 生产部署备份指引（T1.6 产物） |
+
 ## plan/ — 规划与路线图文档
 
 | 文档 | 说明 |

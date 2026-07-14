@@ -15,6 +15,23 @@ SECRET_PATTERNS = [
     r"(?i)(api[_-]?key|secret|token|password)\s*[:=]\s*['\"]?[A-Za-z0-9_\-]{12,}",
 ]
 
+# PII 检测（T1.4）— 命中产出 sensitive_info finding；身份证/银行卡 severity=high
+PII_PATTERNS: list[tuple[str, str, str]] = [
+    # (regex, kind, severity)
+    # 中国大陆身份证号（18 位，最后一位校验可为 X）
+    (
+        r"\b[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]\b",
+        "cn_id_card",
+        "high",
+    ),
+    # 中国大陆手机号
+    (r"\b1[3-9]\d{9}\b", "cn_mobile", "medium"),
+    # 邮箱
+    (r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "email", "low"),
+    # 银行卡号（16-19 位，Luhn 校验后置）
+    (r"\b\d{16,19}\b", "bank_card", "high"),
+]
+
 OVER_AUTONOMY_PATTERNS = [
     r"无需人工(确认|审核|介入)",
     r"直接执行.*不需要.*人工",
@@ -40,6 +57,42 @@ STRONG_ASSERTION_PATTERNS = [
     r"will always",
     r"never fails",
 ]
+
+
+def _mask_pii(text: str, kind: str) -> str:
+    """掩码 PII：保留首尾字符，中间用 * 替换。"""
+    if not text or len(text) <= 4:
+        return "***"
+    if kind == "email":
+        # 邮箱掩码：u***@domain.com
+        local, _, domain = text.partition("@")
+        if not domain:
+            return text
+        return f"{local[0]}***@{domain}"
+    if kind == "cn_id_card":
+        return f"{text[:6]}********{text[-4:]}"
+    if kind == "cn_mobile":
+        return f"{text[:3]}****{text[-4:]}"
+    if kind == "bank_card":
+        return f"{text[:4]}************{text[-4:]}"
+    return text[:2] + "*" * (len(text) - 4) + text[-2:]
+
+
+def scan_pii(text: str) -> list[tuple[str, str, str]]:
+    """检测文本中的 PII。返回 [(matched_text, kind, severity), ...]。"""
+    findings: list[tuple[str, str, str]] = []
+    for pattern, kind, severity in PII_PATTERNS:
+        for match in re.finditer(pattern, text or ""):
+            findings.append((match.group(0), kind, severity))
+    return findings
+
+
+def mask_pii_in_text(text: str) -> str:
+    """对文本中的所有 PII 进行掩码（用于 prompt 路径）。"""
+    masked = text or ""
+    for pattern, kind, _severity in PII_PATTERNS:
+        masked = re.sub(pattern, lambda m, k=kind: _mask_pii(m.group(0), k), masked)
+    return masked
 
 
 def _finding(
@@ -141,6 +194,29 @@ def scan_text(
                 recommended_action="立即停止自动推进，人工确认是否包含真实敏感信息并进行脱敏。",
             )
         )
+
+    # PII 检测（T1.4）— 仅对用户材料/证据源启用，避免 LLM 输出误报
+    if location.startswith(("user_materials", "evidence_source")):
+        pii_hits = scan_pii(content)
+        if pii_hits:
+            pii_kinds = sorted({kind for _, kind, _ in pii_hits})
+            sev_rank = {"low": 0, "medium": 1, "high": 2}
+            max_severity = max((sev for _, _, sev in pii_hits), key=lambda s: sev_rank.get(s, 0))
+            findings.append(
+                _finding(
+                    ctx,
+                    stage_id=stage_id,
+                    risk_type="sensitive_info",
+                    severity=max_severity,
+                    location=location,
+                    description=f"用户材料包含 PII：{', '.join(pii_kinds)}。",
+                    recommended_action="确认 PII 是否必要；如必要，启用 PII_MASK_BEFORE_LLM 掩码后再发送 LLM。",
+                )
+            )
+            # T1.1 联动：PII 命中自动升级数据分级到 sensitive_personal
+            if hasattr(ctx, "data_classification"):
+                if ctx.data_classification != "sensitive_personal":
+                    ctx.data_classification = "sensitive_personal"
 
     if any(
         re.search(pattern, content, flags=re.IGNORECASE | re.S)

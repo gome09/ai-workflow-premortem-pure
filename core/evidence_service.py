@@ -5,8 +5,10 @@ import re
 from datetime import datetime
 
 from core.audit_service import append_audit_event
+from core.config import settings
 from core.models import EvidenceSource, ProjectContext
 from tools.evidence_ranker import result_to_evidence
+from tools.safety_classifier import mask_pii_in_text
 from tools.search import SearchResult
 
 
@@ -75,17 +77,19 @@ def format_evidence_for_prompt(
     evidence_sources: list[EvidenceSource],
     user_materials: list[str],
 ) -> str:
+    mask = settings.pii_mask_before_llm
     sections: list[str] = []
     if evidence_sources:
         sections.append("### Evidence Sources（阶段输出必须引用 evidence_id）")
         for ev in evidence_sources:
+            summary = mask_pii_in_text(ev.summary[:800]) if mask else ev.summary[:800]
             sections.append(
                 f"[{ev.evidence_id}]\n"
                 f"Title: {ev.title}\n"
                 f"Source Type: {ev.source_type}\n"
                 f"Credibility: {ev.credibility_score}\n"
                 f"URL: {ev.url or 'N/A'}\n"
-                f"Summary: {ev.summary[:800]}\n"
+                f"Summary: {summary}\n"
             )
 
     # 兼容尚未资产化的历史上下文；新资料会通过 USER-EVID-N 出现在 Evidence Sources。
@@ -97,7 +101,8 @@ def format_evidence_for_prompt(
     if user_materials and not material_ids:
         sections.append("### 人工补充资料")
         for i, material in enumerate(user_materials, 1):
-            sections.append(f"[USER-MATERIAL-{i}]\n{material}\n")
+            masked_material = mask_pii_in_text(material) if mask else material
+            sections.append(f"[USER-MATERIAL-{i}]\n{masked_material}\n")
 
     if not sections:
         return "（暂无外部资料，请基于已有知识进行分析，并对不确定项标注【需核验】）"

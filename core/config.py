@@ -86,6 +86,10 @@ class Settings(BaseSettings):
     # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     data_encryption_key: str = ""
 
+    # PII masking before sending to LLM (T1.4)
+    # Default false: 先让检测跑起来积累误报数据，再决定是否默认开启。
+    pii_mask_before_llm: bool = False
+
     # CORS
     cors_allow_origins: str = "https://localhost"
 

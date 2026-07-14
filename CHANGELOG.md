@@ -14,6 +14,22 @@
 - Docker Compose 部署调通
 - Streamlit Review Workbench 前端
 
+## v1.0.3 (2026-07-14)
+- **Phase 1 安全与合规硬缺口修复（T1.1–T1.9）**：
+  - **T1.1 数据分类分级**：新增 `data_classification` 字段（public_demo / business_internal / sensitive_personal），实现应用层迁移链 v0.7.0→v0.8.0，提供数据分级覆写端点与审计记录
+  - **T1.2 敏感场景风险升档**：`risk_profile.py` 新增"心理健康/心理/精神/学生/未成年人/校园霸凌/自伤/自杀"等关键词，`university_mental_health` 场景现已真正自动升档为 HIGH
+  - **T1.3 存储层字段级加密**：实现 Fernet 对称加密（`enc:v1:` 前缀），`context_json` 敏感字段落库加密、读出解密，支持 SQLite/PostgreSQL 双后端，空密钥安全旁路
+  - **T1.4 PII 检测与掩码**：新增身份证/手机号/邮箱/银行卡 PII 模式检测，实现 pattern-preserving 掩码，仅在用户材料/证据源位置运行（避免 LLM 输出误报），命中自动升级数据分级到 `sensitive_personal`
+  - **T1.5 报告 AI 生成内容标识**：报告 metadata 新增 `ai_generated_notice` 字段，生成报告时自动添加 AI 生成内容声明块（符合《人工智能生成合成内容标识办法》2025-09-01）
+  - **T1.6 数据生命周期**：新增 DELETE /sessions/{session_id} 端点（admin only），实现审计事件归档（`audit_events_archive` 表无 FK，保留审计链），Alembic V004 迁移，`audit_retention_days=183`/`session_retention_days=0` 配置
+  - **T1.7 PIA 文档**：产出三份个人信息保护影响评估文档——`pia-platform.md`（平台自评，含 DeepSeek 跨境传输披露与 PIPL 第56条三要素评估）、`pia-template.md`（用户可填写模板）、`pia-university-mental-health.md`（高敏现场实例）
+  - **T1.8 供应链安全**：接入 ruff S 规则（SAST）、pip-audit（依赖漏洞扫描）、CodeQL 工作流（手动触发 + 每周 cron），新增 `make audit`/`make security-check` 目标
+  - **T1.9 应急响应**：产出 `docs/compliance/incident-response.md` 六段式数据泄露应急响应 checklist，在 `SECURITY.md` 增加"应急响应"章节
+- **新增测试**：`test_data_classification.py`、`test_field_encryption.py`、`test_pii_detection.py`、`test_risk_profile_mental_health.py`、`test_report_ai_notice.py`、`test_session_lifecycle.py`
+- **docs/compliance/** 目录建立：包含 PIA 文档、应急响应、备份恢复指引
+- **.gitignore**：补充 `*.db-shm`/`*.db-wal` 规则
+- **improvement-roadmap.md**：第 3.5 节补充修订说明，第 10.5 节标注 T1.2 完成
+
 ## v1.0.2 (2026-07-13)
 - **修复红队测试覆盖门控与人工动作状态不联通问题**：
   - 添加 `create_actions_from_redteam_gaps` 函数，为红队测试覆盖不足创建对应的人工动作

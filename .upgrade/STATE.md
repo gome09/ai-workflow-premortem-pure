@@ -2,27 +2,35 @@
 
 ## Current Phase
 
-Phase 0 — **全部完成** (T0.1–T0.8 done)。Ready for Phase 1.
+Phase 1 — **全部完成** (T1.1–T1.9 done)。Ready for Phase 2.
 
 ## Current Task
 
-None in flight. Next executable work is Phase 1 tasks per `docs/plan/phase-1-security-compliance.md`.
+None in flight. Next executable work is Phase 2 tasks per `docs/plan/phase-2-security-enhancements.md`.
 
 ## Last Completed
 
-- **Phase 0 T0.7 Scorecard baseline (2026-07-13, this session)** — Completed via dual-path: local CLI `--local=.` scan + GitHub Actions remote scan (run #29261154816, status: success). Baseline report archived to `.upgrade/reports/scorecard-baseline-20260713.md`, decision record to `.upgrade/decisions/scorecard-baseline.md`, raw JSON to `.upgrade/tmp/scorecard-baseline-2026-07-13.json`. Scorecard workflow converted to `workflow_dispatch` + weekly cron. 3 commits: `000ab96` (CLI direct), `230b6b0` (log output), `c8b62a2` (baseline report + schedule).
-- **Phase 0 Batch 1 execution (2026-07-13, earlier same session)** — T0.1–T0.6, T0.8. 6 commits: `a1f2ad8` → `46708e8`, tag `v1.0.2`. All local validation green.
-- **Push to GitHub** — main + v1.0.2 tag pushed to `git@github.com:gome09/ai-workflow-premortem-pure.git`.
+- **Phase 1 Wave 5 (2026-07-14)** — T1.6 + T1.7 并行完成：
+  - T1.6: 数据生命周期（DELETE 端点、审计归档、Alembic V004、两后端实现、6 个测试用例）→ commit `6851c3a`
+  - T1.7: PIA 文档（平台自评 + 用户模板 + 高敏现场）→ commit `33d24fa`
+- **Phase 1 Wave 4 (2026-07-14)** — T1.4 PII 检测与掩码（PII_MASK_BEFORE_LLM=false）→ commit `3622e2c`
+- **Phase 1 Wave 3 (2026-07-14)** — T1.3 存储层字段级加密（Fernet + enc:v1: 前缀）→ commit `a27ad1d`
+- **Phase 1 Wave 2 (2026-07-14)** — T1.1 数据分类分级（字段 + 迁移链 + 覆写端点）→ commit `56208e7`
+- **Phase 1 Wave 1 (2026-07-14)** — T1.2 + T1.5 + T1.8 + T1.9 并行完成：
+  - T1.2: 敏感场景风险升档（心理/精神/学生/未成年人关键词）→ commit `9f5c6cf`
+  - T1.5: 报告 AI 生成内容标识（ai_generated_notice 字段）→ commit `9f5c6cf`
+  - T1.8: SAST (ruff S 规则) + pip-audit + CodeQL 工作流 → commit `8336eaa`
+  - T1.9: 数据泄露应急响应 checklist → commit `9ccf5da`
+- **Phase 1 Design Plan (2026-07-14)** — 详细设计方案 `docs/plan/phase-1-design.md` → commit `7ec4bdf`
 
 ## Required Context Files
 
 - `.upgrade/MANIFEST.md`
-- `.upgrade/reports/scorecard-baseline-20260713.md` — Scorecard 基线报告
-- `.upgrade/decisions/scorecard-baseline.md` — Scorecard 决策记录
-- `docs/plan/phase-0-design.md` — Phase 0 落地设计层
-- `docs/plan/phase-0-repo-governance.md` — Phase 0 实施计划
-- `docs/plan/phase-1-security-compliance.md` — Phase 1 实施计划（下一步）
-- `docs/plan/improvement-roadmap.md` — roadmap
+- `docs/plan/phase-1-design.md` — Phase 1 详细设计方案
+- `docs/plan/phase-1-security-compliance.md` — Phase 1 实施计划
+- `docs/plan/phase-2-security-enhancements.md` — Phase 2 实施计划（下一步）
+- `docs/plan/improvement-roadmap.md` — roadmap（已更新 3.5 节修订说明）
+- `docs/compliance/` — PIA 文档 + 应急响应 + 备份指引
 
 ## Blockers
 
@@ -30,10 +38,28 @@ None in flight. Next executable work is Phase 1 tasks per `docs/plan/phase-1-sec
 
 ## Active Stage Report
 
-Phase 0 complete. Scorecard baseline highlights:
-- Local CLI: 10/18 checks evaluated; key scores: License=9, Security-Policy=4, Vulnerabilities=0 (33 PYSEC), Pinned-Dependencies=0
-- GitHub Actions: 18/18 checks (full scan), artifact available (需认证下载)
-- Phase 0 improvements reflected: License 9→10, Security-Policy 4→8, Token-Permissions -1→8, Dangerous-Workflow -1→8, Dependency-Update-Tool 0→5
+Phase 1 安全与合规硬缺口修复全部完成。核心成果：
+
+### PIPL 合规达成
+| 条款 | 对应任务 | 状态 |
+|---|---|---|
+| 第28条（敏感个人信息） | T1.2 + T1.4 | ✅ university_mental_health 自动升档 HIGH；PII 检测命中自动升级数据分级 |
+| 第51条（分类管理/加密） | T1.1 + T1.3 | ✅ data_classification 字段；Fernet 字段级加密 |
+| 第55/56条（PIA） | T1.7 | ✅ 三份 PIA 文档，含第56条三要素评估 |
+| 第57条（应急响应） | T1.9 | ✅ 六段式应急响应 checklist |
+
+### DSL 第21条（数据安全）
+- T1.6: 会话删除 + 审计归档（audit_events_archive 无 FK，保留审计链）
+
+### AI 生成内容标识（2025-09-01 新规）
+- T1.5: 报告 metadata 新增 ai_generated_notice 字段
+
+### 供应链安全
+- T1.8: ruff S rules + pip-audit + CodeQL workflow
+
+### 测试验证
+- 全量测试：434 passed, 1 skipped
+- 新增测试：test_data_classification.py, test_field_encryption.py, test_pii_detection.py, test_risk_profile_mental_health.py, test_report_ai_notice.py, test_session_lifecycle.py
 
 ## Validation Commands
 
@@ -41,18 +67,14 @@ Phase 0 complete. Scorecard baseline highlights:
 - `uv run python scripts/version_check.py`
 - `uv run ruff check . && uv run ruff format --check .`
 - `Copy-Item -Force .env.demo .env; uv run pytest tests/ -q`
-- `git tag --list` (expect `v1.0.2`)
+- `git tag --list` (expect `v1.0.2`, `v1.0.3`)
 
 ## Next Action
 
-Enter Phase 1 (security-compliance) per `docs/plan/phase-1-security-compliance.md`.
-Priority actions informed by Scorecard baseline:
-1. Dependency vulnerability audit (`uv audit`) → addresses Vulnerabilities=0
-2. CodeQL/Semgrep SAST workflow → addresses SAST=0
-3. Branch Protection setup (GitHub Settings) → addresses Branch-Protection=0
+Enter Phase 2 (security-enhancements) per `docs/plan/phase-2-security-enhancements.md`.
 
 ## Last Updated
 
-- Date: 2026-07-13
+- Date: 2026-07-14
 - By: trae-agent
-- Summary: Phase 0 fully complete (T0.1–T0.8). Scorecard baseline archived. All commits + tag v1.0.2 pushed to GitHub. Ready for Phase 1.
+- Summary: Phase 1 fully complete (T1.1–T1.9). 7 commits across 6 Waves. Version bumped to v1.0.3. All tests pass.

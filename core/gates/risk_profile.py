@@ -98,6 +98,16 @@ _HIGH_KEYWORDS: list[tuple[re.Pattern[str], str]] = [
         re.compile(r"(?i)(自动驾驶|车辆控制|autonomous.?driv|vehicle.?control)"),
         "autonomous vehicle",
     ),
+    (
+        re.compile(
+            r"(?i)(心理|精神|抑郁|自杀|自残|self.?harm|mental.?health|心理健康|精神健康|psycholog|psychiatr|suicid|depress)"
+        ),
+        "mental health domain",
+    ),
+    (
+        re.compile(r"(?i)(学生|student|pupil|校园|campus|高校|大学|university|college)"),
+        "student/minor-adjacent population",
+    ),
 ]
 
 # Low-risk scope keywords → lower tier
@@ -231,6 +241,14 @@ def classify_project_risk(ctx: ProjectContext) -> tuple[ProjectGateRiskTier, lis
             tier = ProjectGateRiskTier.CRITICAL
     if sensitive_hits:
         reasons.extend([f"sensitive_data: {h}" for h in sensitive_hits])
+        if tier == ProjectGateRiskTier.MEDIUM:
+            tier = ProjectGateRiskTier.HIGH
+        elif tier == ProjectGateRiskTier.HIGH:
+            tier = ProjectGateRiskTier.CRITICAL
+
+    # 3.5 Sensitive personal data classification → raise to at least HIGH
+    if getattr(ctx, "data_classification", None) == "sensitive_personal":
+        reasons.append("sensitive_personal data classification")
         if tier == ProjectGateRiskTier.MEDIUM:
             tier = ProjectGateRiskTier.HIGH
         elif tier == ProjectGateRiskTier.HIGH:

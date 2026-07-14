@@ -374,6 +374,13 @@ def build_report_dict(ctx: ProjectContext) -> dict:
         "stage_output_versions": ctx.stage_output_versions,
         "stage_dependency_versions": getattr(ctx, "stage_dependency_versions", {}),
         "stage_staleness": getattr(ctx, "stage_staleness", {}),
+        "ai_generated_notice": {
+            "zh": "本报告由 AI 辅助生成。依据《人工智能生成合成内容标识办法》进行显式标识。报告内容须经人工审核确认后方可用于实际决策。",
+            "en": "AI-generated outputs must be reviewed by humans before real-world use.",
+            "basis": "《人工智能生成合成内容标识办法》（2025-09-01 施行）",
+            "generator": "ai-workflow-premortem",
+            "generator_version": REPORT_SCHEMA_VERSION,
+        },
         "disclaimer": "AI-generated outputs must be reviewed by humans before real-world use.",
     }
 
@@ -424,6 +431,14 @@ def build_markdown_report(ctx: ProjectContext) -> str:
     info = report["project_info"]
     lines: list[str] = [
         "# AI Workflow Pre-mortem Report",
+        "",
+        "<!-- ai-generated: true; generator: ai-workflow-premortem; "
+        f"version: {REPORT_SCHEMA_VERSION} -->",
+        "",
+        "> **本报告由 AI 辅助生成（AI-Generated Content）**",
+        "> 依据《人工智能生成合成内容标识办法》进行显式标识。"
+        "报告内容须经人工审核确认后方可用于实际决策。",
+        "> AI-generated outputs must be reviewed by humans before real-world use.",
         "",
         f"- Report Schema Version: `{REPORT_SCHEMA_VERSION}`",
         f"- Session ID: `{ctx.session_id}`",

@@ -36,6 +36,10 @@ jobs:
       - name: Lint
         run: make lint
 
+      - name: Doc consistency check (non-blocking)
+        run: make doc-check
+        continue-on-error: true   # 初期观察，存量坏链清零后转强制
+
       - name: Dependency vulnerability audit (non-blocking)
         run: uv run pip-audit --strict
         continue-on-error: true   # 先告警不阻断，观察一轮后再评估升级

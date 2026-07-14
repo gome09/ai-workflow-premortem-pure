@@ -64,8 +64,8 @@ T4.3 在每个其他阶段收尾时触发一次
 
 ## 6. 阶段验收清单（滚动）
 
-- [ ] doc-check 进 CI 且转为强制
-- [ ] stage3 文档悬空引用清除
-- [ ] main 分支保护开启
-- [ ] Scorecard 分数相比阶段 0 基线有实质提升且有至少两次记录
-- [ ] issue/PR 模板与响应约定就位
+- [x] doc-check 进 CI（初期 non-blocking，存量坏链清零后转强制）
+- [x] stage3 文档悬空引用清除（补档 `docs/archive/verification-reports/`）
+- [ ] main 分支保护开启（决策记录已入库 `.upgrade/decisions/branch-protection.md`，需维护者手动操作 GitHub 后台）
+- [x] Scorecard 分数相比阶段 0 基线有实质提升且有至少两次记录（基线 2026-07-13 + 趋势报告 2026-07-14）
+- [x] issue/PR 模板与响应约定就位

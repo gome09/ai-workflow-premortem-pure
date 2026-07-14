@@ -4,6 +4,17 @@
 > 远程 `origin`（github.com/gome09/ai-workflow-premortem-pure）保有 2026-05-31 起的完整提交历史（21 次提交），如需追溯请查阅远程分支。
 > 其中 v0.1（2026-05-01）/ v0.5（2026-05-20）的日期早于可见最早 commit（2026-05-31），为里程碑回溯记录，非逐次提交日志。
 
+## v1.2.1 (2026-07-14)
+- **Phase 4 开源社区打磨（T4.1 / T4.2 / T4.3 / T4.5；T4.4 明确不承诺）**：
+  - **T4.1 文档-代码一致性检查 CI 化**：新建 `scripts/doc_consistency_check.py`（三类规则：Markdown 相对链接存在性 / `make <target>` 存在性 / 反引号仓库路径存在性）；新增 `make doc-check` target；ci.yml lint job 追加 doc-check 步骤（初期 `continue-on-error: true` 观察期）；修复 stage3 文档悬空引用（补档 `docs/archive/verification-reports/risk_adaptive_gate_final_validation.md`，决策记录见 `.upgrade/decisions/doc-check-stage3-dangling-ref.md`）
+  - **T4.5 社区响应约定**：新建 `.github/ISSUE_TEMPLATE/bug_report.md` + `feature_request.md`；新建 `.github/PULL_REQUEST_TEMPLATE.md`（含改动类型 + 提交前检查清单）；CONTRIBUTING.md 追加"分支保护"与"社区响应约定"段落（7 天响应承诺，不过度承诺）
+  - **T4.2 分支保护与评审流程**：新建 `.upgrade/decisions/branch-protection.md`（main 分支保护策略决策 + 维护者手动操作步骤 + 预期 Scorecard 影响）；分支保护为 GitHub 后台配置，需维护者手动开启
+  - **T4.3 Scorecard 持续爬升机制**：机制已就位（`.github/workflows/scorecard.yml` weekly cron）；新建 `.upgrade/reports/scorecard-trend-20260714.md` 趋势报告（基线对照 + 18 项预期变化 + 待操作项）
+  - **T4.4 锦上添花项**：明确不承诺（Signed Releases / CII Badge / Packaging）——无外部用户信号前不投入
+- **新增测试**：无（本阶段为工程健康度/文档/CI 任务，无新业务逻辑）
+- **测试验证**：642 passed + 1 skipped（unit，回归确认无破坏）；lint + format clean；doc-check 运行正常（26 处存量违规，均为既有问题与设计文档代码示例误报，CI non-blocking）
+- **详细设计方案**：[docs/plan/phase-4-design.md](docs/plan/phase-4-design.md)
+
 ## v1.0 (2026-06-10)
 - 完成四阶段工作流引擎（失败模式识别 → 工作流设计 → 压力测试 → 触发策略）
 - 完成风险自适应门禁系统

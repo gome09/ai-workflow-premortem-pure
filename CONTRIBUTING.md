@@ -32,6 +32,13 @@ make version-check   # pyproject.toml 与 core/version.py 版本一致性
   - 示例：`fix: 联通红队测试覆盖门控与人工动作状态`
 - 一个 PR 聚焦一件事；大改动拆分为多个小 PR。
 
+## 分支保护
+
+`main` 分支已开启保护：
+- 所有改动必须通过 PR 合并（不接受直接 push main）
+- PR 必须通过 CI（lint + unit tests + docker-lite integration）才能合并
+- 个人项目无强制第二人 review，但鼓励自我 review 后再合
+
 ## 测试约定
 
 - 测试位于 `tests/`，使用内存存储 + monkeypatched LLM，**不依赖** PostgreSQL / Redis / 外部 API Key。
@@ -44,3 +51,14 @@ make version-check   # pyproject.toml 与 core/version.py 版本一致性
 2. PR 描述说明：动机、改动点、测试方式。
 3. 等待 CI（lint + 单测 + docker-lite 集成冒烟）通过后合并。
 4. 个人项目无强制第二人 review，但鼓励自我 review 后再合。
+
+## 社区响应约定
+
+本项目由个人业余维护，响应节奏如下（不过度承诺）：
+
+- **Issue**：尽力在 7 个自然日内首次响应（确认收到 + 初步分诊）。
+- **PR**：尽力在 7 个自然日内完成 review 或给出反馈意见。
+- **安全漏洞**：按 [SECURITY.md](SECURITY.md) 的承诺（7 天内确认接收）。
+- **重大节日 / 个人不可用期**：会在 Issue 中提前说明，响应可能延长至 14 天。
+
+如果你在上述时间窗口内未收到任何回复，欢迎在原 Issue/PR 下追加一条 `ping` 评论提醒（请勿频繁 ping）。

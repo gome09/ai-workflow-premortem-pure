@@ -17,6 +17,23 @@ make version-check
 
 Safe for CI. No external dependencies beyond the project itself.
 
+### doc_consistency_check.py
+
+Validates documentation-code consistency: checks that relative Markdown links resolve, `make <target>` references exist in Makefile, and backtick-quoted repo paths exist.
+
+```bash
+python scripts/doc_consistency_check.py
+# or via Makefile:
+make doc-check
+```
+
+Three rule classes (see `docs/spec/supply-chain-security.md` §7):
+1. Link existence (relative paths in README.md / CLAUDE.md / docs/**/*.md)
+2. Make target existence
+3. Backtick repo path existence (heuristic: must start with a known top-level dir)
+
+Non-blocking in CI initially (`continue-on-error: true`); promoted to blocking after存量坏链 cleared.
+
 ### gen_certs.sh / gen_certs.ps1
 
 Generates self-signed TLS certificates for local HTTPS development.

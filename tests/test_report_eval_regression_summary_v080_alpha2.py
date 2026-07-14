@@ -23,4 +23,4 @@ def test_report_contains_eval_regression_summary() -> None:
     report = build_report_dict(ctx)
 
     assert "eval_regression_summary" in report
-    assert report["eval_regression_summary"]["policy_version"] == "1.0.2"
+    assert report["eval_regression_summary"]["policy_version"] == "1.0.3"

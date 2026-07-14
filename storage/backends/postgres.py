@@ -950,6 +950,88 @@ class PostgresSessionStore:
                 ctx.tenant_id = row["tenant_id"]
         return ctx
 
+    def archive_audit_events(self, session_id: str, purged_by: str, summary: dict) -> int:
+        """Copy audit_events to audit_events_archive + write session_purged event.
+
+        Returns the number of events archived (including the purge event).
+        """
+        import json
+        import uuid
+
+        archived = 0
+        with self._get_conn() as conn:
+            # Copy existing audit events
+            rows = conn.execute(
+                "SELECT event_id, actor, event_type, target_type, target_id, "
+                "before_hash, after_hash, before_snapshot, after_snapshot, metadata, created_at "
+                "FROM audit_events WHERE session_id = %s",
+                (session_id,),
+            ).fetchall()
+            for row in rows:
+                conn.execute(
+                    "INSERT INTO audit_events_archive "
+                    "(archive_id, original_session_id, event_id, actor, event_type, "
+                    "target_type, target_id, before_hash, after_hash, before_snapshot, "
+                    "after_snapshot, metadata, original_created_at, archived_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()) "
+                    "ON CONFLICT (archive_id) DO NOTHING",
+                    (
+                        f"arch-{row['event_id']}",
+                        session_id,
+                        row["event_id"],
+                        row["actor"],
+                        row["event_type"],
+                        row["target_type"],
+                        row["target_id"],
+                        row["before_hash"],
+                        row["after_hash"],
+                        row["before_snapshot"],
+                        row["after_snapshot"],
+                        row["metadata"],
+                        row["created_at"],
+                    ),
+                )
+                archived += 1
+
+            # Write session_purged event
+            conn.execute(
+                "INSERT INTO audit_events_archive "
+                "(archive_id, original_session_id, event_id, actor, event_type, "
+                "target_type, target_id, before_hash, after_hash, before_snapshot, "
+                "after_snapshot, metadata, original_created_at, archived_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, NULL, NULL, NULL, %s, %s, NOW(), NOW())",
+                (
+                    f"arch-purged-{uuid.uuid4()}",
+                    session_id,
+                    f"purge-{uuid.uuid4()}",
+                    purged_by,
+                    "session_purged",
+                    "session",
+                    session_id,
+                    json.dumps(summary, default=str),
+                    json.dumps({"purged_by": purged_by}, default=str),
+                ),
+            )
+            archived += 1
+            conn.commit()
+        return archived
+
+    def delete(self, session_id: str, tenant_id: str = "") -> bool:
+        """Delete a session row. Returns True if a row was deleted."""
+        with self._get_conn() as conn:
+            if tenant_id:
+                cur = conn.execute(
+                    "DELETE FROM sessions WHERE session_id = %s AND tenant_id = %s::uuid",
+                    (session_id, tenant_id),
+                )
+            else:
+                cur = conn.execute(
+                    "DELETE FROM sessions WHERE session_id = %s",
+                    (session_id,),
+                )
+            conn.commit()
+            return cur.rowcount > 0
+
     def list_sessions(self, limit: int = 20, tenant_id: str = "") -> list[dict]:
         """列出最近的会话（用于前端历史列表）"""
         if tenant_id:

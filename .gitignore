@@ -61,6 +61,8 @@ temp/
 # 本地数据库
 *.sqlite
 *.db
+*.db-shm
+*.db-wal
 *.dump
 
 # OS

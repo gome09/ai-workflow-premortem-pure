@@ -141,6 +141,45 @@ class SessionService:
             context_cache.set(ctx)
         return ctx
 
+    def delete_session(
+        self, session_id: str, *, purged_by: str = "admin", tenant_id: str = ""
+    ) -> dict:
+        """Admin 删除会话：归档审计事件 → 写 session_purged → 删除会话 → 清缓存。
+
+        Returns session summary dict. Raises ValueError if session not found.
+        """
+        ctx = self.get_session(session_id, tenant_id=tenant_id)
+        if not ctx:
+            raise ValueError(f"Session not found: {session_id}")
+
+        # Build summary before deletion
+        summary = {
+            "session_id": session_id,
+            "tenant_id": tenant_id,
+            "research_target": ctx.research_target,
+            "domain": ctx.domain,
+            "current_state": ctx.current_state.value,
+            "data_classification": getattr(ctx, "data_classification", "business_internal"),
+            "created_at": ctx.created_at.isoformat(),
+            "updated_at": ctx.updated_at.isoformat(),
+            "purged_by": purged_by,
+        }
+
+        # Archive audit events + write session_purged event
+        archived_count = session_store.archive_audit_events(session_id, purged_by, summary)
+        summary["archived_audit_events"] = archived_count
+
+        # Delete session (cascade handles audit_events, evidence_sources, etc.)
+        session_store.delete(session_id, tenant_id)
+
+        # Invalidate cache
+        context_cache.delete(session_id, tenant_id)
+
+        logger.info(
+            f"Session purged: {session_id} by {purged_by} ({archived_count} events archived)"
+        )
+        return summary
+
     def list_sessions(self, limit: int = 20, tenant_id: str = "") -> list[dict]:
         """列出最近会话，供前端历史列表使用。"""
         rows = session_store.list_sessions(limit=limit, tenant_id=tenant_id)

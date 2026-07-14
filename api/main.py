@@ -171,4 +171,6 @@ def health():
         "default_scenario_id": settings.default_scenario_id or None,
         "builtin_scenarios": [item.scenario_id for item in list_scenarios()],
         "data_encryption": "enabled" if is_encryption_enabled() else "disabled",
+        "audit_retention_days": settings.audit_retention_days,
+        "session_retention_days": settings.session_retention_days,
     }

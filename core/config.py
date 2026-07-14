@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     # Default false: 先让检测跑起来积累误报数据，再决定是否默认开启。
     pii_mask_before_llm: bool = False
 
+    # Data lifecycle (T1.6) — retention in days
+    audit_retention_days: int = 183  # 6 months, aligns with 等保
+    session_retention_days: int = 0  # 0 = forever
+
     # CORS
     cors_allow_origins: str = "https://localhost"
 

@@ -145,6 +145,23 @@ def update_data_classification(
     }
 
 
+@router.delete(
+    "/{session_id}",
+    dependencies=[require_roles(Role.admin)],
+)
+def delete_session(
+    session_id: str,
+    ctx: TenantContext = Depends(get_current_tenant),
+) -> dict:
+    """Admin 删除会话（审计事件归档保留，写 session_purged 处置事件）。"""
+    try:
+        return session_service.delete_session(
+            session_id, purged_by=ctx.user_id or ctx.role, tenant_id=ctx.tenant_id
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 @router.post("/{session_id}/materials", dependencies=[require_roles(Role.editor, Role.admin)])
 def add_materials(
     session_id: str,

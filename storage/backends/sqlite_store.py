@@ -13,6 +13,7 @@ from pathlib import Path
 
 from core.migrations import migrate_context
 from core.models import ProjectContext
+from storage.field_security import decrypt_fields_after_load, encrypt_fields_for_storage
 
 logger = logging.getLogger(__name__)
 
@@ -451,6 +452,9 @@ class SQLiteSessionStore:
                 }
             )
         data["report_artifacts"] = truncated_reports
+
+        # T1.3: encrypt sensitive fields before serialization
+        encrypt_fields_for_storage(data, ctx.data_classification)
 
         return json.dumps(data, default=str)
 
@@ -1032,8 +1036,10 @@ class SQLiteSessionStore:
         if not row:
             return None
         ctx = migrate_context(json.loads(row["context_json"]))
-        if ctx and row["tenant_id"]:
-            ctx.tenant_id = row["tenant_id"]
+        if ctx:
+            decrypt_fields_after_load(ctx)
+            if row["tenant_id"]:
+                ctx.tenant_id = row["tenant_id"]
         return ctx
 
     def list_sessions(self, limit: int = 20, tenant_id: str = "") -> list[dict]:

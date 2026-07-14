@@ -82,6 +82,10 @@ class Settings(BaseSettings):
     jwt_refresh_token_expire_days: int = 7
     frontend_service_token: str = ""
 
+    # Data encryption (T1.3) — Fernet key, base64-encoded 32 bytes
+    # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    data_encryption_key: str = ""
+
     # CORS
     cors_allow_origins: str = "https://localhost"
 

@@ -32,6 +32,7 @@ from core.config import settings
 from core.execution_mode import WorkflowExecutionMode
 from core.version import APP_STATUS, APP_VERSION
 from scenarios import list_scenarios
+from storage.field_security import is_encryption_enabled
 from storage.session_store import session_store
 
 try:
@@ -169,4 +170,5 @@ def health():
         "default_domain_profile": settings.domain_profile,
         "default_scenario_id": settings.default_scenario_id or None,
         "builtin_scenarios": [item.scenario_id for item in list_scenarios()],
+        "data_encryption": "enabled" if is_encryption_enabled() else "disabled",
     }

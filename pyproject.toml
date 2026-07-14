@@ -23,6 +23,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "httpx>=0.28.0",
     "python-jose[cryptography]>=3.3.0",
+    "cryptography>=42.0.0",  # T1.3 字段级静态加密（python-jose[cryptography] 已传递依赖，此处显式声明便于 pip-audit 跟踪）
     "passlib[bcrypt]>=1.7.4",
     "bcrypt>=4.0.0",
     "python-multipart>=0.0.9",

@@ -1,0 +1,7 @@
+"""应用版本信息"""
+
+APP_VERSION = "1.2.2"
+REPORT_SCHEMA_VERSION = "1.2.2"
+APP_STATUS = "release"
+PACKAGE_STAGE = "v1.2.2"
+RUNTIME_VALIDATION = "local_pass"

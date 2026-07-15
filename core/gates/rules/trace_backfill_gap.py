@@ -1,0 +1,72 @@
+from __future__ import annotations
+
+import core.stage_readiness_service as readiness
+from core.gates.risk_profile import build_stage3_gate_profile
+from core.models import ProjectContext
+from core.trace_backfill_service import build_trace_backfill_summary
+
+
+class TraceBackfillGapRule:
+    """Stage 3 trace-backfill gate.
+
+    The rule is pure-read. It consumes existing LLMTrace, EvalCase, and
+    EvalDataset records and only explains the next required operation.
+    It never creates EvalCases or datasets during gate evaluation.
+
+    Risk-adaptive: low-risk projects skip trace backfill blocking.
+    """
+
+    rule_id = "trace_backfill_gap"
+    applies_to_stages = {3}
+
+    def applies_to(self, stage: int) -> bool:
+        return stage in self.applies_to_stages
+
+    def evaluate(self, ctx: ProjectContext, stage: int) -> list[readiness.StageBlocker]:
+        if stage != 3:
+            return []
+
+        profile = build_stage3_gate_profile(ctx)
+
+        if not profile.require_trace_backfill:
+            return []
+
+        summary = build_trace_backfill_summary(ctx)
+        blockers: list[readiness.StageBlocker] = []
+
+        for trace_id in summary.get("eligible_trace_ids_without_eval_case", []) or []:
+            blockers.append(
+                readiness._blocker(
+                    ctx=ctx,
+                    stage=stage,
+                    blocker_type="trace_backfill_gap",
+                    severity="high",
+                    message=f"失败 / 解析错误 / 安全类追踪记录 {trace_id} 尚未回填为评测用例。",
+                    source_type="trace",
+                    source_id=trace_id,
+                    required_resolution="trace_to_eval_case",
+                    can_be_overridden_by_approval=False,
+                    metadata={"gap_type": "trace_without_eval_case", **summary},
+                )
+            )
+
+        for eval_id in summary.get("backfilled_eval_ids_without_trace_dataset", []) or []:
+            blockers.append(
+                readiness._blocker(
+                    ctx=ctx,
+                    stage=stage,
+                    blocker_type="trace_backfill_gap",
+                    severity="high",
+                    message=f"追踪回填的评测用例 {eval_id} 尚未纳入生产追踪评测数据集。",
+                    source_type="eval_case",
+                    source_id=eval_id,
+                    required_resolution="create_trace_backfill_dataset",
+                    can_be_overridden_by_approval=False,
+                    metadata={"gap_type": "trace_eval_case_without_dataset", **summary},
+                )
+            )
+
+        return [blocker.model_copy(update={"rule_id": self.rule_id}) for blocker in blockers]
+
+
+rule = TraceBackfillGapRule()

@@ -1,0 +1,19 @@
+{
+  "scenario_id": "university_mental_health",
+  "name": "University Mental Health",
+  "description": "高校学生心理健康风险预测示例，复用 university_ai domain profile 与 mock fixture。",
+  "input_sample_path": "examples/university_ai_mental_health_input.md",
+  "domain_profile": "university_ai",
+  "mock_fixture": "university_mental_health",
+  "default_config": {
+    "auto_bootstrap_input": true,
+    "stage_context_note": "演示重点：敏感学生数据、心理干预、公平性与高风险人工复核要求。"
+  },
+  "applicable_stages": [
+    "init",
+    "stage_1",
+    "stage_2",
+    "stage_3",
+    "stage_4"
+  ]
+}

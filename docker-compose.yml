@@ -1,0 +1,185 @@
+# docker-compose.yml  ←  production config (no --reload, no code mounts)
+secrets:
+  jwt_secret:
+    file: ./secrets/jwt_secret
+  postgres_password:
+    file: ./secrets/postgres_password
+  redis_password:
+    file: ./secrets/redis_password
+  deepseek_api_key:
+    file: ./secrets/deepseek_api_key
+  tavily_api_key:
+    file: ./secrets/tavily_api_key
+  grafana_password:
+    file: ./secrets/grafana_password
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: aiwf_postgres
+    restart: unless-stopped
+    secrets:
+      - postgres_password
+    environment:
+      POSTGRES_DB: ai_workflow
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "0.5"
+
+  redis:
+    image: redis:7-alpine
+    container_name: aiwf_redis
+    restart: unless-stopped
+    secrets:
+      - redis_password
+    command: ["sh", "-c", "redis-server --save 60 1 --loglevel warning --requirepass $$(cat /run/secrets/redis_password)"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $$(cat /run/secrets/redis_password) --no-auth-warning ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.25"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: aiwf_api
+    restart: unless-stopped
+    secrets:
+      - jwt_secret
+      - postgres_password
+      - redis_password
+      - deepseek_api_key
+      - tavily_api_key
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: aiwf_frontend
+    restart: unless-stopped
+    command: streamlit run frontend/app.py --server.port 8501 --server.address 0.0.0.0
+    secrets:
+      - jwt_secret
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      REDIS_HOST: redis
+      API_BASE: http://api:8000
+    depends_on:
+      - api
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "0.5"
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: aiwf_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - api
+      - frontend
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+          cpus: "0.25"
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: aiwf_prometheus
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+    depends_on:
+      - api
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.25"
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: aiwf_grafana
+    restart: unless-stopped
+    secrets:
+      - grafana_password
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_password
+      GF_SECURITY_ADMIN_USER: admin
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/fastapi-overview.json
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.25"
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:

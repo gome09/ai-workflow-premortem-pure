@@ -1,0 +1,91 @@
+# pyproject.toml
+[project]
+name = "ai-workflow-tool"
+version = "1.2.2"
+description = "A human-AI collaborative workflow tool for project inception"
+readme = "README.md"
+requires-python = ">=3.11"
+
+dependencies = [
+    "langgraph>=0.2.0",
+    "langchain>=0.3.0",
+    "langchain-openai>=0.2.0",        # DeepSeek 兼容 OpenAI 接口
+    "langchain-community>=0.3.0",
+    "tavily-python>=0.5.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "streamlit>=1.40.0",
+    "psycopg[binary,pool]>=3.2.0",    # PostgreSQL 异步驱动
+    "langgraph-checkpoint-postgres>=2.0.0",
+    "redis[hiredis]>=5.2.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.6.0",
+    "python-dotenv>=1.0.0",
+    "httpx>=0.28.0",
+    "python-jose[cryptography]>=3.3.0",
+    "cryptography>=42.0.0",  # T1.3 字段级静态加密（python-jose[cryptography] 已传递依赖，此处显式声明便于 pip-audit 跟踪）
+    "passlib[bcrypt]>=1.7.4",
+    "bcrypt>=4.0.0",
+    "python-multipart>=0.0.9",
+    "slowapi>=0.1.9",
+    "alembic>=1.13.0",
+    "prometheus-fastapi-instrumentator>=7.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.8.0",
+    "pip-audit>=2.7.0",  # T1.8 依赖漏洞审计
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "S"]
+ignore = ["E501"]
+
+
+[tool.ruff.lint.per-file-ignores]
+# Auth tests set env vars before imports (JWT_SECRET etc. must be set before module load).
+"tests/test_auth.py" = ["E402", "I001", "S105", "S106"]
+# 测试假 token 字面量（"tok-from-login" 等），不是真实凭据
+"tests/test_frontend_demo_auth_flow.py" = ["S105"]
+"tests/conftest.py" = ["E402"]
+# tests 用 assert 是正常的，豁免 S101（assert 使用）
+# S106/S107：final_pass_status 等字段名含 "pass" 触发误报
+"tests/**" = ["S101", "S110", "S106", "S107"]
+# mock_llm 模式下硬编码的 fake API key / secret，不构成真实泄露
+"core/llm/adapters/mock.py" = ["S105", "S106"]
+"core/llm/adapters/mock_fixtures/**" = ["S105", "S106"]
+# frontend api_client 用 try/except/pass 做防御性容错（失败返回空列表），系统性模式
+"frontend/api_client.py" = ["S110"]
+
+[tool.coverage.run]
+source = ["."]
+omit = [
+    "tests/*",
+    "frontend/*",
+    ".venv/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]

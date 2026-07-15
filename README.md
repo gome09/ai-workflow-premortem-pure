@@ -1,0 +1,240 @@
+# 企业 AI 项目部署前风险预评估 Demo
+
+> AI 工作流预验尸与人机监督平台 · 本科毕业设计项目 · 计算机科学与技术专业
+
+**版本：** v1.2.1
+**协议：** Apache-2.0
+
+---
+
+## 项目背景
+
+随着 AI 系统在教育、医疗、金融等行业的快速落地，在项目立项阶段系统性识别 AI 风险成为工程实践中的关键挑战。现有 AI 应用构建工具（如 Dify、Flowise、Langflow）专注于 AI 应用的编排与部署，但缺乏对 AI 系统本身进行结构化风险预评估的机制——团队往往在系统上线后才发现失败模式，此时修复成本极高。
+
+本项目借鉴软件工程中的**预验尸（Pre-mortem）**方法论，将其应用于 AI 项目立项阶段，构建了一套**对话式、结构化、带人机监督的 AI 风险分析平台**。
+
+### 核心问题
+
+> 如何在 AI 系统部署之前，系统性地发现它可能在哪里失败？
+
+### 解决方案
+
+通过四个阶段的引导式分析，结合大语言模型的推理能力与人机监督机制，帮助团队在立项阶段完成：
+
+| 阶段 | 内容 | 技术手段 |
+|------|------|----------|
+| Stage 1 | 失败模式识别 | 实时网络搜索（Tavily）+ LLM 深度推理（DeepSeek V4 Pro thinking） |
+| Stage 2 | 人机协同工作流设计 | 明确哪些决策需要人工审核，设计监督节点 |
+| Stage 3 | Zero-Shot 压力测试生成 | 自动生成 EvalCase，评估模型在边界场景下的行为 |
+| Stage 4 | 触发策略与部署建议 | 给出部署时机、触发方式和监控策略 |
+
+### 核心创新：风险自适应阶段门禁
+
+根据项目风险等级（LOW / MEDIUM / HIGH / CRITICAL），动态调整每个阶段的通过条件：
+
+- **LOW**（个人/学习类）：通过基础安全检查即可推进
+- **MEDIUM**（团队协作）：需 Eval 覆盖高风险节点
+- **HIGH**（金融/法律/儿童）：需红队测试 + 回归评估 + 追踪记录
+- **CRITICAL**（医疗/药物/诊断）：需全部门禁 + 专家评审，强制阻断
+
+高风险项目的 Stage 3 安全阻断**不是产品缺陷，是设计意图**——系统拒绝让高风险 AI 项目在未完成充分评估的情况下推进。
+
+---
+
+## 核心功能
+
+| 功能模块 | 说明 |
+|----------|------|
+| 四阶段工作流引擎 | Stage 1–4 确定性状态机，每步推进一个阶段 |
+| 人机监督闭环 | PendingHumanAction：approve / edit / reject / verify_evidence / escalate 五种处理方式 |
+| 风险自适应门禁 | Stage Gate 根据风险等级动态调整通过条件 |
+| 证据核验 | EvidenceSource 采集、核验、门禁检查 |
+| 安全发现 | SafetyFinding + Prompt Injection Scanner + 多标准风险分类 |
+| Eval 评估体系 | EvalCase 覆盖率门禁 + EvalRun 评分 + 人工评审 + 回归对比 |
+| Red Team | 对抗测试用例生成、管理与转化 |
+| 报告导出 | JSON / Markdown ReportArtifact，含 readiness 与 governance 摘要 |
+| 审计追踪 | 完整审计事件记录 + Streamlit Audit Workbench 可视化 |
+
+---
+
+## 技术栈
+
+| 层 | 技术 |
+|----|------|
+| API | FastAPI（Python 3.11+） |
+| 前端 | Streamlit Review Workbench |
+| 工作流引擎 | LangGraph |
+| LLM | DeepSeek V4 Pro / V4 Flash（兼容 OpenAI Chat Completions 接口） |
+| 数据库 | PostgreSQL（Alembic 迁移管理） |
+| 缓存 | Redis |
+| 容器化 | Docker Compose |
+| 认证 | JWT Bearer + RBAC |
+| 可观测性 | Prometheus + Grafana |
+
+---
+
+## 快速开始
+
+### Windows 一键启动
+
+Windows 用户可用仓库根目录的批处理脚本一键启动，无需手动敲命令：
+
+| 脚本 | 作用 |
+|------|------|
+| `install-demo.bat` | 首次运行，检查 Python/uv 并安装依赖、生成 `.env` |
+| `start-demo.bat` | 启动前后端（含端口检查与后端健康轮询），就绪后自动打开浏览器 |
+| `stop-demo.bat` | 按端口停止前后端服务，可重复执行 |
+| `verify-demo.bat` | 对已启动的服务运行四阶段 live E2E 验证 |
+
+典型流程：双击 `install-demo.bat`（仅首次）→ 双击 `start-demo.bat` → 浏览器自动打开 `http://localhost:8501`。
+
+**访问信息**
+
+| 服务 | 地址 |
+|------|------|
+| 前端界面 | http://localhost:8501 |
+| 后端 API | http://127.0.0.1:8000 |
+| API 文档 | http://127.0.0.1:8000/docs |
+
+**登录信息**：用户名 `demo@example.com`，密码 `demo-password-123`。
+
+> bash 用户可用等价的 `make demo-api` / `make demo-ui` 启动，用 `make e2e-live` 运行 live E2E 验证。
+
+> **注意事项**
+> 1. 首次运行必须先执行 `install-demo.bat` 安装依赖。
+> 2. 需要 Python 3.11+。
+> 3. 确保 8000 与 8501 端口未被占用。
+> 4. 演示模式默认使用 Mock 数据，无需联网。
+> 5. 安全提醒：演示模式使用默认密钥，生产环境请修改 `.env` 中的 `JWT_SECRET`。
+
+### 离线演示模式（无需 API Key）
+
+无需 PostgreSQL / Redis / API Key，也不依赖外网：
+
+```bash
+cp .env.example .env
+# 编辑 .env，设置以下值：
+#   LLM_MODE=mock
+#   STORAGE_BACKEND=sqlite
+#   DEFAULT_SCENARIO_ID=generic_rag_demo
+
+uv sync --all-extras
+uv run uvicorn api.main:app --reload --port 8000
+```
+
+可选前端：
+
+```bash
+uv run streamlit run frontend/app.py --server.port 8501
+```
+
+### Docker 部署（可选）
+
+> Docker 部署为可选模式，答辩现场推荐使用上方的离线演示模式。
+
+#### Docker Lite（SQLite + Mock，无需 PostgreSQL / Redis）
+
+```bash
+# 自动将 .env.demo 复制为 .env（如尚未存在）
+make lite-up
+```
+
+轻量模式使用 `.env.demo` 配置，无需 API Key，适合快速演示。
+
+#### Docker Full（PostgreSQL + Redis + 真实 LLM）
+
+```bash
+# 生成 .env（从 .env.example）与 secrets/（从 secrets.example/），并签发 TLS 证书
+make setup
+# 编辑 secrets/ 中的 API Key
+make prod-up
+curl -k https://localhost/api/health/live
+```
+
+> `secrets/` 目录不进入版本控制，由 `make setup` 从 `secrets.example/` 模板生成，请在其中填入真实 API Key。
+
+---
+
+## 答辩演示模式
+
+> 推荐使用 **离线 Mock + SQLite** 模式进行答辩演示，零外部依赖，确定性输出。
+
+### 启动方式
+
+```bash
+# 一键启动后端 API（自动使用 .env.demo 配置）
+make demo-api
+
+# 另一终端，启动前端
+make demo-ui
+```
+
+打开浏览器访问 `http://localhost:8501`，在左侧选择内置场景（如 `generic_rag_demo`），点击「新建会话」即可演示完整四阶段流程。
+
+### 特点
+
+- **无需 API Key**：使用 Mock LLM，返回确定性 fixture JSON
+- **无需数据库**：SQLite 本地文件，无需 PostgreSQL / Redis
+- **无需 Docker**：直接 `uv run` 启动
+- **内置 2 个场景**：通用 RAG、高校心理健康
+- **完整功能覆盖**：四阶段工作流、人机监督、证据核验、Eval、Red Team、报告导出
+
+### 验收测试
+
+```bash
+# Mock 场景验收（快速，约 5 秒）
+make e2e-mock
+
+# 全量测试（约 8 秒）
+make e2e-full-test
+```
+
+---
+
+## 测试
+
+```bash
+uv run pytest tests/ -q
+```
+
+测试使用内存存储和 monkeypatched LLM，无需外部依赖。
+
+---
+
+## 目录结构
+
+```text
+.
+├── api/                    # FastAPI 路由
+│   └── routers/            #   路由模块
+├── auth/                   # JWT 认证 + RBAC
+├── core/                   # 核心业务服务
+│   ├── gates/              #   门禁引擎
+│   ├── llm/                #   LLM 适配层
+│   │   └── adapters/       #     LLM 适配器（含 mock_fixtures）
+│   ├── migrations/         #   ProjectContext schema 迁移（区别于 alembic/ 的数据库表结构迁移）
+│   └── traces/             #   LLM 调用追踪
+├── stages/                 # 四阶段执行逻辑
+│   └── domain_profiles/    #   领域提示词配置
+├── graph/                  # LangGraph 状态机
+├── tools/                  # 搜索、安全工具 + 风险分类
+│   └── taxonomies/         #   风险分类体系
+├── storage/                # 存储层（PostgreSQL / SQLite）
+│   └── backends/           #   存储后端实现
+├── frontend/               # Streamlit 前端
+│   └── components/         #   UI 组件
+├── scenarios/              # 可插拔 Demo 场景机制
+│   └── manifests/          #   场景定义文件
+├── docs/                   # 项目文档
+├── examples/               # 示例输入文件
+├── scripts/                # 工具脚本
+├── monitoring/             # Prometheus + Grafana 配置
+├── nginx/                  # Nginx 反向代理配置
+├── secrets.example/        # Docker secrets 模板（复制为 secrets/ 并填入真实值）
+├── data/                   # SQLite 数据文件（运行时自动生成，非仓库自带）
+├── alembic/                # 数据库迁移
+├── tests/                  # 测试
+├── docker-compose.yml      # Docker 生产部署配置
+├── docker-compose.lite.yml # Docker 轻量演示配置
+└── Dockerfile
+```

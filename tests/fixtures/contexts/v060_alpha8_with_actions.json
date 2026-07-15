@@ -1,0 +1,27 @@
+{
+  "context_schema_version": "0.6.0-alpha.8",
+  "session_id": "fixture-v060-with-actions",
+  "current_state": "init",
+  "research_target": "Contract drafting assistant",
+  "domain": "Legal document generation",
+  "goal": "Identify high-risk AI workflow failure modes before rollout",
+  "pending_actions": [
+    {
+      "action_id": "ACT-fixture-1",
+      "session_id": "fixture-v060-with-actions",
+      "stage_id": 1,
+      "source_type": "failure_mode",
+      "source_id": "FM-1",
+      "action_type": "approve",
+      "title": "Approve high risk failure mode",
+      "description": "Legacy fixture action",
+      "risk_level": "high",
+      "status": "pending",
+      "blocking": true,
+      "stage_output_version": 1
+    }
+  ],
+  "audit_events": [],
+  "parser_errors": {},
+  "stage_output_versions": {}
+}

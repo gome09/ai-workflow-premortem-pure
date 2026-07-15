@@ -1,0 +1,22 @@
+name: codeql
+
+on:
+  workflow_dispatch:   # 阶段 1 先手动触发；仓库公开后改 push/PR + weekly cron
+  schedule:
+    - cron: '22 3 * * 1'  # 每周一 03:22 UTC
+
+permissions:
+  contents: read
+  security-events: write   # CodeQL 需要写 security events
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: python
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:python"

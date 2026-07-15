@@ -4,6 +4,11 @@
 > 远程 `origin`（github.com/gome09/ai-workflow-premortem-pure）保有 2026-05-31 起的完整提交历史（21 次提交），如需追溯请查阅远程分支。
 > 其中 v0.1（2026-05-01）/ v0.5（2026-05-20）的日期早于可见最早 commit（2026-05-31），为里程碑回溯记录，非逐次提交日志。
 
+## 维护记录 (2026-07-15)
+- **GitHub CI 离线全流程验证通过**：`.github/workflows/ci.yml` 两个 job 在远端实测全绿——`lint-and-unit-tests`（ruff lint/format + doc-check[non-blocking] + pip-audit[non-blocking] + `.env.demo` mock+SQLite 全量 pytest）与 `docker-lite-integration`（`docker-compose.lite.yml` 构建 + API/前端 health smoke test）。全程离线，无真实 LLM 或外部服务依赖（`LLM_MODE=mock` / `STORAGE_BACKEND=sqlite`）。CI run #13 conclusion=success
+- **清理测试告警**：`tests/test_taxonomy_owasp_agentic_2026.py` 两处 docstring 含正则 `\d` 改用 raw string（`r"""`），消除 `SyntaxWarning: invalid escape sequence`
+- **测试验证**：615 passed + 8 skipped（本地 unit，mock+SQLite）；ruff lint/format clean；version 1.2.1 一致
+
 ## v1.2.1 (2026-07-14)
 - **Phase 4 开源社区打磨（T4.1 / T4.2 / T4.3 / T4.5；T4.4 明确不承诺）**：
   - **T4.1 文档-代码一致性检查 CI 化**：新建 `scripts/doc_consistency_check.py`（三类规则：Markdown 相对链接存在性 / `make <target>` 存在性 / 反引号仓库路径存在性）；新增 `make doc-check` target；ci.yml lint job 追加 doc-check 步骤（初期 `continue-on-error: true` 观察期）；修复 stage3 文档悬空引用（补档 `docs/archive/verification-reports/risk_adaptive_gate_final_validation.md`，决策记录见 `.upgrade/decisions/doc-check-stage3-dangling-ref.md`）

@@ -12,14 +12,14 @@ ASI_PATTERN = re.compile(r"^OWASP_ASI_2026:ASI\d{2}$")
 
 
 def test_asi_attack_refs_format():
-    """所有 ASI_ATTACK_REFS 的 ref 必须形如 OWASP_ASI_2026:ASI\d{2}。"""
+    r"""所有 ASI_ATTACK_REFS 的 ref 必须形如 OWASP_ASI_2026:ASI\d{2}。"""
     for attack_type, refs in ASI_ATTACK_REFS.items():
         for ref in refs:
             assert ASI_PATTERN.match(ref), f"attack_type={attack_type} 的 ref={ref} 不符合格式"
 
 
 def test_asi_risk_refs_format():
-    """所有 ASI_RISK_REFS 的 ref 必须形如 OWASP_ASI_2026:ASI\d{2}。"""
+    r"""所有 ASI_RISK_REFS 的 ref 必须形如 OWASP_ASI_2026:ASI\d{2}。"""
     for risk_type, refs in ASI_RISK_REFS.items():
         for ref in refs:
             assert ASI_PATTERN.match(ref), f"risk_type={risk_type} 的 ref={ref} 不符合格式"

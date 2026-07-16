@@ -14,9 +14,9 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "ai-workflow-tool"
+name = "ai-workflow-premortem"
 version = "1.2.1"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "bcrypt" },

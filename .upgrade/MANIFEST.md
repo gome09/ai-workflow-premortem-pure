@@ -57,6 +57,7 @@ Before cleanup, classify each file as one of:
 | `.upgrade/MANIFEST.md` | active | permanent | 本文件 |
 | `.upgrade/decisions/RELEASE_CLEANUP.md` | active | permanent | v1.0 发布前组件清理决策记录（移除/归档了哪些组件及原因），moved from project root 2026-07-13 |
 | `.upgrade/decisions/branch-protection.md` | active | permanent | Phase 4 T4.2 main 分支保护策略决策（GitHub 后台手动操作步骤） |
+| `.upgrade/decisions/doc-alignment-and-frontend-polish.md` | active | permanent | 文档-代码对齐 + 前端中文化收尾（demo 可运行性打磨）决策，commit 545c827 |
 | `.upgrade/decisions/doc-check-stage3-dangling-ref.md` | active | permanent | Phase 4 T4.1 stage3 文档悬空引用补档决策 |
 | `.upgrade/decisions/scorecard-baseline.md` | active | permanent | Phase 4 T4.3 Scorecard 基线扫描决策 |
 | `.upgrade/reports/release_manifest_v1.0.md` | active | keep-until-superseded | v1.0 生产文件范围清单，moved from project root 2026-07-13 |

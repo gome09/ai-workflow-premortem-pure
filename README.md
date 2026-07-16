@@ -147,6 +147,15 @@ make demo-ui
 - **内置 4 个场景**：通用 RAG、高校课程问答、高校心理健康、学生选课管理
 - **完整功能覆盖**：四阶段工作流、人机监督、证据核验、Eval、Red Team、报告导出
 
+### 零依赖单文件 Demo（浏览器直接打开）
+
+仓库根目录提供两份自包含的单文件 HTML Demo，无需启动后端/前端，双击用浏览器打开即可交互演示，数据取自真实项目实跑快照（`LLM_MODE=mock` / `STORAGE_BACKEND=sqlite` / `WORKFLOW_EXECUTION_MODE=single_step`）：
+
+| 文件 | 说明 |
+|------|------|
+| `ai_workflow_premortem_demo.html` | 离线可交互 Demo，覆盖四阶段工作流全流程（通用 RAG / 高校心理健康等场景快照） |
+| `trae_ai_risk_premortem_submission.html` | TRAE AI 创造力大赛提交版单页展示（内置 Mock Engine） |
+
 ### 验收测试
 
 ```bash

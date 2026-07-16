@@ -65,6 +65,7 @@ Before cleanup, classify each file as one of:
 | `.upgrade/reports/scorecard-trend-20260714.md` | active | keep-until-superseded | Phase 4 T4.3 Scorecard 趋势报告（基线对照 + 18 项预期变化） |
 | `.upgrade/reports/nist-ai-600-1-action-summary.md` | active | keep-until-superseded | Phase 2 T2.2 NIST AI 600-1 动作项映射摘要（4 项标存疑） |
 | `.upgrade/reports/tc260-agent-deployment-summary.md` | active | keep-until-superseded | Phase 2 T2.4 TC260 智能体部署使用安全指引映射摘要 |
+| `.upgrade/research/benchmarking-20260716/` | active | keep-until-superseded | 对标调研原始数据快照（deepeval / guardrails-ai / inspect_ai / NeMo-Guardrails 的 GitHub repo/releases/tags API 采集 + README 快照，采集日 2026-07-16），供开源门面对齐与竞品定位分析引用 |
 
 ## Moved from Project
 

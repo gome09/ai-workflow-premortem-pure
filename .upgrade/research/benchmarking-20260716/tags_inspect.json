@@ -1,0 +1,32 @@
+[
+  {
+    "name": "release/2025-11-28",
+    "zipball_url": "https://api.github.com/repos/UKGovernmentBEIS/inspect_ai/zipball/refs/tags/release/2025-11-28",
+    "tarball_url": "https://api.github.com/repos/UKGovernmentBEIS/inspect_ai/tarball/refs/tags/release/2025-11-28",
+    "commit": {
+      "sha": "b54776383a2c369a76521a50135e789de0a3e132",
+      "url": "https://api.github.com/repos/UKGovernmentBEIS/inspect_ai/commits/b54776383a2c369a76521a50135e789de0a3e132"
+    },
+    "node_id": "REF_kwDOKtX1O7xyZWZzL3RhZ3MvcmVsZWFzZS8yMDI1LTExLTI4"
+  },
+  {
+    "name": "inspect-tool-support-1.2.0",
+    "zipball_url": "https://api.github.com/repos/UKGovernmentBEIS/inspect_ai/zipball/refs/tags/inspect-tool-support-1.2.0",
+    "tarball_url": "https://api.github.com/repos/UKGovernmentBEIS/inspect_ai/tarball/refs/tags/inspect-tool-support-1.2.0",
+    "commit": {
+      "sha": "25d12fc85b735068f2aac998d4fab05f22a1c9f4",
+      "url": "https://api.github.com/repos/UKGovernmentBEIS/inspect_ai/commits/25d12fc85b735068f2aac998d4fab05f22a1c9f4"
+    },
+    "node_id": "REF_kwDOKtX1O9oAJHJlZnMvdGFncy9pbnNwZWN0LXRvb2wtc3VwcG9ydC0xLjIuMA"
+  },
+  {
+    "name": "inspect-tool-support-1.1.2",
+    "zipball_url": "https://api.github.com/repos/UKGovernmentBEIS/inspect_ai/zipball/refs/tags/inspect-tool-support-1.1.2",
+    "tarball_url": "https://api.github.com/repos/UKGovernmentBEIS/inspect_ai/tarball/refs/tags/inspect-tool-support-1.1.2",
+    "commit": {
+      "sha": "493151f475ca8c1d97b20c0fa735917bf44f2f78",
+      "url": "https://api.github.com/repos/UKGovernmentBEIS/inspect_ai/commits/493151f475ca8c1d97b20c0fa735917bf44f2f78"
+    },
+    "node_id": "REF_kwDOKtX1O9oAJHJlZnMvdGFncy9pbnNwZWN0LXRvb2wtc3VwcG9ydC0xLjEuMg"
+  }
+]

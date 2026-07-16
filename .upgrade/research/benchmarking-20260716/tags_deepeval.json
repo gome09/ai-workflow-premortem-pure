@@ -1,0 +1,32 @@
+[
+  {
+    "name": "v4.1.1",
+    "zipball_url": "https://api.github.com/repos/confident-ai/deepeval/zipball/refs/tags/v4.1.1",
+    "tarball_url": "https://api.github.com/repos/confident-ai/deepeval/tarball/refs/tags/v4.1.1",
+    "commit": {
+      "sha": "58c9ef78a4634ba119c7d2cc145f5cf9aeb24524",
+      "url": "https://api.github.com/repos/confident-ai/deepeval/commits/58c9ef78a4634ba119c7d2cc145f5cf9aeb24524"
+    },
+    "node_id": "REF_kwDOKFeYBLByZWZzL3RhZ3MvdjQuMS4x"
+  },
+  {
+    "name": "v4.1.0",
+    "zipball_url": "https://api.github.com/repos/confident-ai/deepeval/zipball/refs/tags/v4.1.0",
+    "tarball_url": "https://api.github.com/repos/confident-ai/deepeval/tarball/refs/tags/v4.1.0",
+    "commit": {
+      "sha": "5f016102c906a25b35c3744c3d5e657ee1074796",
+      "url": "https://api.github.com/repos/confident-ai/deepeval/commits/5f016102c906a25b35c3744c3d5e657ee1074796"
+    },
+    "node_id": "REF_kwDOKFeYBLByZWZzL3RhZ3MvdjQuMS4w"
+  },
+  {
+    "name": "v4.0.8",
+    "zipball_url": "https://api.github.com/repos/confident-ai/deepeval/zipball/refs/tags/v4.0.8",
+    "tarball_url": "https://api.github.com/repos/confident-ai/deepeval/tarball/refs/tags/v4.0.8",
+    "commit": {
+      "sha": "701c2f1e6e4002ab04a419b2afec410332a647fc",
+      "url": "https://api.github.com/repos/confident-ai/deepeval/commits/701c2f1e6e4002ab04a419b2afec410332a647fc"
+    },
+    "node_id": "REF_kwDOKFeYBLByZWZzL3RhZ3MvdjQuMC44"
+  }
+]

@@ -633,7 +633,7 @@ git commit -m "chore: tighten mypy for core.gates and graph, wire typecheck into
 - Modify: `core/models.py`（EvalRun 加 `llm_judge_suggestion` 字段）
 - Test: `tests/test_llm_judge_v130.py`（新建）
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 创建 `tests/test_llm_judge_v130.py`：
 
@@ -665,12 +665,12 @@ def test_eval_run_has_llm_judge_suggestion_field():
     assert run.llm_judge_suggestion is None
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `uv run pytest tests/test_llm_judge_v130.py -v`
 Expected: FAIL（`Settings` 无 `eval_llm_judge` 属性 / `EvalRun` 无 `llm_judge_suggestion`）
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `core/config.py` — 在 `gate_rules_disabled` 配置之后插入：
 
@@ -691,12 +691,12 @@ Expected: FAIL（`Settings` 无 `eval_llm_judge` 属性 / `EvalRun` 无 `llm_jud
     llm_judge_suggestion: dict[str, Any] | None = None
 ```
 
-- [ ] **Step 4: 运行测试确认通过 + 全量回归**
+- [x] **Step 4: 运行测试确认通过 + 全量回归**
 
 Run: `uv run pytest tests/test_llm_judge_v130.py -v && make test`
 Expected: 新测试 2 passed；全量无回归
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add core/config.py core/models.py tests/test_llm_judge_v130.py
@@ -712,7 +712,7 @@ git commit -m "feat: add EVAL_LLM_JUDGE flags and EvalRun.llm_judge_suggestion f
 - Create: `core/llm/adapters/mock_fixtures/llm_judge.py`（judge 专用 fixture）
 - Test: `tests/test_llm_judge_v130.py`（追加）
 
-- [ ] **Step 1: 写失败测试（追加到 `tests/test_llm_judge_v130.py`）**
+- [x] **Step 1: 写失败测试（追加到 `tests/test_llm_judge_v130.py`）**
 
 ```python
 from core.eval_llm_judge import generate_llm_judge_suggestion
@@ -764,12 +764,12 @@ def test_llm_judge_suggestion_invalid_llm_output_returns_none(monkeypatch):
     assert generate_llm_judge_suggestion(ctx, case, run) is None
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `uv run pytest tests/test_llm_judge_v130.py -v`
 Expected: 新增 2 条 FAIL（`ModuleNotFoundError: core.eval_llm_judge`）
 
-- [ ] **Step 3: 创建 judge fixture `core/llm/adapters/mock_fixtures/llm_judge.py`**
+- [x] **Step 3: 创建 judge fixture `core/llm/adapters/mock_fixtures/llm_judge.py`**
 
 ```python
 """Mock fixture for the T3.6 LLM judge suggestion path (offline CI/demo)."""
@@ -789,7 +789,7 @@ def judge_response() -> str:
     )
 ```
 
-- [ ] **Step 4: 创建 `core/eval_llm_judge.py`**
+- [x] **Step 4: 创建 `core/eval_llm_judge.py`**
 
 ```python
 # core/eval_llm_judge.py
@@ -892,12 +892,12 @@ def generate_llm_judge_suggestion(
         return None
 ```
 
-- [ ] **Step 5: 运行测试确认通过 + 全量回归 + lint**
+- [x] **Step 5: 运行测试确认通过 + 全量回归 + lint**
 
 Run: `uv run pytest tests/test_llm_judge_v130.py -v && make test && make lint`
 Expected: 4 passed；全量无回归；lint clean
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add core/eval_llm_judge.py core/llm/adapters/mock_fixtures/llm_judge.py tests/test_llm_judge_v130.py
@@ -913,7 +913,7 @@ git commit -m "feat: add LLM judge suggestion generator with mock fixture (T3.6 
 - Modify: `core/eval_judgment_service.py`（judgment 元数据携带建议）
 - Test: `tests/test_llm_judge_v130.py`（追加）
 
-- [ ] **Step 1: 写失败测试（追加）**
+- [x] **Step 1: 写失败测试（追加）**
 
 ```python
 from core.eval_runner import run_eval_cases
@@ -1001,12 +1001,12 @@ def test_autofinal_never_applies_to_high_risk(monkeypatch):
 
 > ⚠️ 执行注意：`test_autofinal_adopts_suggestion_for_low_risk` / `_never_applies_to_high_risk` 依赖 `classify_project_risk` 的关键词表。执行时先跑 `uv run python -c "from core.gates.risk_profile import classify_project_risk; from core.models import ProjectContext; c=ProjectContext(); c.goal='medical diagnosis assistant for cancer patients 医疗诊断'; print(classify_project_risk(c))"` 确认该 goal 确实落 CRITICAL/HIGH；若关键词不命中，调整 goal 文本直到命中（查 `core/gates/risk_profile.py` 的 `_CRITICAL_KEYWORDS` 实际词表），**不要改生产关键词表来迁就测试**。
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `uv run pytest tests/test_llm_judge_v130.py -v`
 Expected: 新增 4 条 FAIL
 
-- [ ] **Step 3: 实现 `core/eval_runner.py` 接入**
+- [x] **Step 3: 实现 `core/eval_runner.py` 接入**
 
 新增模块级辅助函数（放在 `_find_target_node` 之后）：
 
@@ -1046,7 +1046,7 @@ def _maybe_apply_llm_judge(ctx: ProjectContext, case: EvalCase, run: EvalRun) ->
         _maybe_apply_llm_judge(ctx, case, run)
 ```
 
-- [ ] **Step 4: judgment 携带建议元数据**
+- [x] **Step 4: judgment 携带建议元数据**
 
 `core/eval_runner.py` 两处 `create_judgment_from_eval_run(ctx, run)` 调用改为：
 
@@ -1062,12 +1062,12 @@ def _maybe_apply_llm_judge(ctx: ProjectContext, case: EvalCase, run: EvalRun) ->
 
 （`create_judgment_from_eval_run` 已有 `metadata` 参数，无需改签名。）
 
-- [ ] **Step 5: 运行测试确认通过 + 全量回归 + lint**
+- [x] **Step 5: 运行测试确认通过 + 全量回归 + lint**
 
 Run: `uv run pytest tests/test_llm_judge_v130.py -v && make test && make lint`
 Expected: 8 passed（本文件累计）；全量无回归——特别注意 `tests/test_eval_runner.py` 既有 4 条不回归（flag 默认 off，行为应完全不变）
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add core/eval_runner.py tests/test_llm_judge_v130.py
@@ -1084,7 +1084,7 @@ git commit -m "feat: wire LLM judge into eval runner with risk-tiered autofinal 
 - Modify: `docs/plan/phase-3-governance-platform.md`（勾选 T3.6 验收项）
 - Modify: `docs/README.md`（governance-platform 描述行更新）
 
-- [ ] **Step 1: `docs/spec/governance-platform.md` §5 标题下补一行状态**
+- [x] **Step 1: `docs/spec/governance-platform.md` §5 标题下补一行状态**
 
 在 `## 5. 子系统②：LLM Judge（可选增强）` 标题之后插入：
 
@@ -1094,7 +1094,7 @@ git commit -m "feat: wire LLM judge into eval runner with risk-tiered autofinal 
 
 > 若 §5 正文与实现有细节出入（如字段名），以实现为准修订 spec 文字，逐条对照。
 
-- [ ] **Step 2: `.env.example` 追加（在 gate 治理相关配置附近）**
+- [x] **Step 2: `.env.example` 追加（在 gate 治理相关配置附近）**
 
 ```bash
 # T3.6 LLM Judge（可选）：LLM 对 needs_review 的 EvalRun 生成建议判分（不终裁）
@@ -1103,7 +1103,7 @@ git commit -m "feat: wire LLM judge into eval runner with risk-tiered autofinal 
 # EVAL_LLM_JUDGE_AUTOFINAL=false
 ```
 
-- [ ] **Step 3: 勾选 `docs/plan/phase-3-governance-platform.md` 验收清单**
+- [x] **Step 3: 勾选 `docs/plan/phase-3-governance-platform.md` 验收清单**
 
 将：
 
@@ -1117,9 +1117,9 @@ git commit -m "feat: wire LLM judge into eval runner with risk-tiered autofinal 
 - [x]（已启用实现，flag 默认关）LLM Judge：flag 关闭时行为不变（tests/test_llm_judge_v130.py 回归确认）；一致率经既有 human_calibrations/`build_eval_judgment_summary` 聚合，真实 LLM 一致率数据待生产使用后累计 —— T3.6 于 v1.3.0 落地
 ```
 
-- [ ] **Step 4: `docs/README.md` 中 governance-platform 行的 `（v1.2.0，LLM Judge 可选未启用）` 改为 `（v1.2.0；LLM Judge 已于 v1.3.0 实现，flag 默认关）`**
+- [x] **Step 4: `docs/README.md` 中 governance-platform 行的 `（v1.2.0，LLM Judge 可选未启用）` 改为 `（v1.2.0；LLM Judge 已于 v1.3.0 实现，flag 默认关）`**
 
-- [ ] **Step 5: 校验 + 提交**
+- [x] **Step 5: 校验 + 提交**
 
 ```bash
 make doc-check && make lint

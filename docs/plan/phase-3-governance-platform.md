@@ -85,5 +85,5 @@ T3.7                  （收尾）
 - [x] CRITICAL 会话强制专家复核动作（历史欠账关闭）
 - [x] 治理总览页可看到租户内项目数/风险分布/通过率趋势/积压动作
 - [x] `/metrics` 有业务指标且 Grafana 治理面板可用
-- [ ] （若启用）LLM Judge 有一致率数据且 flag 关闭时行为不变 —— T3.6 可选项，默认未启用
+- [x] （已启用实现，flag 默认关）LLM Judge：flag 关闭时行为不变（tests/test_llm_judge_v130.py 回归确认）；一致率经既有 human_calibrations/`build_eval_judgment_summary` 聚合，真实 LLM 一致率数据待生产使用后累计 —— T3.6 于 v1.3.0 落地
 - [x] ISO 42001 映射表存档

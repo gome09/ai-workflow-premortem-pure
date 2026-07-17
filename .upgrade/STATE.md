@@ -2,14 +2,15 @@
 
 ## Current Phase
 
-Phase 4 — **代码侧全部完成** (T4.1 / T4.2 文档 / T4.3 / T4.5；T4.4 明确不承诺)。Phase 3 全部完成 (T3.1–T3.5, T3.7；T3.6 可选未启用)。Phase 2 全部完成 (T2.1–T2.6)。Phase 1 全部完成 (T1.1–T1.9)。
+Phase 4 — **代码侧全部完成** (T4.1 / T4.2 文档 / T4.3 / T4.5；T4.4 明确不承诺)。Phase 3 全部完成 (T3.1–T3.5, T3.7；T3.6 可选未启用)。Phase 2 全部完成 (T2.1–T2.6)。Phase 1 全部完成 (T1.1–T1.9)。正式项目升级（formal-project-uplift，计划 `.upgrade/plans/2026-07-17-formal-project-uplift.md`）进行中——Wave A（门面与治理文件，Task 0–6）已完成；Wave B–E 待执行。
 
 ## Current Task
 
-Phase 4 收尾完成（version bump 1.2.0→1.2.1、CHANGELOG、STATE.md、验收清单更新）。**待维护者手动操作**：GitHub 后台开启 main 分支保护（步骤见 `.upgrade/decisions/branch-protection.md`）。
+**计划执行中**：`.upgrade/plans/2026-07-17-formal-project-uplift.md`（正式个人项目升级：门面治理文件 / mypy 渐进式类型检查 / T3.6 LLM Judge 落地 / 合规映射 2026-07-17 复核落账 / 公开前检查，目标版本 v1.3.0，Task 0–19）。**Wave A（门面与治理文件，Task 0–6）已完成**，下一步 Wave B–E。此前遗留：GitHub 后台开启 main 分支保护（步骤见 `.upgrade/decisions/branch-protection.md`，已并入新计划 Task 15 公开后动作清单）。
 
 ## Last Completed
 
+- **Wave A 门面与治理文件 (2026-07-17)** — 对标调研快照归档至 `.upgrade/research/benchmarking-20260716/`；包名统一 `ai-workflow-premortem` + hatchling 可安装化（`uv pip install -e .` 验证通过）；SECURITY.md 报告渠道定稿（仅 GitHub 私密报告）；新增 CODE_OF_CONDUCT.md（Contributor Covenant 2.1）/ GOVERNANCE.md（BDFL）/ .github/CODEOWNERS / issue config.yml；README 门面改造（徽章 + origin story + 生态定位）+ README.en.md。实施计划：`.upgrade/plans/2026-07-17-wave-a-implementation.md`。
 - **文档同步 + `.upgrade` 整理 (2026-07-16)** — 记录此前未纳入版本控制的单文件 Demo `ai_workflow_premortem_demo.html`（165KB 自包含离线可交互 Demo，真实四阶段实跑快照，`LLM_MODE=mock`/`STORAGE_BACKEND=sqlite`/`WORKFLOW_EXECUTION_MODE=single_step`），README「答辩演示模式」新增「零依赖单文件 Demo」小节登记两份 HTML；CHANGELOG 追加 2026-07-16 维护记录；`.upgrade/MANIFEST.md` File Inventory 补齐遗漏条目 `decisions/doc-alignment-and-frontend-polish.md`（此前已提交但未登记）。最小审查：version 1.2.1 一致 / ruff clean / doc-check 通过
 - **GitHub CI 离线全流程验证 (2026-07-15)** — 远端 `.github/workflows/ci.yml` 实测两个 job 全绿：`lint-and-unit-tests`（ruff + doc-check[non-blocking] + pip-audit[non-blocking] + `.env.demo` mock+SQLite 全量 pytest）与 `docker-lite-integration`（`docker-compose.lite.yml` 构建 + API `/health/live`+`/health` + 前端 8501 smoke test）。全程离线无真实 LLM（`LLM_MODE=mock`）/无外部 DB（`STORAGE_BACKEND=sqlite`）。CI run #13 conclusion=success。附带修复：`tests/test_taxonomy_owasp_agentic_2026.py` 两处 docstring `\d` 改 raw string 消除 SyntaxWarning。本地验证：ruff clean / 615 passed,8 skipped / version 1.2.1
 - **文档对齐 + 前端中文化收尾 (2026-07-14)** — 基于四维审计（路线图达成度 / 前端中文展示 / 文档-代码对齐 / 启动方式）做收尾对齐：①四份 spec 的 `Status:` 从 "Designed, not implemented" 翻转为 "Implemented"，CLAUDE.md 文档维护段同步；②phase-0~3 验收清单 + roadmap §6 诚实勾选（未完成项保留并注明）；③api-reference 补治理 API + 路由数 79→84，security-model 补 3 个新风险类型/字段加密/PII 掩码/数据分级，docs/README 补 iso42001 索引，startup 测试数 388→642；④doc-check 脚本新增"跳过围栏代码块"，存量违规 25→0；⑤前端 labels 新增 RISK_TYPE/EXEC_MODE/ADAPTER_STATUS 映射，修复侧边栏健康状态、欢迎页首屏、待处理动作/安全发现的英文泄漏。决策见 `.upgrade/decisions/doc-alignment-and-frontend-polish.md`。验证：ruff clean / doc-check 0 / version 1.2.1 / e2e-mock 63 passed / 全量 642 passed,1 skipped / 后端 app 加载 OK

@@ -10,7 +10,7 @@ actions, verify evidence, call external services, or start runtime validation.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, Field
 
@@ -161,7 +161,7 @@ def _operation_from_blocker(ctx: ProjectContext, blocker: Any) -> StageResolutio
         api_method=str(contract["api_method"]) if contract.get("api_method") else None,
         api_path_template=str(api_template) if api_template else None,
         api_path=api_path,
-        payload_hint=dict(contract.get("payload_hint") or {}),
+        payload_hint=dict(cast(dict[str, Any], contract.get("payload_hint")) or {}),
         hard_blocker=hard_blocker,
         can_be_overridden_by_approval=bool(blocker.can_be_overridden_by_approval),
         metadata={

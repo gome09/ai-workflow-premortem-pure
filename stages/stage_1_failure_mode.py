@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from typing import Literal, cast
 
 from core.config import settings
 from core.context_manager import build_stage_context_injection
@@ -59,7 +60,7 @@ class Stage1Executor(BaseStageExecutor):
         template = (
             _json["stage_1"] if settings.stage_output_mode == "json_first" else _prompts["stage_1"]
         )
-        return template.format(
+        return cast(str, template).format(
             JSON_OUTPUT_RULES=JSON_OUTPUT_RULES,
             context_summary=build_stage_context_injection(ctx, 1),
             research_target=ctx.research_target,
@@ -110,7 +111,10 @@ class Stage1Executor(BaseStageExecutor):
                     id=fm_id.strip(),
                     category=category.strip(),
                     description=description.strip(),
-                    severity=severity.strip().lower(),
+                    severity=cast(
+                        Literal["critical", "high", "medium", "low"],
+                        severity.strip().lower(),
+                    ),
                     evidence=evidence.strip(),
                     evidence_ids=extract_evidence_ids(evidence.strip()),
                     needs_verification="需核验" in description or "需核验" in evidence,

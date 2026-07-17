@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any
+from typing import Any, Literal, cast
 
 from core.models import AuditEvent, ProjectContext
 
@@ -41,7 +41,7 @@ def append_audit_event(
     """向 ProjectContext 追加审计事件。"""
     event = AuditEvent(
         session_id=ctx.session_id,
-        actor=actor,
+        actor=cast(Literal["system", "user", "ai"], actor),
         event_type=event_type,
         target_type=target_type,
         target_id=target_id,

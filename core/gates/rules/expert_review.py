@@ -47,7 +47,7 @@ class ExpertReviewRule:
             return []
 
         if any(a.status == "pending" for a in existing):
-            action_id = next(a.action_id for a in existing if a.status == "pending")
+            action_id: str | None = next(a.action_id for a in existing if a.status == "pending")
         else:
             # 首次：创建 escalate 动作（幂等）
             action_id = readiness._find_pending_action_id(

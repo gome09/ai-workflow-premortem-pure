@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 def registered_rules() -> list[GateRule]:
-    rules = [
+    rules: list[GateRule] = [
         missing_output.rule,
         stale_dependency.rule,
         action_state.rule,

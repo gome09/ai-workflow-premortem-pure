@@ -90,6 +90,7 @@ from core.stage_advancement_coordinator import (
     build_stage_advancement_decision,
     build_stage_operation_envelope,
 )
+from core.stage_advancement_decision import DecisionSource
 from core.stage_operation_service import (
     prepare_stage_rerun as prepare_stage_rerun_operation,
 )
@@ -206,7 +207,7 @@ class SessionService:
         *,
         operation: str,
         result,
-        source: str,
+        source: DecisionSource,
         stage: int = 3,
         reason: str = "",
         metadata: dict | None = None,

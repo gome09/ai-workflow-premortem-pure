@@ -37,7 +37,7 @@ def sync_eval_cases_from_stage3(ctx: ProjectContext) -> int:
             stage_id=3,
             target_node_id=result.tested_node_id,
             covered_failure_mode_ids=node_to_failure_modes.get(result.tested_node_id, []),
-            scenario_type=result.scenario_type,  # type: ignore[arg-type]
+            scenario_type=result.scenario_type,
             input_payload=result.test_input,
             expected_behavior=result.ai_output,
             pass_criteria=list(result.pass_criteria or []),

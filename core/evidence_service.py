@@ -115,7 +115,7 @@ def extract_evidence_ids(text: str) -> list[str]:
 
 
 def _failure_mode_evidence_ids(fm) -> list[str]:
-    ids = []
+    ids: list[str] = []
     ids.extend(getattr(fm, "evidence_ids", []) or [])
     ids.extend(extract_evidence_ids(getattr(fm, "evidence", "") or ""))
     return list(dict.fromkeys(ids))

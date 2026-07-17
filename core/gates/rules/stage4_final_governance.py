@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import core.stage_readiness_service as readiness
 from core.models import ProjectContext
+from core.stage_scope_service import is_stage_actionable
 
 
 class Stage4FinalGovernanceRule:
@@ -23,9 +24,8 @@ class Stage4FinalGovernanceRule:
         for upstream_stage in range(1, 4):
             upstream = readiness.evaluate_stage_gate(ctx, upstream_stage)
             for blocker in upstream.blockers:
-                if (
-                    blocker.blocker_type == "missing_stage_output"
-                    and not readiness.is_stage_actionable(ctx, upstream_stage)
+                if blocker.blocker_type == "missing_stage_output" and not is_stage_actionable(
+                    ctx, upstream_stage
                 ):
                     continue
                 if blocker.can_be_overridden_by_approval:

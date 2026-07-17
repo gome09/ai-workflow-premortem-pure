@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Any, Literal, cast
 
 from pydantic import ValidationError
 
@@ -134,9 +134,11 @@ def _infer_policy_from_schema(node) -> HumanOversightPolicy | None:
     risk_level = node.oversight_risk_level if hasattr(node, "oversight_risk_level") else "medium"
     return HumanOversightPolicy(
         stage_id=2,
-        risk_level=risk_level,
+        risk_level=cast(Literal["low", "medium", "high", "critical"], risk_level),
         trigger_reason=f"节点 {node.node_id} 的工作流步骤需要监督确认",
-        required_action=required_action,
+        required_action=cast(
+            Literal["approve", "edit", "reject", "verify_evidence", "escalate"], required_action
+        ),
         can_auto_continue=getattr(node, "can_auto_continue", False),
         evidence_required=getattr(node, "evidence_required", False),
     )

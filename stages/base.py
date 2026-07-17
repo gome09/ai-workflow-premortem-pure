@@ -5,7 +5,7 @@ import logging
 import time
 from abc import ABC
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from core.context_manager import get_llm_for_stage_with_context
 from core.llm.structured_output import StructuredOutputClient, StructuredOutputResult
@@ -22,6 +22,8 @@ class BaseStageExecutor(ABC):
     """所有阶段执行器的基类"""
 
     stage_id: int
+    _active_trace_id: str | None = None
+    _last_structured_result: StructuredOutputResult | None = None
 
     def build_system_prompt(self, ctx: ProjectContext) -> str:
         """子类实现：构建该阶段的 System Prompt"""
@@ -58,7 +60,7 @@ class BaseStageExecutor(ABC):
         system_prompt = self.build_system_prompt(ctx)
 
         # 构建消息列表：system + 历史 + 新消息
-        messages = [SystemMessage(content=system_prompt)]
+        messages: list[BaseMessage] = [SystemMessage(content=system_prompt)]
         for msg in ctx.get_stage_history(self.stage_id):
             if msg.role == MessageRole.USER:
                 messages.append(HumanMessage(content=msg.content))

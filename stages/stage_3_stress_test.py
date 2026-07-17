@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from typing import Literal, cast
 
 from core.config import settings
 from core.context_manager import build_stage_context_injection
@@ -16,7 +17,7 @@ from stages.validators import stage3_schema_to_output
 from tools.safety_classifier import add_findings_dedup, scan_stage3_test_cases
 
 
-def _infer_scenario_type(text: str) -> str:
+def _infer_scenario_type(text: str) -> Literal["normal", "edge", "adversarial"]:
     lowered = (text or "").lower()
     if any(token in lowered for token in ["adversarial", "攻击", "对抗", "注入", "越狱"]):
         return "adversarial"
@@ -92,7 +93,7 @@ class Stage3Executor(BaseStageExecutor):
         template = (
             _json["stage_3"] if settings.stage_output_mode == "json_first" else _prompts["stage_3"]
         )
-        return template.format(
+        return cast(str, template).format(
             JSON_OUTPUT_RULES=JSON_OUTPUT_RULES,
             context_summary=build_stage_context_injection(ctx, 3),
             target_nodes_text=target_nodes_text,

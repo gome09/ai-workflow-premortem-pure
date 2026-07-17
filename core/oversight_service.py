@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal, cast
 
 from core.audit_service import append_audit_event
 from core.evidence_service import extract_evidence_ids
@@ -224,10 +224,12 @@ def add_action_if_missing(
         node_id=node_id,
         source_type=source_type,
         source_id=source_id,
-        action_type=action_type,
+        action_type=cast(
+            Literal["approve", "edit", "reject", "verify_evidence", "escalate"], action_type
+        ),
         title=title,
         description=description,
-        risk_level=risk_level,  # type: ignore[arg-type]
+        risk_level=cast(Literal["low", "medium", "high", "critical"], risk_level),
         trigger_reason=trigger_reason,
         payload_before=payload_before or {},
         blocking=blocking,
@@ -1302,7 +1304,9 @@ def resolve_action(
                             metadata={"note": note},
                         )
                 elif gap_type == "redteam_eval_case_not_in_dataset":
-                    dataset = create_redteam_dataset(ctx, note=note)
+                    # note 仅入下方审计事件 metadata；如需数据集自身溯源可经
+                    # create_dataset(metadata=...) 透传（未实现）。
+                    dataset = create_redteam_dataset(ctx)
                     append_audit_event(
                         ctx,
                         actor="user",
@@ -1377,7 +1381,9 @@ def resolve_action(
                             metadata={"note": note},
                         )
                 elif gap_type == "trace_eval_case_without_dataset":
-                    dataset = create_dataset_from_failed_traces(ctx, note=note)
+                    # note 仅入下方审计事件 metadata；如需数据集自身溯源可经
+                    # create_dataset(metadata=...) 透传（未实现）。
+                    dataset = create_dataset_from_failed_traces(ctx)
                     append_audit_event(
                         ctx,
                         actor="user",
@@ -1425,7 +1431,8 @@ def resolve_action(
                     actor="user",
                     event_type="stage_output_edited",
                     target_type="stage_output",
-                    target_id=reviewed_key,
+                    # reviewed_key is set together with apply_result (see above); non-None here.
+                    target_id=cast(str, reviewed_key),
                     before=before_reviewed,
                     after=payload_after,
                     metadata={
@@ -1643,10 +1650,15 @@ def resolve_action_with_result(
             expected_before_hash=expected_before_hash,
         )
     except Exception as exc:  # noqa: BLE001 - convert legacy exception into result contract
-        log = _latest_action_resolution_log(ctx, action_id, effective_idempotency_key)
+        error_log = _latest_action_resolution_log(ctx, action_id, effective_idempotency_key)
         result_status = "validation_failed" if action.action_type == "edit" else "error"
-        if log and log.result_status in {"validation_failed", "conflict", "stale", "error"}:
-            result_status = log.result_status  # type: ignore[assignment]
+        if error_log and error_log.result_status in {
+            "validation_failed",
+            "conflict",
+            "stale",
+            "error",
+        }:
+            result_status = error_log.result_status
         return ActionResolutionResult(
             session_id=ctx.session_id,
             action_id=action_id,
@@ -1654,14 +1666,14 @@ def resolve_action_with_result(
             result_status=result_status,  # type: ignore[arg-type]
             action_status=action.status,
             before_hash=before_hash,
-            after_hash=log.after_hash if log else None,
-            log_id=log.log_id if log else None,
+            after_hash=error_log.after_hash if error_log else None,
+            log_id=error_log.log_id if error_log else None,
             error_message=str(exc),
         )
 
     logs = getattr(ctx, "action_resolution_logs", []) or []
     new_logs = logs[before_log_count:]
-    log = (
+    final_log = (
         new_logs[-1]
         if new_logs
         else _latest_action_resolution_log(ctx, action_id, effective_idempotency_key)
@@ -1678,7 +1690,7 @@ def resolve_action_with_result(
         action_hash=after_hash,
         payload_before_hash=before_payload_hash,
         payload_after_hash=payload_after_hash,
-        log_id=log.log_id if log else None,
+        log_id=final_log.log_id if final_log else None,
     )
 
 

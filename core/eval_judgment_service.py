@@ -68,7 +68,7 @@ def create_judgment_from_eval_run(
     metadata: dict[str, Any] | None = None,
 ) -> EvalJudgment:
     """Record the current EvalRun judge result as an auditable recommendation."""
-    label: JudgeLabel = run.judge_result or "needs_review"  # type: ignore[assignment]
+    label: JudgeLabel = run.judge_result or "needs_review"
     inferred_type: Literal["rule", "llm", "human_proxy"] = (
         "llm" if run.judge_mode == "llm" else "rule"
     )
@@ -127,7 +127,7 @@ def calibrate_eval_run(
         experiment_id=run.experiment_id,
         human_label=human_label,
         human_comment=human_comment,
-        judge_label=judge_label,  # type: ignore[arg-type]
+        judge_label=judge_label,
         agreement=agreement,
         disagreement_reason=disagreement_reason,
         reviewer_id=reviewer_id,

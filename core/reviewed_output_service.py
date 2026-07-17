@@ -6,7 +6,13 @@ from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
-from core.models import ProjectContext
+from core.models import (
+    ProjectContext,
+    Stage1Output,
+    Stage2Output,
+    Stage3Output,
+    Stage4Output,
+)
 from stages.schemas import Stage1Schema, Stage2Schema, Stage3Schema, Stage4Schema
 from stages.validators import (
     stage1_schema_to_output,
@@ -75,6 +81,10 @@ def apply_reviewed_output_with_result(
         return result
 
     raw_text = payload_to_store.get("edited_text") or payload_to_store.get("raw_summary") or ""
+    # schema/new_output are rebound per mutually-exclusive stage branch; union-annotate
+    # so mypy narrows each branch independently instead of pinning to the Stage 1 types.
+    schema: Stage1Schema | Stage2Schema | Stage3Schema | Stage4Schema
+    new_output: Stage1Output | Stage2Output | Stage3Output | Stage4Output
     try:
         if stage == 1:
             schema = Stage1Schema.model_validate(structured)

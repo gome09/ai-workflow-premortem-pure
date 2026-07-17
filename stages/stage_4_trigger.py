@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from typing import cast
 
 from core.config import settings
 from core.context_manager import build_stage_context_injection, format_workflow_nodes_for_prompt
@@ -24,7 +25,7 @@ class Stage4Executor(BaseStageExecutor):
         template = (
             _json["stage_4"] if settings.stage_output_mode == "json_first" else _prompts["stage_4"]
         )
-        return template.format(
+        return cast(str, template).format(
             JSON_OUTPUT_RULES=JSON_OUTPUT_RULES,
             context_summary=build_stage_context_injection(ctx, 4),
             workflow_nodes_text=format_workflow_nodes_for_prompt(ctx),

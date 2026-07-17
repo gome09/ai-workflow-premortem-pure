@@ -59,7 +59,7 @@ def resolve_safety_finding(
 
         append_audit_event(
             ctx,
-            actor=actor,  # type: ignore[arg-type]
+            actor=actor,
             event_type=f"safety_finding_{status}",
             target_type="safety_finding",
             target_id=finding_id,

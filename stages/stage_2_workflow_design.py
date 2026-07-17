@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from typing import Literal, cast
 
 from core.config import settings
 from core.context_manager import (
@@ -39,9 +40,11 @@ def infer_oversight_policy(node: WorkflowNode) -> HumanOversightPolicy | None:
     )
     return HumanOversightPolicy(
         stage_id=2,
-        risk_level=risk_level,
+        risk_level=cast(Literal["low", "medium", "high", "critical"], risk_level),
         trigger_reason=f"节点 {node.node_id} 的工作流步骤需要监督确认",
-        required_action=required_action,
+        required_action=cast(
+            Literal["approve", "edit", "reject", "verify_evidence", "escalate"], required_action
+        ),
         evidence_required=required_action == "verify_evidence",
         can_auto_continue=False,
     )
@@ -57,7 +60,7 @@ class Stage2Executor(BaseStageExecutor):
         template = (
             _json["stage_2"] if settings.stage_output_mode == "json_first" else _prompts["stage_2"]
         )
-        return template.format(
+        return cast(str, template).format(
             JSON_OUTPUT_RULES=JSON_OUTPUT_RULES,
             context_summary=build_stage_context_injection(ctx, 2),
             failure_modes_text=format_failure_modes_for_prompt(ctx),

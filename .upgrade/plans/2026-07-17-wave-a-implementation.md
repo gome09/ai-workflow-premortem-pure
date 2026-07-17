@@ -1,6 +1,6 @@
 # Wave A — 门面与治理文件 具体实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 完成主计划（`.upgrade/plans/2026-07-17-formal-project-uplift.md`）Wave A（Task 0–6）：归档根目录调研快照、统一包元数据并可安装化、补齐 SECURITY/CODE_OF_CONDUCT/GOVERNANCE/CODEOWNERS/issue config、完成 README 门面改造与英文 README。
 
@@ -39,7 +39,7 @@
 - Move: 根目录 15 个 untracked 文件 → `.upgrade/research/benchmarking-20260716/`
 - Modify: `.upgrade/MANIFEST.md`（File Inventory 表格追加一行）
 
-- [ ] **Step 1: 创建目录并移动 15 个文件**
+- [x] **Step 1: 创建目录并移动 15 个文件**
 
 ```bash
 mkdir -p .upgrade/research/benchmarking-20260716
@@ -50,12 +50,12 @@ mv readme_deepeval.md readme_deepeval_full.md readme_guardrails.md readme_inspec
    .upgrade/research/benchmarking-20260716/
 ```
 
-- [ ] **Step 2: 验证移动结果**
+- [x] **Step 2: 验证移动结果**
 
 Run: `ls .upgrade/research/benchmarking-20260716/ | wc -l && git status --short`
 Expected: 计数 `15`；git status 中不再有根目录 `?? readme_*` / `?? rel_*` / `?? repo_*` / `?? tags_*`；仍会看到 `M .upgrade/STATE.md`、`?? .upgrade/plans/`、`?? .upgrade/research/`——前两者属正常残留，**不要处理**。
 
-- [ ] **Step 3: 在 `.upgrade/MANIFEST.md` 的 `## File Inventory` 表格末尾追加一行**
+- [x] **Step 3: 在 `.upgrade/MANIFEST.md` 的 `## File Inventory` 表格末尾追加一行**
 
 当前表格最后一行是：
 
@@ -69,7 +69,7 @@ Expected: 计数 `15`；git status 中不再有根目录 `?? readme_*` / `?? rel
 | `.upgrade/research/benchmarking-20260716/` | active | keep-until-superseded | 对标调研原始数据快照（deepeval / guardrails-ai / inspect_ai / NeMo-Guardrails 的 GitHub repo/releases/tags API 采集 + README 快照，采集日 2026-07-16），供开源门面对齐与竞品定位分析引用 |
 ```
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add .upgrade/research/benchmarking-20260716 .upgrade/MANIFEST.md
@@ -87,7 +87,7 @@ git commit -m "chore: archive benchmarking research snapshots into .upgrade/rese
 - Modify: `pyproject.toml`
 - Modify: `uv.lock`（由 `uv lock` 自动再生成）
 
-- [ ] **Step 1: 修改 `pyproject.toml` 的 `[project]` 头部**
+- [x] **Step 1: 修改 `pyproject.toml` 的 `[project]` 头部**
 
 将（第 2–7 行）：
 
@@ -124,7 +124,7 @@ classifiers = [
 
 > `version = "1.2.1"` 行保持原样——`scripts/version_check.py` 用 `^version\s*=\s*"..."`（双引号）校验它与 `core/version.py` 一致。
 
-- [ ] **Step 2: 在 `[project.optional-dependencies]` 段（35–41 行）之后、`[tool.pytest.ini_options]`（43 行）之前插入**
+- [x] **Step 2: 在 `[project.optional-dependencies]` 段（35–41 行）之后、`[tool.pytest.ini_options]`（43 行）之前插入**
 
 ```toml
 [project.urls]
@@ -141,7 +141,7 @@ build-backend = "hatchling.build"
 packages = ["api", "auth", "core", "graph", "stages", "storage", "tools", "scenarios"]
 ```
 
-- [ ] **Step 3: 重新生成锁文件并验证安装**
+- [x] **Step 3: 重新生成锁文件并验证安装**
 
 ```bash
 uv lock
@@ -152,12 +152,12 @@ python -c "import core.version; print(core.version.APP_VERSION)"
 
 Expected: 无报错，输出 `1.2.1`
 
-- [ ] **Step 4: 全量回归**
+- [x] **Step 4: 全量回归**
 
 Run: `make lint && make version-check && make test`
 Expected: lint clean；`Version metadata OK: 1.2.1`；615+ passed（skip 不算失败）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add pyproject.toml uv.lock
@@ -172,7 +172,7 @@ git commit -m "build: unify package name to ai-workflow-premortem, add metadata 
 **Files:**
 - Modify: `SECURITY.md`
 
-- [ ] **Step 1: 替换报告渠道段（第 7–8 行，原文已逐字核实）**
+- [x] **Step 1: 替换报告渠道段（第 7–8 行，原文已逐字核实）**
 
 将：
 
@@ -188,7 +188,7 @@ git commit -m "build: unify package name to ai-workflow-premortem, add metadata 
 - 本项目不提供邮箱报告渠道；如无法使用 GitHub 私密报告，可开一个**不含漏洞细节**的公开 Issue 请求维护者联系。
 ```
 
-- [ ] **Step 2: 更新支持版本表（第 12–15 行）**
+- [x] **Step 2: 更新支持版本表（第 12–15 行）**
 
 将：
 
@@ -210,7 +210,7 @@ git commit -m "build: unify package name to ai-workflow-premortem, add metadata 
 
 > 注：主计划 Wave E Task 18 会把版本 bump 到 1.3.0，此处按主计划直接写 v1.3.x。
 
-- [ ] **Step 3: 验证并提交**
+- [x] **Step 3: 验证并提交**
 
 ```bash
 make doc-check
@@ -225,7 +225,7 @@ git commit -m "docs: finalize SECURITY.md reporting channel (GitHub private repo
 **Files:**
 - Create: `CODE_OF_CONDUCT.md`
 
-- [ ] **Step 1: 下载官方英文文本（网络可达性已实测 HTTP 200）**
+- [x] **Step 1: 下载官方英文文本（网络可达性已实测 HTTP 200）**
 
 ```bash
 curl -fsSL https://www.contributor-covenant.org/version/2/1/code_of_conduct/code_of_conduct.md -o CODE_OF_CONDUCT.md
@@ -233,7 +233,7 @@ curl -fsSL https://www.contributor-covenant.org/version/2/1/code_of_conduct/code
 
 若届时网络不可达，退路：从 `https://github.com/EthicalSource/contributor_covenant/blob/release/content/version/2/1/code_of_conduct.md` 获取原始文本手工创建。**不要凭记忆默写全文。**
 
-- [ ] **Step 2: 替换 Enforcement 段联系方式**
+- [x] **Step 2: 替换 Enforcement 段联系方式**
 
 找到 `[INSERT CONTACT METHOD]` 占位符，替换为：
 
@@ -241,12 +241,12 @@ curl -fsSL https://www.contributor-covenant.org/version/2/1/code_of_conduct/code
 GitHub private vulnerability reporting or a direct message to the maintainer (@gome09) via GitHub
 ```
 
-- [ ] **Step 3: 验证占位符已清除且文件非空**
+- [x] **Step 3: 验证占位符已清除且文件非空**
 
 Run: `grep -c "INSERT CONTACT METHOD" CODE_OF_CONDUCT.md; wc -l CODE_OF_CONDUCT.md`
 Expected: grep 输出 `0`（exit code 1）；行数 > 100（完整 2.1 全文约 130 行）
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add CODE_OF_CONDUCT.md
@@ -264,7 +264,7 @@ git commit -m "docs: add Contributor Covenant 2.1 code of conduct"
 - Create: `.github/CODEOWNERS`
 - Create: `.github/ISSUE_TEMPLATE/config.yml`
 
-- [ ] **Step 1: 创建 `GOVERNANCE.md`（完整内容）**
+- [x] **Step 1: 创建 `GOVERNANCE.md`（完整内容）**
 
 ```markdown
 # 项目治理
@@ -288,14 +288,14 @@ git commit -m "docs: add Contributor Covenant 2.1 code of conduct"
 若项目获得稳定外部用户，维护者将把仓库迁移至 GitHub Organization 并至少增加一名备份管理员，避免单点风险。
 ```
 
-- [ ] **Step 2: 创建 `.github/CODEOWNERS`**
+- [x] **Step 2: 创建 `.github/CODEOWNERS`**
 
 ```text
 # 默认所有文件由维护者审查
 * @gome09
 ```
 
-- [ ] **Step 3: 创建 `.github/ISSUE_TEMPLATE/config.yml`**
+- [x] **Step 3: 创建 `.github/ISSUE_TEMPLATE/config.yml`**
 
 ```yaml
 blank_issues_enabled: false
@@ -305,7 +305,7 @@ contact_links:
     about: 请勿在公开 Issue 中提交漏洞细节，使用 GitHub Security Advisories 私密报告。
 ```
 
-- [ ] **Step 4: 验证并提交**
+- [x] **Step 4: 验证并提交**
 
 ```bash
 make doc-check
@@ -325,7 +325,7 @@ git commit -m "docs: add governance model, CODEOWNERS, and issue template config
 - Create: `README.en.md`
 - Modify: `docs/README.md`（「使用指南」表格追加一行）
 
-- [ ] **Step 1: 创建 `README.en.md`（完整内容如下；如与 README.md 中文版事实有出入以中文版为准）**
+- [x] **Step 1: 创建 `README.en.md`（完整内容如下；如与 README.md 中文版事实有出入以中文版为准）**
 
 ````markdown
 # AI Workflow Premortem
@@ -388,7 +388,7 @@ Apache-2.0
 
 > 与主计划的两处微调（基于 .env.example 实况核实）：quick start 注释写明 "uncomment in .env"——mock/sqlite/generic_rag_demo 在 .env.example 中是被注释的演示态取值（默认是 real/postgres），照主计划原文 "set:" 容易误导。demo HTML 文件名 `ai_workflow_premortem_demo.html` 已核实存在。
 
-- [ ] **Step 2: 在 `docs/README.md`「使用指南」表格末尾追加一行**
+- [x] **Step 2: 在 `docs/README.md`「使用指南」表格末尾追加一行**
 
 当前该表最后一行是：
 
@@ -402,7 +402,7 @@ Apache-2.0
 | [../README.en.md](../README.en.md) | English project overview |
 ```
 
-- [ ] **Step 3: 校验并提交**
+- [x] **Step 3: 校验并提交**
 
 ```bash
 make doc-check
@@ -421,7 +421,7 @@ Expected: doc-check 0 违规（README.en.md 已存在，docs/README.md 的相对
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: 替换 README.md 头部（第 1–8 行，含空行，原文已逐字核实）**
+- [x] **Step 1: 替换 README.md 头部（第 1–8 行，含空行，原文已逐字核实）**
 
 将：
 
@@ -457,7 +457,7 @@ Expected: doc-check 0 违规（README.en.md 已存在，docs/README.md 的相对
 ---
 ```
 
-- [ ] **Step 2: 插入「生态定位」段**
+- [x] **Step 2: 插入「生态定位」段**
 
 **锚点（已核实）：** 「项目背景」章节内，`### 解决方案` 的 Stage 1–4 表格（原第 24–29 行）之后、`### 核心创新：风险自适应阶段门禁` 标题（原第 31 行，**注意标题带后缀**，非主计划字面的 `### 核心创新`）之前的空行处插入：
 
@@ -473,7 +473,7 @@ Expected: doc-check 0 违规（README.en.md 已存在，docs/README.md 的相对
 
 （"生态定位"字样已核实全文不存在，插入不会重复。）
 
-- [ ] **Step 3: 校验并提交**
+- [x] **Step 3: 校验并提交**
 
 ```bash
 make doc-check
@@ -494,7 +494,7 @@ Expected: doc-check 0 违规——`README.en.md`（Task A5 已创建）、`LICEN
 - Modify: `.upgrade/MANIFEST.md`（File Inventory 登记两份计划文件）
 - Add: `.upgrade/plans/2026-07-17-formal-project-uplift.md`、`.upgrade/plans/2026-07-17-wave-a-implementation.md`
 
-- [ ] **Step 1: 更新 `.upgrade/STATE.md`**
+- [x] **Step 1: 更新 `.upgrade/STATE.md`**
 
 - `## Current Phase` 段：追加说明"正式项目升级（formal-project-uplift）进行中——Wave A（门面与治理文件，Task 0–6）已完成；Wave B–E 待执行"。
 - `## Last Completed` 列表**顶部**追加一条（保持既有 `- **标题 (日期)** — 说明` 格式）：
@@ -503,14 +503,14 @@ Expected: doc-check 0 违规——`README.en.md`（Task A5 已创建）、`LICEN
 - **Wave A 门面与治理文件 (2026-07-17)** — 对标调研快照归档至 `.upgrade/research/`；包名统一 `ai-workflow-premortem` + hatchling 可安装化（`uv pip install -e .` 验证通过）；SECURITY.md 报告渠道定稿（仅 GitHub 私密报告）；新增 CODE_OF_CONDUCT.md（Contributor Covenant 2.1）/ GOVERNANCE.md（BDFL）/ CODEOWNERS / issue config.yml；README 门面改造（徽章 + origin story + 生态定位）+ README.en.md。计划：`.upgrade/plans/2026-07-17-wave-a-implementation.md`。
 ```
 
-- [ ] **Step 2: `.upgrade/MANIFEST.md` File Inventory 表格追加两行**
+- [x] **Step 2: `.upgrade/MANIFEST.md` File Inventory 表格追加两行**
 
 ```markdown
 | `.upgrade/plans/2026-07-17-formal-project-uplift.md` | active | permanent | 正式项目升级主计划（Wave A–E，Task 0–19，目标 v1.3.0） |
 | `.upgrade/plans/2026-07-17-wave-a-implementation.md` | active | permanent | Wave A 具体实施计划（探索核实修正版：A5/A6 顺序对调、MANIFEST 表格格式、README 锚点） |
 ```
 
-- [ ] **Step 3: 终验（Wave A 全量回归）**
+- [x] **Step 3: 终验（Wave A 全量回归）**
 
 ```bash
 make lint && make version-check && make doc-check && make test
@@ -519,7 +519,7 @@ git status --short
 
 Expected: 全部通过；git status 仅剩本任务待 add 的文件，无计划外改动。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add .upgrade/STATE.md .upgrade/MANIFEST.md .upgrade/plans/2026-07-17-formal-project-uplift.md .upgrade/plans/2026-07-17-wave-a-implementation.md

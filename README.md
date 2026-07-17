@@ -93,24 +93,20 @@
 
 ### 离线演示模式（无需 API Key）
 
-无需 PostgreSQL / Redis / API Key，也不依赖外网：
+无需 PostgreSQL / Redis / API Key，也不依赖外网（`.env.demo` 已内置 `LLM_MODE=mock` / `STORAGE_BACKEND=sqlite` / `DEFAULT_SCENARIO_ID=generic_rag_demo`）：
 
 ```bash
-cp .env.example .env
-# 编辑 .env，设置以下值：
-#   LLM_MODE=mock
-#   STORAGE_BACKEND=sqlite
-#   DEFAULT_SCENARIO_ID=generic_rag_demo
-
 uv sync --all-extras
-uv run uvicorn api.main:app --reload --port 8000
+make demo-api    # 后端，自动将 .env.demo 复制为 .env
 ```
 
 可选前端：
 
 ```bash
-uv run streamlit run frontend/app.py --server.port 8501
+make demo-ui     # 前端，另开终端
 ```
+
+不使用 make 时的等价命令：`cp .env.demo .env && uv run uvicorn api.main:app --reload --port 8000`（前端 `uv run streamlit run frontend/app.py --server.port 8501`）。
 
 ### Docker 部署（可选）
 

@@ -1,6 +1,6 @@
 # Makefile（本地开发快捷命令）
 
-.PHONY: install clean dev-db dev-api dev-frontend dev docker-up docker-down lint typecheck test test-cov setup setup-win prod-up prod-down prod-logs demo-api demo-frontend demo-ui lite-up e2e-mock e2e-full-test version-check doc-check audit security-check
+.PHONY: install install-dev clean dev-db dev-api dev-frontend docker-up docker-down lint typecheck test test-cov setup setup-win prod-up prod-down prod-logs demo-api demo-frontend demo-ui lite-up e2e-mock e2e-full-test version-check doc-check audit security-check migrate migrate-new migrate-history
 
 # 安装依赖
 install:
@@ -34,8 +34,8 @@ demo-api:
 	cp -f .env.demo .env
 	uvicorn api.main:app --reload --port 8000
 
-demo-frontend:
-	streamlit run frontend/app.py --server.port 8501
+# demo-frontend 与 demo-ui 等价（均刷新 .env 后启动前端）
+demo-frontend: demo-ui
 
 demo-ui:
 	cp -f .env.demo .env

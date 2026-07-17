@@ -18,7 +18,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "langgraph>=0.2.0",
+    "langgraph>=1.1,<2",  # add_node overload 基线在 1.1.10 测得；改动此范围需复核 graph/langgraph_interrupt_runner.py 的 type: ignore
     "langchain>=0.3.0",
     "langchain-openai>=0.2.0",        # DeepSeek 兼容 OpenAI 接口
     "langchain-community>=0.3.0",

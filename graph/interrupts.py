@@ -2,10 +2,15 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, cast
+from typing import Any
 
 from core.audit_service import append_audit_event
-from core.models import HumanActionStatus, InterruptRecord, ProjectContext
+from core.models import (
+    HumanActionStatus,
+    InterruptRecord,
+    PendingHumanAction,
+    ProjectContext,
+)
 
 
 def _policy_effect_dump(policy_effect: Any | None) -> dict[str, Any]:
@@ -25,9 +30,9 @@ def _policy_effect_dump(policy_effect: Any | None) -> dict[str, Any]:
     }
 
 
-def _node_name_for_action(action: Any) -> str:
+def _node_name_for_action(action: PendingHumanAction) -> str:
     if action.node_id:
-        return cast(str, action.node_id)
+        return action.node_id
     return f"stage_{action.stage_id}_review_gate"
 
 
@@ -36,7 +41,7 @@ def _default_thread_id(ctx: ProjectContext) -> str:
     return ctx.session_id
 
 
-def _action_allows_resume(action: Any, policy_effect: Any | None = None) -> bool:
+def _action_allows_resume(action: PendingHumanAction, policy_effect: Any | None = None) -> bool:
     if policy_effect is not None:
         return bool(getattr(policy_effect, "allow_continue", False))
     if action.status != HumanActionStatus.RESOLVED.value:
@@ -46,7 +51,9 @@ def _action_allows_resume(action: Any, policy_effect: Any | None = None) -> bool
     return True
 
 
-def _resume_value_for_action(action: Any, policy_effect: Any | None = None) -> dict[str, Any]:
+def _resume_value_for_action(
+    action: PendingHumanAction, policy_effect: Any | None = None
+) -> dict[str, Any]:
     policy = _policy_effect_dump(policy_effect)
     return {
         "action_id": action.action_id,
@@ -95,7 +102,9 @@ def build_interrupt_payload(
     }
 
 
-def _ensure_record_for_action(ctx: ProjectContext, action: Any) -> InterruptRecord | None:
+def _ensure_record_for_action(
+    ctx: ProjectContext, action: PendingHumanAction
+) -> InterruptRecord | None:
     if not action.blocking:
         return None
     record = next(

@@ -50,7 +50,7 @@ def _langgraph_config(ctx: ProjectContext, thread_id: str | None = None) -> dict
 
 
 def _load_command_type() -> Any:
-    # -> Any: returns LangGraph's untyped `Command` class (or None) — no stub available.
+    # -> Any：返回 langgraph.types.Command 类本身；为免惰性加载边界引入 TYPE_CHECKING 导入，保持 Any
     try:
         from langgraph.types import Command
     except Exception:
@@ -90,7 +90,7 @@ def _build_checkpointer() -> Any:
 
 
 def _build_one_turn_graph() -> Any:
-    # -> Any: returns a compiled LangGraph object — no stub available for the compiled graph.
+    # -> Any：编译图实为 CompiledStateGraph[ProjectContext, ...]；为免惰性加载边界引入 TYPE_CHECKING 导入，保持 Any
     """Build a one-turn graph that preserves the deterministic stage model.
 
     The graph intentionally executes at most one deterministic node per user turn
@@ -135,7 +135,7 @@ def _build_one_turn_graph() -> Any:
 
 
 def get_one_turn_interrupt_graph() -> Any:
-    # -> Any: caches the compiled LangGraph object from _build_one_turn_graph() — no stub available.
+    # -> Any：缓存 _build_one_turn_graph() 的编译图（CompiledStateGraph[ProjectContext, ...]）；为免惰性加载边界引入 TYPE_CHECKING 导入，保持 Any
     global _GRAPH_CACHE
     if _GRAPH_CACHE is None:
         _GRAPH_CACHE = _build_one_turn_graph()

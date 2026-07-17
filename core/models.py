@@ -517,6 +517,9 @@ class EvalRun(BaseModel):
     judge_reason: str = ""
     judge_mode: Literal["inherited", "rule", "llm", "human"] = "inherited"
     violated_criteria: list[str] = Field(default_factory=list)
+    # T3.6：LLM judge 结构化建议（仅建议，不改写 judge_result 终值；
+    # autofinal 采纳时 judge_mode 会标记为 "llm"）
+    llm_judge_suggestion: dict[str, Any] | None = None
     status: Literal["created", "running", "completed", "failed"] = "created"
     error_message: str = ""
     trace_id: str | None = None

@@ -102,6 +102,13 @@ class Settings(BaseSettings):
     # T3.3 门禁规则禁用治理：显式禁用规则需配置；安全底线规则不可禁用（配置也忽略+告警）
     gate_rules_disabled: str = ""  # 逗号分隔 rule_id
 
+    # T3.6 LLM Judge（spec governance-platform §5）：LLM 仅建议判分，不终裁。
+    # eval_llm_judge=on 时对规则层 needs_review 的 run 生成结构化建议
+    eval_llm_judge: bool = False
+    # LOW/MEDIUM 会话允许采纳 LLM 建议为终值（HIGH/CRITICAL 永远待人工）；
+    # 开启属于显式治理决策（与 gate_rules_disabled 同级）
+    eval_llm_judge_autofinal: bool = False
+
     # CORS
     cors_allow_origins: str = "https://localhost"
 

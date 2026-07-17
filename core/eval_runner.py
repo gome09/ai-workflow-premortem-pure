@@ -58,6 +58,39 @@ def _build_node_eval_prompt(case: EvalCase, node: WorkflowNode) -> tuple[str, st
     return system_prompt, user_prompt
 
 
+def _maybe_apply_llm_judge(ctx: ProjectContext, case: EvalCase, run: EvalRun) -> None:
+    """T3.6：规则层 needs_review 时生成 LLM 建议；autofinal 仅对 LOW/MEDIUM 会话采纳。
+
+    manual run 是人工评分外壳（无 actual_output），不生成建议；
+    任何 judge 失败静默降级（建议为 None），绝不阻断 eval 主路径。
+    """
+    from core.config import settings
+
+    if not settings.eval_llm_judge:
+        return
+    if run.run_mode == "manual" or run.judge_result != "needs_review":
+        return
+
+    from core.eval_llm_judge import generate_llm_judge_suggestion
+    from core.gates.risk_profile import ProjectGateRiskTier, classify_project_risk
+
+    suggestion = generate_llm_judge_suggestion(ctx, case, run)
+    run.llm_judge_suggestion = suggestion
+    if suggestion is None:
+        return
+
+    tier, _ = classify_project_risk(ctx)
+    if tier in (ProjectGateRiskTier.HIGH, ProjectGateRiskTier.CRITICAL):
+        return  # HIGH/CRITICAL 永远保持 needs_review 待人工
+    if settings.eval_llm_judge_autofinal:
+        run.judge_result = suggestion["suggested_result"]
+        run.judge_mode = "llm"
+        run.judge_reason = (
+            f"LLM judge (autofinal, confidence={suggestion['confidence']:.2f}): "
+            f"{suggestion['rationale']}"
+        )
+
+
 def run_eval_case(
     ctx: ProjectContext,
     *,
@@ -149,9 +182,18 @@ def run_eval_case(
             run.actual_output = str(response.content)
 
         judge_eval_run(case, run)
+        _maybe_apply_llm_judge(ctx, case, run)
         run.status = "completed"
         run.completed_at = datetime.utcnow()
-        create_judgment_from_eval_run(ctx, run)
+        create_judgment_from_eval_run(
+            ctx,
+            run,
+            metadata=(
+                {"llm_judge_suggestion": run.llm_judge_suggestion}
+                if run.llm_judge_suggestion
+                else None
+            ),
+        )
     except Exception as exc:  # noqa: BLE001 - failed eval runs must be auditable
         run.status = "failed"
         run.error_message = str(exc)

@@ -41,7 +41,7 @@ try:
     from prometheus_fastapi_instrumentator import Instrumentator
 except ImportError:
 
-    class Instrumentator:  # type: ignore[override]
+    class Instrumentator:  # type: ignore[no-redef]  # conditional-import fallback
         """No-op fallback used when Prometheus instrumentation is unavailable."""
 
         def instrument(self, app: FastAPI):
@@ -168,7 +168,7 @@ def health_live():
 
 
 @app.get("/health/ready", include_in_schema=False)
-def health_ready():
+def health_ready() -> JSONResponse:
     """Readiness probe — verifies primary storage and Redis connectivity (Redis skipped in sqlite mode)."""
     checks: dict[str, str] = {}
     overall_ok = True

@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 
 from core.config import settings
-from core.models import EvidenceSource, ProjectContext
+from core.models import EvidenceSource, ProjectContext, SourceType
 from tools.evidence_filters import is_low_quality_source
 from tools.search import SearchResult
 from tools.source_classifier import classify_source
@@ -25,7 +25,7 @@ def _clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
     return max(lower, min(upper, value))
 
 
-def score_evidence(result: SearchResult, source_type: str) -> float:
+def score_evidence(result: SearchResult, source_type: SourceType) -> float:
     tavily_score = _clamp(float(result.score or 0.0))
     source_score = SOURCE_WEIGHTS.get(source_type, 0.2)
     completeness = _clamp(len(result.content or "") / 1200.0)

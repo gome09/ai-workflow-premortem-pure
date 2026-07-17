@@ -21,7 +21,7 @@ def _load_langgraph_interrupt():
     optional interrupt/checkpoint stack is not installed or not configured.
     """
     try:
-        from langgraph.types import interrupt  # type: ignore
+        from langgraph.types import interrupt
     except Exception:
         return None
     return interrupt

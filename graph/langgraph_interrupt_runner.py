@@ -51,7 +51,7 @@ def _langgraph_config(ctx: ProjectContext, thread_id: str | None = None) -> dict
 
 def _load_command_type():
     try:
-        from langgraph.types import Command  # type: ignore
+        from langgraph.types import Command
     except Exception:
         return None
     return Command
@@ -61,11 +61,13 @@ def _build_checkpointer() -> Any:
     """Prefer PostgreSQL checkpoints; fall back to memory for local/dev use."""
     global _CHECKPOINTER_RESOURCE
     try:
-        import psycopg  # type: ignore
-        from langgraph.checkpoint.postgres import PostgresSaver  # type: ignore
+        import psycopg
+        from langgraph.checkpoint.postgres import PostgresSaver
 
         conn = psycopg.connect(settings.postgres_dsn_sync)
-        saver = PostgresSaver(conn)
+        # psycopg default Connection row type is tuple; PostgresSaver expects a
+        # dict-row Connection. The saver works with the live connection at runtime.
+        saver: Any = PostgresSaver(conn)  # type: ignore[arg-type]
         saver.setup()
         _CHECKPOINTER_RESOURCE = conn
         return saver
@@ -74,7 +76,7 @@ def _build_checkpointer() -> Any:
             "PostgreSQL LangGraph checkpointer unavailable; falling back to in-memory checkpointer."
         )
         try:
-            from langgraph.checkpoint.memory import MemorySaver  # type: ignore
+            from langgraph.checkpoint.memory import MemorySaver
 
             saver = MemorySaver()
             _CHECKPOINTER_RESOURCE = saver
@@ -94,7 +96,7 @@ def _build_one_turn_graph():
     older full-flow builder because that builder starts from node_init and can run
     across multiple stages in one graph invocation.
     """
-    from langgraph.graph import END, StateGraph  # type: ignore
+    from langgraph.graph import END, StateGraph
 
     graph = StateGraph(ProjectContext)
 

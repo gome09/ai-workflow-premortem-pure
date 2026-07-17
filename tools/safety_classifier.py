@@ -102,7 +102,11 @@ def mask_pii_in_text(text: str) -> str:
     """对文本中的所有 PII 进行掩码（用于 prompt 路径）。"""
     masked = text or ""
     for pattern, kind, _severity in PII_PATTERNS:
-        masked = re.sub(pattern, lambda m, k=kind: _mask_pii(m.group(0), k), masked)
+
+        def _replace(m: re.Match[str], k: str = kind) -> str:
+            return _mask_pii(m.group(0), k)
+
+        masked = re.sub(pattern, _replace, masked)
     return masked
 
 
@@ -461,10 +465,10 @@ def scan_policy_gaps(ctx: ProjectContext, *, stage_id: int) -> list[SafetyFindin
     if stage_id == 4 and ctx.stage_4_output and ctx.stage_2_output:
         nodes_by_id = {node.node_id: node for node in ctx.stage_2_output.workflow_nodes}
         for method in ctx.stage_4_output.trigger_methods:
-            node = nodes_by_id.get(method.node_id)
-            if not node:
+            matched_node = nodes_by_id.get(method.node_id)
+            if not matched_node:
                 continue
-            node_risk = _node_risk_level(ctx, node)
+            node_risk = _node_risk_level(ctx, matched_node)
             if node_risk in {"high", "critical"} and not method.human_review_required:
                 findings.append(
                     _finding(

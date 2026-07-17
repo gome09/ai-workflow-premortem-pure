@@ -25,7 +25,7 @@ class ResearchTool:
 
     _DUMMY_KEY_INDICATORS = ("healthcheck_dummy", "dummy", "test_dummy")
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._client: TavilyClient | None = None
         self._search_checked: bool = False
         self._search_available: bool = False

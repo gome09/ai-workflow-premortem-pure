@@ -379,6 +379,18 @@ class LLMTrace(BaseModel):
 # 核心：会话上下文（LangGraph State）
 # ─────────────────────────────────────────────
 
+# Evidence 来源分类；tools.source_classifier.classify_source 也返回该类型，共用一处定义避免漂移。
+SourceType = Literal[
+    "official_doc",
+    "paper",
+    "github",
+    "blog",
+    "forum",
+    "news",
+    "unknown",
+    "user_material",
+]
+
 
 class EvidenceSource(BaseModel):
     """可追溯证据来源。"""
@@ -387,16 +399,7 @@ class EvidenceSource(BaseModel):
     session_id: str
     title: str
     url: str | None = None
-    source_type: Literal[
-        "official_doc",
-        "paper",
-        "github",
-        "blog",
-        "forum",
-        "news",
-        "unknown",
-        "user_material",
-    ] = "unknown"
+    source_type: SourceType = "unknown"
     credibility_score: float = 0.0
     retrieved_at: datetime = Field(default_factory=datetime.utcnow)
     summary: str = ""

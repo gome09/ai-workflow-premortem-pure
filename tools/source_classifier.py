@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
+from core.models import SourceType
 from tools.evidence_filters import is_low_quality_source
 
 OFFICIAL_HINTS = (
@@ -15,7 +16,7 @@ OFFICIAL_HINTS = (
 )
 
 
-def classify_source(url: str | None, title: str = "") -> str:
+def classify_source(url: str | None, title: str = "") -> SourceType:
     """规则型来源分类，避免在 evidence 最小闭环中引入额外 LLM 调用。"""
     if not url:
         return "user_material"

@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import cast
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from core.config import settings
@@ -204,7 +205,9 @@ def node_init(state: ProjectContext, user_input: str) -> ProjectContext:
         else:
             llm = _get_init_llm()
 
-            messages = [SystemMessage(content=get_stage_prompts(profile)["init"])]
+            messages: list[BaseMessage] = [
+                SystemMessage(content=cast(str, get_stage_prompts(profile)["init"]))
+            ]
             for msg in state.get_stage_history(0):
                 if msg.role == MessageRole.USER:
                     messages.append(HumanMessage(content=msg.content))
@@ -215,7 +218,7 @@ def node_init(state: ProjectContext, user_input: str) -> ProjectContext:
             messages.append(HumanMessage(content=user_input))
 
             response = llm.invoke(messages)
-            ai_text = response.content
+            ai_text = cast(str, response.content)
     except Exception as exc:
         err_str = str(exc)
         if "401" in err_str or "authentication" in err_str.lower():

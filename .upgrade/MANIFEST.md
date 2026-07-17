@@ -71,6 +71,7 @@ Before cleanup, classify each file as one of:
 | `.upgrade/plans/2026-07-17-wave-a-implementation.md` | active | permanent | Wave A 具体实施计划（探索核实修正版：A5/A6 顺序对调、MANIFEST 表格格式、README 锚点） |
 | `.upgrade/plans/2026-07-17-wave-b-mypy-implementation.md` | active | permanent | Wave B mypy 渐进式类型检查实施计划（B1–B6 分片，inspect_ai 模式宽松档 + core.gates/graph 近 strict） |
 | `.upgrade/plans/2026-07-17-wave-c-llm-judge-implementation.md` | active | permanent | Wave C T3.6 LLM Judge 实施计划（C1–C4，含 18 条探索基线与两处对父计划的记录性偏差决策） |
+| `.upgrade/plans/2026-07-17-wave-d-compliance-refresh-implementation.md` | active | permanent | Wave D 合规映射复核落账实施计划（D1–D3，含 17 条探索基线与三处对父计划的记录性偏差决策：ISO 附录编号 §6 / TC260 [信源说明] 措辞修正 / §10.7 插入尾注前） |
 
 ## Moved from Project
 

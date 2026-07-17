@@ -1139,9 +1139,9 @@ git commit -m "docs: mark T3.6 LLM Judge implemented, document flags (T3.6 step 
 - Modify: `docs/compliance/iso42001-mapping.md`（文末追加一节）
 - Modify: `docs/plan/improvement-roadmap.md`（第 10 节追加复核记录）
 
-- [ ] **Step 1: 读取 `docs/compliance/iso42001-mapping.md` 全文，确认其章节结构与落款格式**（执行者必须先读文件，模仿其现有格式追加，不要破坏原文风格）
+- [x] **Step 1: 读取 `docs/compliance/iso42001-mapping.md` 全文，确认其章节结构与落款格式**（执行者必须先读文件，模仿其现有格式追加，不要破坏原文风格）
 
-- [ ] **Step 2: 在该文件末尾追加一节**
+- [x] **Step 2: 在该文件末尾追加一节**
 
 ```markdown
 ## 附：ISO/IEC 42005:2025（AI 系统影响评估）对标说明
@@ -1159,7 +1159,7 @@ git commit -m "docs: mark T3.6 LLM Judge implemented, document flags (T3.6 step 
 注：本表为初版对齐说明，逐条款精细映射待获取标准全文后补充（42005 为付费标准，本表基于官方摘要与二手概述编写，条款号未逐字核对）。
 ```
 
-- [ ] **Step 3: 在 `docs/plan/improvement-roadmap.md` 第 10 节末尾追加小节**（先读第 10 节现有格式，编号顺延，如 `10.7`）：
+- [x] **Step 3: 在 `docs/plan/improvement-roadmap.md` 第 10 节末尾追加小节**（先读第 10 节现有格式，编号顺延，如 `10.7`）：
 
 ```markdown
 ### 10.7 2026-07-17 复核增补
@@ -1173,7 +1173,7 @@ git commit -m "docs: mark T3.6 LLM Judge implemented, document flags (T3.6 step 
 - **新增国内已生效法规锚点**（待纳入合规映射的候选）：《智能体规范应用与创新发展实施意见》（网信办/发改委/工信部，2026-05-08 发布、07-15 施行，敏感领域备案+检测、低风险合规自测）；《人工智能拟人化互动服务管理暂行办法》（五部门，2026-04-10 公布、07-15 施行，五类情形触发安全评估）。前者的分级治理思路与本平台风险自适应门禁直接同构。
 ```
 
-- [ ] **Step 4: 校验 + 提交**
+- [x] **Step 4: 校验 + 提交**
 
 ```bash
 make doc-check
@@ -1190,7 +1190,7 @@ git commit -m "docs: record 2026-07-17 external standards re-verification, add I
 - Modify: `tools/taxonomies/tc260_agent_deployment.py`（仅 docstring 加复核日期行）
 - Modify: `tools/taxonomies/nist_ai_600_1.py`（仅 docstring 加复核日期行）
 
-- [ ] **Step 1: 三个文件的模块 docstring 中"核对日期"行附近各追加一行**（先读各文件 docstring，保持既有格式）：
+- [x] **Step 1: 三个文件的模块 docstring 中"核对日期"行附近各追加一行**（先读各文件 docstring，保持既有格式）：
 
 `owasp_agentic_2026.py` 在 `核对日期：2026-07-14...` 行后追加：
 
@@ -1213,7 +1213,7 @@ git commit -m "docs: record 2026-07-17 external standards re-verification, add I
 全部 [存疑] 标注维持。唯一解决路径：人工直连 nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf 第 3 节逐字核对。
 ```
 
-- [ ] **Step 2: 确认相关测试不受影响并提交**
+- [x] **Step 2: 确认相关测试不受影响并提交**
 
 ```bash
 uv run pytest tests/ -k "taxonomy or owasp or tc260 or nist" -v && make lint

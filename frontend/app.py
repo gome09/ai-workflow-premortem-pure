@@ -68,7 +68,8 @@ def _register_demo_user() -> dict | None:
             json={"email": DEMO_USER_EMAIL, "password": DEMO_USER_PASSWORD},
             timeout=10,
         )
-        if r.status_code == 409:
+        # 409=已存在、429=注册限流：都回退到登录，避免演示账号被限流卡死
+        if r.status_code in (409, 429):
             return _login_demo_user()
         r.raise_for_status()
         return r.json()
@@ -96,7 +97,8 @@ def _refresh_access_token() -> bool:
 def ensure_auth() -> None:
     if st.session_state.get("access_token"):
         return
-    tokens = _register_demo_user()
+    # 演示账号通常已存在：先登录（不受注册限流影响），失败再注册
+    tokens = _login_demo_user() or _register_demo_user()
     if tokens and tokens.get("access_token"):
         st.session_state.access_token = tokens["access_token"]
         st.session_state.refresh_token = tokens.get("refresh_token")
@@ -857,6 +859,16 @@ with st.sidebar:
             f"执行模式：{exec_mode_zh(st.session_state.health.get('workflow_execution_mode', 'unknown'))}"
             f" · 中断适配器：{adapter_status_zh(st.session_state.health.get('interrupt_adapter_status', 'unknown'))}"
         )
+
+    # ── 页面导航：会话工作台 / 治理总览 ────────────────────────────────────────
+    nav_choice = st.radio(
+        "页面",
+        options=["会话工作台", "治理总览"],
+        horizontal=True,
+        key="nav_page_choice",
+        label_visibility="collapsed",
+    )
+    st.session_state.nav_page = nav_choice if nav_choice == "治理总览" else None
     st.divider()
 
     # ── 会话管理 ──────────────────────────────────────────────────────────────
@@ -1821,6 +1833,12 @@ with st.sidebar:
                             f"{status_zh(experiment.get('status'))} · 模式={experiment.get('run_mode')} · "
                             f"通过率={metrics.get('pass_rate', 0):.2f}"
                         )
+                        disagreement_rate = metrics.get("human_disagreement_rate")
+                        if disagreement_rate is not None:
+                            st.caption(
+                                f"人工校准 {metrics.get('human_calibration_count', 0)} 次 · "
+                                f"与自动评审分歧率={disagreement_rate:.2f}"
+                            )
                         if experiment.get("status") in {"created", "failed"}:
                             if st.button(
                                 f"▶️ 运行 {experiment.get('experiment_id')}",
@@ -1866,6 +1884,9 @@ with st.sidebar:
                     )
                     st.caption("测试输入：" + (case.get("input_payload") or "")[:300])
                     st.caption("预期行为：" + (case.get("expected_behavior") or "")[:300])
+                    pass_criteria = case.get("pass_criteria") or []
+                    if pass_criteria:
+                        st.caption("通过标准：" + "；".join(pass_criteria)[:300])
                     if st.button(
                         "▶️ 运行该用例",
                         key=f"run_eval_{case.get('eval_id')}",
@@ -1887,6 +1908,12 @@ with st.sidebar:
                             f"{latest_run.get('run_id')} · 状态={status_zh(latest_run.get('status'))} · "
                             f"评审结果={latest_run.get('judge_result')}"
                         )
+                        judge_reason = latest_run.get("judge_reason") or ""
+                        violated = latest_run.get("violated_criteria") or []
+                        if judge_reason:
+                            st.caption(f"评审理由：{judge_reason[:300]}")
+                        if violated:
+                            st.caption("未满足标准：" + "；".join(violated)[:300])
                     score_key = f"eval_score_{case.get('eval_id')}"
                     comment_key = f"eval_comment_{case.get('eval_id')}"
                     pass_key = f"eval_passed_{case.get('eval_id')}"
@@ -1954,6 +1981,17 @@ with st.sidebar:
                         if metadata:
                             with st.expander("元数据", expanded=False):
                                 st.json(metadata)
+                        before_snapshot = event.get("before_snapshot")
+                        after_snapshot = event.get("after_snapshot")
+                        if before_snapshot or after_snapshot:
+                            with st.expander("变更前后快照", expanded=False):
+                                snap_before, snap_after = st.columns(2)
+                                with snap_before:
+                                    st.caption("变更前")
+                                    st.json(before_snapshot or {})
+                                with snap_after:
+                                    st.caption("变更后")
+                                    st.json(after_snapshot or {})
             else:
                 st.caption("暂无审计事件。")
 

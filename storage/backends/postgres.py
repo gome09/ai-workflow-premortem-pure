@@ -45,11 +45,20 @@ class PostgresSessionStore:
         alembic_bin = shutil.which("alembic") or str(
             __import__("pathlib").Path(sys.executable).parent / "alembic"
         )
-        result = subprocess.run(  # noqa: S603  # alembic command, input is controlled
-            [alembic_bin, "upgrade", "head"],
-            capture_output=True,
-            text=True,
-        )
+        # 多 worker（UVICORN_WORKERS>1）并发启动时每个 worker 都会执行本方法；
+        # 用 Postgres advisory lock 串行化，避免并发 alembic upgrade 竞态创建
+        # alembic_version 表（pg_type_typname_nsp_index UniqueViolation）。
+        _MIGRATION_LOCK_KEY = 0x61697766  # "aiwf"
+        with psycopg.connect(self._dsn) as lock_conn:
+            lock_conn.execute("SELECT pg_advisory_lock(%s)", (_MIGRATION_LOCK_KEY,))
+            try:
+                result = subprocess.run(  # noqa: S603  # alembic command, input is controlled
+                    [alembic_bin, "upgrade", "head"],
+                    capture_output=True,
+                    text=True,
+                )
+            finally:
+                lock_conn.execute("SELECT pg_advisory_unlock(%s)", (_MIGRATION_LOCK_KEY,))
         if result.returncode != 0:
             logger.error("Alembic migration failed: %s", result.stderr)
             raise RuntimeError(f"Database migration failed:\n{result.stderr}")

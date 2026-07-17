@@ -18,7 +18,9 @@ gen() {
   if [ -f "$path" ] && ! grep -q '^CHANGE_ME' "$path"; then
     echo "[keep] $name already set"
   else
-    openssl rand -hex 32 > "$path"
+    # tr -d '\r\n'：Windows (Git Bash) 下 openssl 输出 CRLF，残留 \r 会让
+    # redis 的 $(cat secret) 密码与 .env 中的值不一致，导致认证失败。
+    openssl rand -hex 32 | tr -d '\r\n' > "$path"
     chmod 600 "$path"
     echo "[gen]  $name"
   fi

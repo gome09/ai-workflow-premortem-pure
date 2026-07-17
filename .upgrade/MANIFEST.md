@@ -75,6 +75,7 @@ Before cleanup, classify each file as one of:
 | `.upgrade/plans/2026-07-17-wave-d-compliance-refresh-implementation.md` | active | permanent | Wave D 合规映射复核落账实施计划（D1–D3，含 17 条探索基线与三处对父计划的记录性偏差决策：ISO 附录编号 §6 / TC260 [信源说明] 措辞修正 / §10.7 插入尾注前） |
 | `.upgrade/reports/pre-publication-checklist-20260717.md` | active | keep-until-superseded | Wave E 公开前安全扫描报告（三项检查通过 + 已知良性命中判定留档 + 公开后 10 步人工动作清单 + CI 门槛转正评估结论） |
 | `.upgrade/plans/2026-07-17-wave-e-publication-ci-implementation.md` | active | permanent | Wave E 公开前检查与 CI/发布收尾实施计划（E1–E4 + 附录 E5，含 20 条探索基线与六处对父计划的记录性偏差决策） |
+| `.upgrade/reports/startup-methods-e2e-20260718.md` | active | keep-until-superseded | 四种启动方式全流程 E2E 测试报告（离线演示/Docker Lite/混合开发临时端口/生产栈，全部 PASS；6 缺陷修复明细 + 遗留观察项：死代码 panels 与无 UI 入口端点） |
 | `.upgrade/archive/show.md` | archived | archive | v1.0 时期项目展示文档（毕设介绍），内容已被 README.md (v1.3.0) 取代且无任何文件引用，moved from project root 2026-07-17 |
 
 ## Moved from Project

@@ -5,6 +5,12 @@
 > 其中 v0.1（2026-05-01）/ v0.5（2026-05-20）的日期早于可见最早 commit（2026-05-31），为里程碑回溯记录，非逐次提交日志。
 
 ## 维护记录 (2026-07-18)
+- **四种启动方式全流程 E2E 测试 + 6 缺陷修复**：
+  - **测试范围**：离线演示（uv+mock+SQLite）/ Docker Lite（2 容器）/ 混合开发（容器 DB 临时端口 15432/16379 + 本机应用）/ 生产栈（7 容器 + nginx TLS + Prometheus/Grafana），全部冷启动实测 PASS。方法：API 冒烟 + Playwright 浏览器驱动真实 UI 交互（方式1 双路径走满四阶段至 complete，四阶段 gate-report 全 passed）+ 后台日志监控；Docker 构建 `--no-cache` 防旧镜像污染。完整报告：`.upgrade/reports/startup-methods-e2e-20260718.md`
+  - **阻塞类修复**：①`frontend/app.py` ensure_auth 改"先登录后注册"（demo 账号已存在时原先注册触发 5/hour 限流 429 → 前端全站 401）；②`scripts/gen_secrets.sh` 生成密钥时 `tr -d '\r\n'`（Windows Git Bash 下 openssl 输出 CRLF，secret 文件残留 `\r` 使 redis `--requirepass $(cat …)` 与 .env 同步值不一致 → 生产栈 redis 认证失败）；③`storage/backends/postgres.py` alembic 迁移加 `pg_advisory_lock` 串行化（`UVICORN_WORKERS=2` 空库冷启动并发 `alembic upgrade head` 竞态 UniqueViolation 致 worker 崩溃）
+  - **前后端语义一致性修复**：④侧栏新增「会话工作台 / 治理总览」页面导航（`nav_page` 此前无任何赋值点，治理总览页与 `/governance/*` 三端点在 UI 不可达）；治理总览页补 `reports_exported` 指标、`state_distribution` 柱图、gate-trends 周明细；⑤`/health` 补 `interrupt_adapter_status` 字段（前端读取但后端从未返回，恒显"未知"→ 现按执行模式显示"未启用/正常"）；⑥前端补展示后端已返回字段：EvalCase `pass_criteria`、EvalRun `judge_reason`/`violated_criteria`、实验 `human_disagreement_rate`、审计事件 `before/after_snapshot` 并排快照视图
+  - **遗留观察项（未修）**：`frontend/components/` 下 8 个英文版 panel + `frontend/api_client.py` + `frontend/state.py` 为死代码（真实 UI 内联于 app.py）；traces / eval-judgments / human-calibrations / experiment-comparison 等端点无 UI 入口
+  - **测试验证**：650 passed, 1 skipped（全量回归）；ruff lint/format clean；修复后浏览器复测全过
 - **生产启动链路加固（启动审计遗留项 7–9）**：
   - **`make setup` 密钥自动随机化**：`scripts/gen_secrets.sh` 接入 setup 流程——`jwt_secret` / `postgres_password` / `redis_password` / `grafana_password` 以 `openssl rand -hex 32` 随机生成（替换此前直接复制 `secrets.example/` 示例明文的行为），并同步 `.env` 中对应 `CHANGE_ME` 占位行为相同值（`.env` 会遮蔽容器内 `/run/secrets`，两处不一致会导致 postgres/redis 认证失败）；`DEEPSEEK_API_KEY` / `TAVILY_API_KEY` 占位行注释化，使 Docker secrets 生效。幂等：已定制的值不覆盖
   - **`make prod-up` fail-fast 前置检查**：新增 `prod-preflight` target——secrets/ 六文件与 `nginx/certs/` 证书缺失时立即报错并提示先跑 `make setup`（替代晦涩的 compose 挂载失败）；可生成密钥仍为 `CHANGE_ME` 示例值时仅警告不阻断

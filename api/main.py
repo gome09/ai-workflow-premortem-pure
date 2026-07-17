@@ -206,6 +206,11 @@ def health():
         "version": APP_VERSION,
         "app_status": APP_STATUS,
         "workflow_execution_mode": mode.value,
+        # 前端侧栏展示用：langgraph_interrupt 路径启用时适配器视为正常，
+        # 默认 single_step 路径下中断适配器只是审计映射层，标记为未启用。
+        "interrupt_adapter_status": (
+            "healthy" if mode == WorkflowExecutionMode.LANGGRAPH_INTERRUPT else "disabled"
+        ),
         "default_domain_profile": settings.domain_profile,
         "default_scenario_id": settings.default_scenario_id or None,
         "builtin_scenarios": [item.scenario_id for item in list_scenarios()],

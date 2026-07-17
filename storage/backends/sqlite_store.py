@@ -10,6 +10,7 @@ import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from core.migrations import migrate_context
 from core.models import ProjectContext
@@ -497,7 +498,7 @@ class SQLiteSessionStore:
         raw = json.dumps(snapshot, default=str)
         if len(raw.encode("utf-8")) <= max_bytes:
             return snapshot
-        truncated = {}
+        truncated: dict[str, Any] = {}
         for key, value in snapshot.items():
             val_str = json.dumps(value, default=str)
             if len(val_str.encode("utf-8")) > 5_000:

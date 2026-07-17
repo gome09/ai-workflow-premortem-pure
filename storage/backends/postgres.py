@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime
+from typing import Any, TypeAlias, cast
 
 import psycopg
 from psycopg.rows import dict_row
@@ -17,6 +18,9 @@ from storage.field_security import decrypt_fields_after_load, encrypt_fields_for
 
 logger = logging.getLogger(__name__)
 
+# 连接固定使用 dict_row 行工厂，行对象按列名索引；所有查询/_sync_* 方法均依赖此形状。
+DictConnection: TypeAlias = psycopg.Connection[dict[str, Any]]
+
 
 class PostgresSessionStore:
     """PostgreSQL 会话持久化"""
@@ -27,7 +31,9 @@ class PostgresSessionStore:
     def __init__(self):
         self._dsn = settings.postgres_dsn_sync
 
-    def _get_conn(self) -> psycopg.Connection:
+    def _get_conn(self) -> DictConnection:
+        # row_factory=dict_row 是关键约束：必须与 DictConnection（dict[str, Any]）参数化保持一致。
+        # 所有查询与 _sync_* 方法都按列名索引行对象。
         return psycopg.connect(self._dsn, row_factory=dict_row)
 
     def initialize(self) -> None:
@@ -159,7 +165,7 @@ class PostgresSessionStore:
             self._sync_interrupt_records(conn, ctx)
             conn.commit()
 
-    def _sync_human_actions(self, conn: psycopg.Connection, ctx: ProjectContext) -> None:
+    def _sync_human_actions(self, conn: DictConnection, ctx: ProjectContext) -> None:
         """同步 ProjectContext 中的人工动作到索引表。使用 upsert，避免删除历史。"""
         for action in ctx.pending_actions:
             conn.execute(
@@ -242,7 +248,7 @@ class PostgresSessionStore:
                 ),
             )
 
-    def _sync_action_resolution_logs(self, conn: psycopg.Connection, ctx: ProjectContext) -> None:
+    def _sync_action_resolution_logs(self, conn: DictConnection, ctx: ProjectContext) -> None:
         """同步 action resolution logs。append-only：已存在 log_id 不覆盖。"""
         for log in getattr(ctx, "action_resolution_logs", []) or []:
             conn.execute(
@@ -268,7 +274,7 @@ class PostgresSessionStore:
                 ),
             )
 
-    def _sync_llm_traces(self, conn: psycopg.Connection, ctx: ProjectContext) -> None:
+    def _sync_llm_traces(self, conn: DictConnection, ctx: ProjectContext) -> None:
         """同步 LLM traces。append-only：已存在 trace_id 不覆盖。"""
         for trace in getattr(ctx, "llm_traces", []) or []:
             conn.execute(
@@ -316,7 +322,7 @@ class PostgresSessionStore:
         raw = json.dumps(snapshot, default=str)
         if len(raw.encode("utf-8")) <= max_bytes:
             return snapshot
-        truncated = {}
+        truncated: dict[str, Any] = {}
         for key, value in snapshot.items():
             val_str = json.dumps(value, default=str)
             if len(val_str.encode("utf-8")) > 5_000:
@@ -327,7 +333,7 @@ class PostgresSessionStore:
         truncated["_original_size_bytes"] = len(raw.encode("utf-8"))
         return truncated
 
-    def _sync_audit_events(self, conn: psycopg.Connection, ctx: ProjectContext) -> None:
+    def _sync_audit_events(self, conn: DictConnection, ctx: ProjectContext) -> None:
         """同步审计事件。append-only：已存在 event_id 不覆盖、不删除。"""
         for event in ctx.audit_events:
             conn.execute(
@@ -359,7 +365,7 @@ class PostgresSessionStore:
                 ),
             )
 
-    def _sync_evidence_sources(self, conn: psycopg.Connection, ctx: ProjectContext) -> None:
+    def _sync_evidence_sources(self, conn: DictConnection, ctx: ProjectContext) -> None:
         for ev in ctx.evidence_sources:
             conn.execute(
                 """
@@ -400,7 +406,7 @@ class PostgresSessionStore:
                 ),
             )
 
-    def _sync_safety_findings(self, conn: psycopg.Connection, ctx: ProjectContext) -> None:
+    def _sync_safety_findings(self, conn: DictConnection, ctx: ProjectContext) -> None:
         for finding in ctx.safety_findings:
             conn.execute(
                 """
@@ -461,7 +467,7 @@ class PostgresSessionStore:
             ]
         return truncated
 
-    def _sync_report_artifacts(self, conn: psycopg.Connection, ctx: ProjectContext) -> None:
+    def _sync_report_artifacts(self, conn: DictConnection, ctx: ProjectContext) -> None:
         for artifact in ctx.report_artifacts:
             truncated_content = self._truncate_report_content_json(artifact.content_json)
             conn.execute(
@@ -485,7 +491,7 @@ class PostgresSessionStore:
                 ),
             )
 
-    def _sync_eval_cases(self, conn: psycopg.Connection, ctx: ProjectContext) -> None:
+    def _sync_eval_cases(self, conn: DictConnection, ctx: ProjectContext) -> None:
         for case in ctx.eval_cases:
             conn.execute(
                 """
@@ -532,7 +538,7 @@ class PostgresSessionStore:
                 ),
             )
 
-    def _sync_eval_runs(self, conn: psycopg.Connection, ctx: ProjectContext) -> None:
+    def _sync_eval_runs(self, conn: DictConnection, ctx: ProjectContext) -> None:
         for run in ctx.eval_runs:
             conn.execute(
                 """
@@ -588,7 +594,7 @@ class PostgresSessionStore:
                 ),
             )
 
-    def _sync_eval_judgments(self, conn: psycopg.Connection, ctx: ProjectContext) -> None:
+    def _sync_eval_judgments(self, conn: DictConnection, ctx: ProjectContext) -> None:
         for judgment in getattr(ctx, "eval_judgments", []) or []:
             conn.execute(
                 """
@@ -622,7 +628,7 @@ class PostgresSessionStore:
                 ),
             )
 
-    def _sync_human_calibrations(self, conn: psycopg.Connection, ctx: ProjectContext) -> None:
+    def _sync_human_calibrations(self, conn: DictConnection, ctx: ProjectContext) -> None:
         for calibration in getattr(ctx, "human_calibrations", []) or []:
             conn.execute(
                 """
@@ -658,7 +664,7 @@ class PostgresSessionStore:
                 ),
             )
 
-    def _sync_eval_datasets(self, conn: psycopg.Connection, ctx: ProjectContext) -> None:
+    def _sync_eval_datasets(self, conn: DictConnection, ctx: ProjectContext) -> None:
         for dataset in getattr(ctx, "eval_datasets", []) or []:
             conn.execute(
                 """
@@ -692,7 +698,7 @@ class PostgresSessionStore:
                 ),
             )
 
-    def _sync_eval_experiments(self, conn: psycopg.Connection, ctx: ProjectContext) -> None:
+    def _sync_eval_experiments(self, conn: DictConnection, ctx: ProjectContext) -> None:
         for experiment in getattr(ctx, "eval_experiments", []) or []:
             conn.execute(
                 """
@@ -738,7 +744,7 @@ class PostgresSessionStore:
                 ),
             )
 
-    def _sync_redteam_cases(self, conn: psycopg.Connection, ctx: ProjectContext) -> None:
+    def _sync_redteam_cases(self, conn: DictConnection, ctx: ProjectContext) -> None:
         for case in getattr(ctx, "redteam_cases", []) or []:
             conn.execute(
                 """
@@ -784,7 +790,7 @@ class PostgresSessionStore:
                 ),
             )
 
-    def _sync_interrupt_records(self, conn: psycopg.Connection, ctx: ProjectContext) -> None:
+    def _sync_interrupt_records(self, conn: DictConnection, ctx: ProjectContext) -> None:
         """同步业务中断记录。"""
         for record in getattr(ctx, "interrupt_records", []) or []:
             conn.execute(
@@ -933,6 +939,7 @@ class PostgresSessionStore:
 
     def load(self, session_id: str, tenant_id: str = "") -> ProjectContext | None:
         """加载会话，不存在或 tenant 不匹配则返回 None"""
+        params: tuple[Any, ...]
         if tenant_id:
             sql = "SELECT context_json, tenant_id::text FROM sessions WHERE session_id = %s AND tenant_id = %s::uuid"
             params = (session_id, tenant_id)
@@ -1034,6 +1041,7 @@ class PostgresSessionStore:
 
     def list_sessions(self, limit: int = 20, tenant_id: str = "") -> list[dict]:
         """列出最近的会话（用于前端历史列表）"""
+        params: tuple[Any, ...]
         if tenant_id:
             sql = """
                 SELECT session_id, current_state, created_at, updated_at,
@@ -1083,7 +1091,7 @@ class PostgresSessionStore:
         with self._get_conn() as conn:
             row = conn.execute(sql, (name,)).fetchone()
             conn.commit()
-        return dict(row)
+        return dict(cast(dict[str, Any], row))
 
     def create_user(
         self, tenant_id: str, email: str, password_hash: str, role: str = "viewer"
@@ -1097,7 +1105,7 @@ class PostgresSessionStore:
         with self._get_conn() as conn:
             row = conn.execute(sql, (tenant_id, email, password_hash, role)).fetchone()
             conn.commit()
-        return dict(row)
+        return dict(cast(dict[str, Any], row))
 
     def get_user_by_email(self, email: str) -> dict | None:
         """Lookup user by email for login."""

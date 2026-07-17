@@ -2,14 +2,15 @@
 
 ## Current Phase
 
-Phase 4 — **代码侧全部完成** (T4.1 / T4.2 文档 / T4.3 / T4.5；T4.4 明确不承诺)。Phase 3 全部完成 (T3.1–T3.7，T3.6 已于 v1.3.0 落地、flag 默认关)。Phase 2 全部完成 (T2.1–T2.6)。Phase 1 全部完成 (T1.1–T1.9)。正式项目升级（formal-project-uplift，计划 `.upgrade/plans/2026-07-17-formal-project-uplift.md`）进行中——Wave A–D 已完成（Wave D：合规映射 2026-07-17 复核落账，Task 13–14，实施方案 `.upgrade/plans/2026-07-17-wave-d-compliance-refresh-implementation.md`）；下一步 Wave E（公开前检查与 CI 收尾，Task 15–18），Task 19 待仓库公开后执行。
+Phase 4 — **代码侧全部完成** (T4.1 / T4.2 文档 / T4.3 / T4.5；T4.4 明确不承诺)。Phase 3 全部完成 (T3.1–T3.7，T3.6 已于 v1.3.0 落地、flag 默认关)。Phase 2 全部完成 (T2.1–T2.6)。Phase 1 全部完成 (T1.1–T1.9)。正式项目升级（formal-project-uplift，计划 `.upgrade/plans/2026-07-17-formal-project-uplift.md`）进行中——Wave A–D 已完成（Wave D：合规映射 2026-07-17 复核落账，Task 13–14，实施方案 `.upgrade/plans/2026-07-17-wave-d-compliance-refresh-implementation.md`）；**Wave E 已完成（Task 15–18，实施方案 `.upgrade/plans/2026-07-17-wave-e-publication-ci-implementation.md`），formal-project-uplift 全部收尾，v1.3.0 已 bump + tag**。Task 19（CodeQL 转正）待仓库公开后执行。
 
 ## Current Task
 
-**计划执行中**：`.upgrade/plans/2026-07-17-formal-project-uplift.md`（正式个人项目升级：门面治理文件 / mypy 渐进式类型检查 / T3.6 LLM Judge 落地 / 合规映射 2026-07-17 复核落账 / 公开前检查，目标版本 v1.3.0，Task 0–19）。**Wave A（门面与治理文件，Task 0–6）、Wave B（mypy 渐进式类型检查，Task 7–8）、Wave C（T3.6 LLM Judge，Task 9–12）与 Wave D（合规映射复核落账，Task 13–14）已完成**，下一步 Wave E（Task 15–18）。此前遗留：GitHub 后台开启 main 分支保护（步骤见 `.upgrade/decisions/branch-protection.md`，已并入新计划 Task 15 公开后动作清单）。
+**计划已完成（Task 19 除外，待公开后）**：`.upgrade/plans/2026-07-17-formal-project-uplift.md`（正式个人项目升级：门面治理文件 / mypy 渐进式类型检查 / T3.6 LLM Judge 落地 / 合规映射 2026-07-17 复核落账 / 公开前检查，目标版本 v1.3.0，Task 0–19）。**Wave A–E（Task 0–18）全部完成**。此前遗留：GitHub 后台开启 main 分支保护（步骤见 `.upgrade/decisions/branch-protection.md`，已并入新计划 Task 15 公开后动作清单）。
 
 ## Last Completed
 
+- **Wave E 公开前检查与 CI/发布收尾 (2026-07-17)**：公开前全历史敏感信息扫描通过（仅 DEMO_PASSWORD 演示凭据 + secrets.example 占位符两类良性命中，报告含公开后 10 步人工动作清单）；CI 覆盖率产出（pytest-cov + make test-cov + GitHub job summary，不接 codecov）；doc-check 转强制、mypy 维持 non-blocking（从未在远端跑过，转正条件未满足——评估结论见报告第 4 节）；docs/plan/ecosystem-positioning.md 生态定位文档（赛道三层地图 / SynthBoard.ai 差异化 / 门面对标结论，数字与 2026-07-16 JSON 快照逐字段一致）；v1.3.0 收尾（version 三件套 + README :14 + CHANGELOG + tag v1.3.0 打在收尾 commit）。对父计划六处记录性偏差（预扫描良性清单 / doc-check 转正范围 / commit message / README 版本行 / STATE 段落名 / tag 位置）见实施方案。commits: 63f4c31/955c0ef/622edc7/d23aa6a+本 commit。实施计划：`.upgrade/plans/2026-07-17-wave-e-publication-ci-implementation.md`。
 - **Wave D 合规映射复核落账 (2026-07-17)**：ISO/IEC 42005:2025（AI 系统影响评估，2025-05 发布）对标说明落入 docs/compliance/iso42001-mapping.md 第 6 节（初版对齐表，付费标准全文未核对处如实标注）；docs/plan/improvement-roadmap.md 新增 §10.7 复核增补（EU AI Act Omnibus 公报编号待回填 / TC260 正式发布确认但二手来源 / NIST AI 600-1 四动作项 [存疑] 维持 / OWASP ASI 无需改动 / 两个国内已生效法规锚点候选）；三个 taxonomy 模块 docstring 盖 2026-07-17 二次复核戳（仅注释零行为变更，87 项相关测试全绿；tc260 戳按质量评审意见做时间限定修正，避免与 [信源说明] 自相矛盾）。对父计划三处记录性偏差（§6 编号 / TC260 [信源说明] 措辞 / §10.7 插入位）见实施方案。commits: efef623/7c5702d。实施计划：`.upgrade/plans/2026-07-17-wave-d-compliance-refresh-implementation.md`。
 - **Wave C T3.6 LLM Judge (2026-07-17)**：EVAL_LLM_JUDGE / EVAL_LLM_JUDGE_AUTOFINAL 两 flag（默认 off）+ EvalRun.llm_judge_suggestion 字段；core/eval_llm_judge.py 建议生成器（防注入模板、失败静默降级）+ judge 专用 mock fixture；eval_runner 风险分层 autofinal 门控（HIGH/CRITICAL 永不采纳、manual run 不生成建议——对父计划的记录性偏差见实施方案）；spec §5 翻转 Implemented (v1.3.0)。测试 tests/test_llm_judge_v130.py 8 条，全量回归 650 passed, 1 skipped。commits: 46fb178 / de76b04 / 6e5a372 + 文档收尾 commit。实施计划：`.upgrade/plans/2026-07-17-wave-c-llm-judge-implementation.md`。
 - **Wave B mypy 渐进式类型检查 (2026-07-17)** — mypy 引入与全量清零：宽松档基线 108→0（inspect_ai 模式，files 限 7 核心包，排除 tests/frontend/scripts/examples/alembic），core.gates/graph 近 strict 13→0，`uv run mypy` = `Success: no issues found in 153 source files`。新增 `make typecheck` target + CI `Type check (non-blocking)` 接入 ci.yml（观察期，转正评估归 Wave E Task 16）。防漂移版本钉子：mypy>=1.14,<3、langgraph>=1.1,<2。修复含一处真实 bug（create_redteam_dataset/create_dataset_from_failed_traces 的不存在 note= 关键字，latent TypeError）+ SourceType 单一定义化。分片提交 B1–B6（873e256/57aec07/6a1fe93/cbc1193/d8ba8b4/0f64dd8 + 本收尾）。实施计划：`.upgrade/plans/2026-07-17-wave-b-mypy-implementation.md`；基线报告：`.upgrade/reports/mypy-baseline-20260717.md`。
@@ -100,17 +101,16 @@ Phase 4 开源社区打磨代码侧全部完成。核心成果：
 - `uv run ruff check . && uv run ruff format --check .`
 - `Copy-Item -Force .env.demo .env; uv run pytest tests/ -q`
 - `python scripts/doc_consistency_check.py`
-- `git tag --list` (expect `v1.0.2`, `v1.0.3`, `v1.1.0`, `v1.2.0`)
+- `git tag --list` (expect `v1.3.0`；历史 tag v1.0.x–v1.2.0 在仓库整理时未保留，见 CHANGELOG 追溯说明)
 
 ## Next Action
 
-1. **执行 Wave D**（父计划 Task 13–14：ISO/IEC 42005 对标增补 + taxonomy 复核日期落账）
-2. **维护者手动操作**：GitHub 后台开启 main 分支保护（步骤见 `.upgrade/decisions/branch-protection.md`）
-3. **触发远端 Scorecard 扫描**：GitHub Actions → OpenSSF Scorecard → Run workflow，确认实测分数
-4. **doc-check 转强制**：存量违规已清零，可移除 ci.yml 的 `continue-on-error: true` 转为阻断
+1. **维护者手动操作（公开序列）**：按 `.upgrade/reports/pre-publication-checklist-20260717.md` 文末清单执行——push（含 tags）→ 转 Public → 分支保护 → Private vulnerability reporting → Dependabot → CodeQL 转正（Task 19）→ Scorecard dispatch → 徽章核验 → GitHub Release v1.3.0
+2. **远端首轮 CI 全绿后**：移除 ci.yml mypy 步骤 `continue-on-error: true` 转强制
+3. **2026-08 下旬强制复核点**：《未成年人 AI 应用安全指南》征求意见截止（2026-08-16）后核对定稿内容（roadmap §10.7）
 
 ## Last Updated
 
 - Date: 2026-07-17
-- By: claude-code (Wave C T3.6 LLM Judge)
-- Summary: T3.6 LLM Judge 于 v1.3.0 落地：两 flag 默认 off + EvalRun.llm_judge_suggestion 字段 + 建议生成器（mock 可测）+ eval_runner 风险分层 autofinal 门控（HIGH/CRITICAL 永不采纳）；spec §5 / phase-3 验收清单 / docs README / .env.example 同步收尾。8 条新测试，全量 650 passed 无回归，lint/typecheck clean。
+- By: claude-code (Wave E publication readiness & v1.3.0 release closeout)
+- Summary: formal-project-uplift Wave A–E 全部完成：公开前扫描通过、CI 覆盖率 + doc-check 转强制、生态定位文档、v1.3.0 bump + tag。仓库处于"待维护者点公开按钮"状态，公开后动作清单见 pre-publication-checklist 报告。

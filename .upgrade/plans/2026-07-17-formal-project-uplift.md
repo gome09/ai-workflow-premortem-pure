@@ -1234,7 +1234,7 @@ Expected: 相关测试全绿（只动了 docstring）
 **Files:**
 - Create: `.upgrade/reports/pre-publication-checklist-20260717.md`
 
-- [ ] **Step 1: 全历史敏感信息扫描**
+- [x] **Step 1: 全历史敏感信息扫描**
 
 ```bash
 # 常见密钥模式全历史扫描（输出为空 = 通过）
@@ -1245,7 +1245,7 @@ git log --all -p | grep -inE "(sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[A-Z
 
 Expected: 两条命令输出均为空。**若有输出：立即停止，逐条人工判断；真实密钥需先在对应平台吊销、再评估是否需要历史重写（历史重写是破坏性动作，必须先向维护者确认）。**
 
-- [ ] **Step 2: 工作区状态检查**
+- [x] **Step 2: 工作区状态检查**
 
 ```bash
 git status --short           # 不应有计划外 untracked 文件
@@ -1256,7 +1256,7 @@ git ls-files | grep -E "^docs/internal|^secrets/|\.env$" && echo "LEAK: tracked 
 
 Expected: 最后一条输出 `OK`
 
-- [ ] **Step 3: 个人信息核查**
+- [x] **Step 3: 个人信息核查**
 
 ```bash
 git log --format="%ae %ce" | sort -u
@@ -1264,7 +1264,7 @@ git log --format="%ae %ce" | sort -u
 
 检查提交邮箱是否为不愿公开的个人邮箱。若是，向维护者提示可在 GitHub 开启 email privacy（`users.noreply.github.com`）——历史邮箱无法追改（除非重写历史，默认不做，仅提示）。
 
-- [ ] **Step 4: 写检查报告 `.upgrade/reports/pre-publication-checklist-20260717.md`**
+- [x] **Step 4: 写检查报告 `.upgrade/reports/pre-publication-checklist-20260717.md`**
 
 包含：上述三步的实际输出结论（通过/发现项及处置）+ 下方"公开后人工动作清单"（这些都是 GitHub 后台操作，代码侧无法完成）：
 
@@ -1282,7 +1282,7 @@ git log --format="%ae %ce" | sort -u
 9. （可选）GitHub → About 栏填 description + topics：`ai-governance, premortem, risk-assessment, human-oversight, langgraph, llm-evaluation`。
 ```
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add .upgrade/reports/pre-publication-checklist-20260717.md
@@ -1299,11 +1299,11 @@ git commit -m "chore: add pre-publication security scan results and post-publica
 - Modify: `Makefile`（test-cov target）
 - Modify: `uv.lock`
 
-- [ ] **Step 1: 加 pytest-cov 依赖**
+- [x] **Step 1: 加 pytest-cov 依赖**
 
 `pyproject.toml` dev 列表追加 `"pytest-cov>=6.0",`，然后 `uv lock && uv sync --all-extras`
 
-- [ ] **Step 2: Makefile 新增 target（`test:` 块后）**
+- [x] **Step 2: Makefile 新增 target（`test:` 块后）**
 
 ```makefile
 # 带覆盖率的测试（CI 用；本地看行覆盖明细可加 --cov-report=html）
@@ -1311,12 +1311,12 @@ test-cov:
 	uv run pytest tests/ --cov --cov-report=term --cov-report=xml -q
 ```
 
-- [ ] **Step 3: 本地验证覆盖率可跑**
+- [x] **Step 3: 本地验证覆盖率可跑**
 
 Run: `make test-cov`
 Expected: 全量通过 + 末尾输出 `TOTAL ... NN%` + 生成 `coverage.xml`（已在 .gitignore）
 
-- [ ] **Step 4: ci.yml 的 Unit tests 步骤改为带覆盖率**
+- [x] **Step 4: ci.yml 的 Unit tests 步骤改为带覆盖率**
 
 将：
 
@@ -1343,7 +1343,7 @@ Expected: 全量通过 + 末尾输出 `TOTAL ... NN%` + 生成 `coverage.xml`（
 
 > 不接 codecov 外部服务（仓库刚公开，先用 GitHub job summary 零依赖呈现；未来有需要再接 codecov 换徽章）。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 make lint
@@ -1361,7 +1361,7 @@ git commit -m "ci: produce coverage report in CI job summary"
 - Create: `docs/plan/ecosystem-positioning.md`
 - Modify: `docs/README.md`（plan 索引区补一行）
 
-- [ ] **Step 1: 创建 `docs/plan/ecosystem-positioning.md`**
+- [x] **Step 1: 创建 `docs/plan/ecosystem-positioning.md`**
 
 内容骨架（执行者按此结构写，事实只取自 `.upgrade/research/benchmarking-20260716/` 的实际数据与本计划调研结论，**数字要与 JSON 快照一致**）：
 
@@ -1385,13 +1385,13 @@ SynthBoard.ai（商业 SaaS，多智能体顾问团式 AI Pre-Mortem）——本
 （对标四项目 README 标配元素的差距核对表——徽章/文档站/社区渠道/引用规范，标注本项目已补齐项与主动不做项）
 ```
 
-- [ ] **Step 2: `docs/README.md` 的 plan 索引区追加**
+- [x] **Step 2: `docs/README.md` 的 plan 索引区追加**
 
 ```markdown
 | [plan/ecosystem-positioning.md](plan/ecosystem-positioning.md) | 生态定位与竞品分析（2026-07 对标快照） |
 ```
 
-- [ ] **Step 3: 校验 + 提交**
+- [x] **Step 3: 校验 + 提交**
 
 ```bash
 make doc-check
@@ -1408,7 +1408,7 @@ git commit -m "docs: add ecosystem positioning and competitive analysis"
 - Modify: `CHANGELOG.md`
 - Modify: `.upgrade/STATE.md`
 
-- [ ] **Step 1: bump 版本**
+- [x] **Step 1: bump 版本**
 
 `core/version.py`：`APP_VERSION = "1.3.0"`、`REPORT_SCHEMA_VERSION = "1.3.0"`、`PACKAGE_STAGE = "v1.3.0"`
 `pyproject.toml`：`version = "1.3.0"`
@@ -1416,15 +1416,15 @@ git commit -m "docs: add ecosystem positioning and competitive analysis"
 Run: `make version-check`
 Expected: `Version metadata OK: 1.3.0`
 
-- [ ] **Step 2: CHANGELOG.md 顶部（追溯说明之后）插入 v1.3.0 条目**
+- [x] **Step 2: CHANGELOG.md 顶部（追溯说明之后）插入 v1.3.0 条目**
 
 按既有条目风格撰写，必须涵盖：包名统一 ai-workflow-premortem + hatchling 可安装化；治理文件补齐（CODE_OF_CONDUCT 2.1 / GOVERNANCE / CODEOWNERS / issue config / SECURITY 渠道定稿）；README 门面改造 + README.en.md；mypy 渐进式引入（宽松基线 + core.gates/graph 收紧 + CI non-blocking）；T3.6 LLM Judge 落地（两 flag 默认 off、风险分层 autofinal、测试数）；合规映射 2026-07-17 复核落账（ISO/IEC 42005 对齐、roadmap §10.7）；CI 覆盖率产出；公开前检查清单。**测试数以实际 `make test` 输出为准填写。**
 
-- [ ] **Step 3: 更新 `.upgrade/STATE.md`**
+- [x] **Step 3: 更新 `.upgrade/STATE.md`**
 
 Current Phase 改为"正式项目升级（formal-project-uplift）完成，v1.3.0"；Last Completed 顶部追加本次条目；"待维护者手动操作"更新为 Task 15 报告中的公开后动作清单指针。
 
-- [ ] **Step 4: 终验**
+- [x] **Step 4: 终验**
 
 ```bash
 make lint && make typecheck && make version-check && make doc-check && make test && make e2e-mock
@@ -1432,7 +1432,7 @@ make lint && make typecheck && make version-check && make doc-check && make test
 
 Expected: 全部通过。任何失败先修复再继续。
 
-- [ ] **Step 5: 提交 + 打 tag**
+- [x] **Step 5: 提交 + 打 tag**
 
 ```bash
 git add core/version.py pyproject.toml CHANGELOG.md .upgrade/STATE.md

@@ -53,7 +53,7 @@ Before cleanup, classify each file as one of:
 
 | File | Status | Lifecycle | Notes |
 |---|---|---|---|
-| `.upgrade/STATE.md` | active | permanent | 当前升级状态（Phase 0-4 全部完成；formal-project-uplift Wave A–C 已完成，目标 v1.3.0） |
+| `.upgrade/STATE.md` | active | permanent | 当前升级状态（Phase 0-4 全部完成；formal-project-uplift Wave A–E 全部完成，v1.3.0 已发布待公开） |
 | `.upgrade/MANIFEST.md` | active | permanent | 本文件 |
 | `.upgrade/decisions/RELEASE_CLEANUP.md` | active | permanent | v1.0 发布前组件清理决策记录（移除/归档了哪些组件及原因），moved from project root 2026-07-13 |
 | `.upgrade/decisions/branch-protection.md` | active | permanent | Phase 4 T4.2 main 分支保护策略决策（GitHub 后台手动操作步骤） |
@@ -72,6 +72,8 @@ Before cleanup, classify each file as one of:
 | `.upgrade/plans/2026-07-17-wave-b-mypy-implementation.md` | active | permanent | Wave B mypy 渐进式类型检查实施计划（B1–B6 分片，inspect_ai 模式宽松档 + core.gates/graph 近 strict） |
 | `.upgrade/plans/2026-07-17-wave-c-llm-judge-implementation.md` | active | permanent | Wave C T3.6 LLM Judge 实施计划（C1–C4，含 18 条探索基线与两处对父计划的记录性偏差决策） |
 | `.upgrade/plans/2026-07-17-wave-d-compliance-refresh-implementation.md` | active | permanent | Wave D 合规映射复核落账实施计划（D1–D3，含 17 条探索基线与三处对父计划的记录性偏差决策：ISO 附录编号 §6 / TC260 [信源说明] 措辞修正 / §10.7 插入尾注前） |
+| `.upgrade/reports/pre-publication-checklist-20260717.md` | active | keep-until-superseded | Wave E 公开前安全扫描报告（三项检查通过 + 已知良性命中判定留档 + 公开后 10 步人工动作清单 + CI 门槛转正评估结论） |
+| `.upgrade/plans/2026-07-17-wave-e-publication-ci-implementation.md` | active | permanent | Wave E 公开前检查与 CI/发布收尾实施计划（E1–E4 + 附录 E5，含 20 条探索基线与六处对父计划的记录性偏差决策） |
 
 ## Moved from Project
 

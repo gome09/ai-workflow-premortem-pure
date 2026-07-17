@@ -788,9 +788,9 @@ def _finding(ctx, *, stage_id, risk_type, severity, location, description, recom
 
 ### T2.6 标准动态跟踪（持续任务，无终点）
 
-**改动文件**：`.upgrade/logs/standard-tracking-2026-07-14.md`（新建初始跟踪记录）
+**改动文件**：`.upgrade/reports/standard-tracking-2026-07-14.md`（新建初始跟踪记录；原位于 `.upgrade/logs/`，2026-07-17 移入 `reports/` 纳入版本控制）
 
-本任务无代码改动，仅在 `.upgrade/logs/` 留跟踪记录。初始记录内容：
+本任务无代码改动，仅留跟踪记录。初始记录内容：
 
 ```markdown
 # 标准动态跟踪记录
@@ -930,7 +930,7 @@ Wave 5（全部完成后收尾）：
 - [ ] **（新增）** `.upgrade/STATE.md` 更新为 Phase 2 complete
 - [ ] **（新增）** `CHANGELOG.md` 追加新版本条目
 - [ ] **（新增）** `core/version.py` / `pyproject.toml` / `README.md` 版本号 bump，打 git tag
-- [ ] **（新增）** `.upgrade/logs/standard-tracking-2026-07-14.md` 初始跟踪记录存在
+- [ ] **（新增）** `.upgrade/reports/standard-tracking-2026-07-14.md` 初始跟踪记录存在（原 `logs/` 路径，2026-07-17 移入 `reports/`）
 
 ---
 

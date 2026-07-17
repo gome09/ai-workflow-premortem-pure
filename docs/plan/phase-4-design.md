@@ -15,7 +15,7 @@
 
 | # | spec/计划基线 | 2026-07-14 实测补充 |
 |---|---|---|
-| 1 | **Scorecard 基线待阶段 0 实测** | ✅ **已完成**。`.upgrade/reports/scorecard-baseline-20260713.md` 已存档（本地 10/18 项可评估 + 远端 Actions 全量 18 项）。关键短板：Vulnerabilities 0 分（33 个传递性漏洞）、Branch-Protection 0 分、Signed-Releases 0 分、CII-Badge 0 分。Phase 1 已落地 ruff `S` 规则 + pip-audit + CodeQL workflow，Vulnerabilities 与 SAST 项预期已改善 |
+| 1 | **Scorecard 基线待阶段 0 实测** | ✅ **已完成**。`.upgrade/archive/scorecard-baseline-20260713.md` 已存档（原 `reports/`，2026-07-17 归档）（本地 10/18 项可评估 + 远端 Actions 全量 18 项）。关键短板：Vulnerabilities 0 分（33 个传递性漏洞）、Branch-Protection 0 分、Signed-Releases 0 分、CII-Badge 0 分。Phase 1 已落地 ruff `S` 规则 + pip-audit + CodeQL workflow，Vulnerabilities 与 SAST 项预期已改善 |
 | 2 | **CONTRIBUTING.md 将由阶段 0 产出初版** | ✅ **已完成**。根目录 `CONTRIBUTING.md` 46 行，覆盖开发环境搭建、提交前检查（lint/test/version-check）、分支与 commit 约定、测试约定、PR 流程。**缺口**：无响应节奏承诺（T4.5 补充） |
 | 3 | **spec §8 称"分支保护需 GitHub 后台设置"** | 确认。这是 GitHub 后台操作，**无法通过代码入库实现**。T4.2 的落地形态是：(a) 在 `.upgrade/decisions/` 记录配置决策与操作清单；(b) 在 `CONTRIBUTING.md` 声明分支保护策略让贡献者知情；(c) 实际开启需维护者登录 GitHub 后台手动操作（本设计给出精确步骤） |
 | 4 | **docs/spec/stage3-risk-adaptive-gate.md 悬空引用** | 确认。line 119 指向 `../archive/verification-reports/risk_adaptive_gate_final_validation.md`，目标文件在仓库中不存在（`.upgrade/MANIFEST.md` 已记录为既有问题）。T4.1 修复对象 |
@@ -425,7 +425,7 @@ labels: enhancement
 
 #### 2.3.1 现状
 
-机制已就位：`.github/workflows/scorecard.yml`（weekly cron 周一 06:00 UTC + 手动触发），基线报告 `.upgrade/reports/scorecard-baseline-20260713.md` 已存档。
+机制已就位：`.github/workflows/scorecard.yml`（weekly cron 周一 06:00 UTC + 手动触发），基线报告 `.upgrade/archive/scorecard-baseline-20260713.md` 已存档（原 `reports/`，2026-07-17 归档）。
 
 #### 2.3.2 本阶段动作
 

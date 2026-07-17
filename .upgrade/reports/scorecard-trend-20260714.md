@@ -2,7 +2,7 @@
 
 > 仓库：gome09/ai-workflow-premortem-pure
 > 报告日期：2026-07-14
-> 基线对照：[scorecard-baseline-20260713.md](scorecard-baseline-20260713.md)（2026-07-13）
+> 基线对照：[../archive/scorecard-baseline-20260713.md](../archive/scorecard-baseline-20260713.md)（2026-07-13，已归档）
 > 扫描机制：`.github/workflows/scorecard.yml`（weekly cron + 手动触发）
 > 用途：Phase 4 T4.3 验收——记录跨阶段分数趋势
 
@@ -106,7 +106,7 @@
 
 ## 附录
 
-- 基线报告：[scorecard-baseline-20260713.md](scorecard-baseline-20260713.md)
+- 基线报告：[../archive/scorecard-baseline-20260713.md](../archive/scorecard-baseline-20260713.md)（已归档）
 - 分支保护决策：[../decisions/branch-protection.md](../decisions/branch-protection.md)
 - doc-check 悬空引用决策：[../decisions/doc-check-stage3-dangling-ref.md](../decisions/doc-check-stage3-dangling-ref.md)
 - GitHub Actions 历史运行：https://github.com/gome09/ai-workflow-premortem-pure/actions/runs/29261154816

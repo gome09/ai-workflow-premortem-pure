@@ -41,8 +41,19 @@
 |------|------|
 | [plan/improvement-roadmap.md](plan/improvement-roadmap.md) | 分阶段改进路线图：合规映射（中国监管+国际标准）、企业内部工具标准、开源社区工程健康度对照；第 10 节为 2026-07-13 外部标准复核增补 |
 | [plan/phase-0-repo-governance.md](plan/phase-0-repo-governance.md) | 阶段 0 实施计划：仓库治理最小闭环（LICENSE / SECURITY / CI 权限 / Dependabot / Scorecard 基线） |
+| [plan/phase-0-design.md](plan/phase-0-design.md) | 阶段 0 详细设计方案（实施计划的探索核实与任务拆解） |
 | [plan/phase-1-security-compliance.md](plan/phase-1-security-compliance.md) | 阶段 1 实施计划：安全与合规硬缺口修复（数据分级 / 加密 / PIA / AI 标识 / SAST） |
+| [plan/phase-1-design.md](plan/phase-1-design.md) | 阶段 1 详细设计方案 |
 | [plan/phase-2-risk-taxonomy.md](plan/phase-2-risk-taxonomy.md) | 阶段 2 实施计划：AI 风险分类体系补强（LLM05/07/10 / ASI 2026 / NIST 动作项 / TC260 映射） |
+| [plan/phase-2-design.md](plan/phase-2-design.md) | 阶段 2 详细设计方案 |
 | [plan/phase-3-governance-platform.md](plan/phase-3-governance-platform.md) | 阶段 3 实施计划：组织级治理平台（规则治理 / 聚合视图 / 业务指标 / LLM Judge） |
+| [plan/phase-3-design.md](plan/phase-3-design.md) | 阶段 3 详细设计方案 |
 | [plan/phase-4-community.md](plan/phase-4-community.md) | 阶段 4 实施计划：开源社区打磨（文档一致性 CI / 分支保护 / Scorecard 爬升） |
+| [plan/phase-4-design.md](plan/phase-4-design.md) | 阶段 4 详细设计方案 |
 | [plan/ecosystem-positioning.md](plan/ecosystem-positioning.md) | 生态定位与竞品分析（2026-07 对标快照：赛道地图 / SynthBoard 差异化 / 门面对标结论） |
+
+## archive/ — 历史存档
+
+| 文档 | 说明 |
+|------|------|
+| [archive/verification-reports/risk_adaptive_gate_final_validation.md](archive/verification-reports/risk_adaptive_gate_final_validation.md) | 风险自适应门禁最终验证报告存档（stage3 spec 引用补档，见 Phase 4 T4.1） |

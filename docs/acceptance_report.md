@@ -7,11 +7,22 @@
 | 测试类型 | 本地离线全流程 E2E 测试 |
 | 测试环境 | SQLite + Mock LLM（无需真实 LLM，无需 Docker） |
 | 会话 ID | `91e799e4-15d1-4af3-baa9-79a8be890eb5` |
-| 测试时间 | 2026-07-14T15:20:00 - 2026-07-14T15:20:18 |
+| 测试时间 | 2026-07-14T15:20:00 - 2026-07-14T15:20:18（v1.2.1 全流程 E2E 实测） |
 | 测试结果 | ✅ PASS |
-| 当前版本 | v1.2.1（含 Phase 1 安全合规 + Phase 2 风险分类 + Phase 3 治理平台 + Phase 4 社区打磨） |
+| 当前版本 | v1.3.0（含 Phase 1 安全合规 + Phase 2 风险分类 + Phase 3 治理平台 + Phase 4 社区打磨 + formal-project-uplift Wave A–E；四阶段 E2E 会话实测于 v1.2.1，v1.3.0 回归验证见下节） |
 | 前端验证 | ✅ Streamlit 工作台正常渲染，JWT 自动登录，无控制台错误，无失败网络请求 |
 | 后端监控 | ✅ 全部 HTTP 200 OK，无 WARNING / ERROR / Exception |
+
+## v1.3.0 回归验证（2026-07-17）
+
+v1.3.0（formal-project-uplift Wave A–E）在 v1.2.1 基础上的变更均不改动四阶段工作流执行路径：治理门面文件（CODE_OF_CONDUCT / GOVERNANCE / CODEOWNERS）、mypy 渐进式类型检查（153 源文件 0 issue）、T3.6 LLM Judge（`EVAL_LLM_JUDGE` / `EVAL_LLM_JUDGE_AUTOFINAL` 双 flag，默认全关）、合规映射 2026-07-17 复核落账（ISO/IEC 42005 对标 + roadmap §10.7）、公开前安全扫描与 CI 覆盖率产出（doc-check 转 blocking）。
+
+| 验证项 | 结果 |
+|------|------|
+| 全量测试（Mock + SQLite 离线） | ✅ 650 passed, 1 skipped（2026-07-17 实测，含 LLM Judge 新增 8 条） |
+| e2e-mock 场景验收 | ✅ 63 passed（2026-07-17 实测） |
+| 版本一致性 | ✅ `core/version.py` = `pyproject.toml` = 1.3.0，git tag `v1.3.0` |
+| 四阶段全流程 E2E 会话 | 沿用 2026-07-14 v1.2.1 实测快照（见下节；v1.3.0 无工作流行为变更，新增能力均在默认关闭 flag 之后） |
 
 ## 问题修复记录
 
@@ -100,7 +111,7 @@
 
 | 验证项 | 结果 |
 |------|------|
-| 后端 /health | ✅ 200 OK，version=1.2.1，mode=single_step |
+| 后端 /health | ✅ 200 OK，version=1.2.1（实测当时版本），mode=single_step |
 | 后端 /health/live | ✅ 200 OK |
 | 前端 Streamlit 页面 | ✅ 200 OK，正常渲染欢迎页 |
 | 前端 JWT 自动登录 | ✅ demo 用户注册/登录成功，access_token 写入 session_state |
@@ -140,7 +151,8 @@
 
 ---
 
-*报告生成时间: 2026-07-14T15:20:18*
-*报告架构版本: 1.2.1*
+*报告生成时间: 2026-07-14T15:20:18（四阶段 E2E 实测，v1.2.1）*
+*报告最近更新: 2026-07-17（v1.3.0 回归验证段追加，报告架构版本同步 1.3.0）*
+*报告架构版本: 1.3.0*
 *历史修复版本: v1.0.1 / v1.0.2（证据门控与红队覆盖门控联通）*
-*复测覆盖: Phase 1 安全合规 + Phase 2 风险分类 + Phase 3 治理平台 + Phase 4 社区打磨*
+*复测覆盖: Phase 1 安全合规 + Phase 2 风险分类 + Phase 3 治理平台 + Phase 4 社区打磨 + formal-project-uplift Wave A–E（v1.3.0）*

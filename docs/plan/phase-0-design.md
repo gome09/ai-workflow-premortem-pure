@@ -15,7 +15,7 @@
 |---|---|---|
 | Git tag | ❌ 无 | `git tag --list` 为空，确认。本地 `main` 最近 5 次提交均为 docs/chore 类，HEAD = `e7404ad` |
 | 远程仓库 | 未提及 | `origin = git@github.com:gome09/ai-workflow-premortem-pure.git`，**已推送 GitHub**，T0.7 Scorecard CLI 具备执行前提（需确认仓库是否 public） |
-| `.upgrade/reports/` | 未提及 | **已存在**（含 `release_manifest_v1.0.md`），T0.7 基线报告目标路径 `.upgrade/reports/scorecard-baseline-20260713.md` 无需新建目录 |
+| `.upgrade/reports/` | 未提及 | **已存在**（含 `release_manifest_v1.0.md`），T0.7 基线报告目标路径 `.upgrade/archive/scorecard-baseline-20260713.md`（原 `reports/`，2026-07-17 归档）无需新建目录 |
 | CHANGELOG 版本覆盖 | 描述为「v0.1 / v0.5」 | 实际已含 `v1.0 (2026-06-10)` / `v1.0.2` / `v1.0.1` / `v0.5` / `v0.1`；T0.6 追溯说明需覆盖 v0.1–v0.7 早期「无 commit 证据」缺口，而非仅 v0.1/v0.5 |
 | **版本元数据一致性（关键）** | 未识别 | ⚠️ `CHANGELOG.md` 最新 = `v1.0.2`，但 [core/version.py](../../core/version.py) `APP_VERSION="1.0.0"` / `PACKAGE_STAGE="v1.0.0"` 与 [pyproject.toml](../../pyproject.toml) `version="1.0.0"` 均为 1.0.0；[scripts/version_check.py](../../scripts/version_check.py) 只校验 version.py↔pyproject.toml 一致（当前均 1.0.0 → 通过），**不校验 CHANGELOG**；README 首屏版本声明 `v1.0`。三方漂移 |
 
@@ -260,7 +260,7 @@ scorecard --repo=gome09/ai-workflow-premortem-pure \
   > .upgrade/reports/scorecard-baseline-20260713.html
 ```
 
-**存档产物**：`.upgrade/reports/scorecard-baseline-20260713.md`（人工整理的 18 项逐项分数 + 总分 + 人工确认项），原始 JSON/HTML 作为附件。
+**存档产物**：`.upgrade/archive/scorecard-baseline-20260713.md`（人工整理的 18 项逐项分数 + 总分 + 人工确认项；原位于 `reports/`，2026-07-17 归档），原始 JSON/HTML 作为附件。
 
 **人工确认项**（本地无法检测，需登录 GitHub 后台记录进基线报告）：
 - main 分支是否开启 Branch Protection（required status checks）

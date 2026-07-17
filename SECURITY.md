@@ -4,15 +4,15 @@
 
 我们高度重视本项目安全问题。如发现漏洞，请通过以下**私有**渠道报告，勿在公开 Issue 中提交漏洞细节：
 
-- **首选**：GitHub Security Advisories（仓库 Security 标签页 → Report a vulnerability）。该渠道端到端私有，支持协作修复与 CVE 申请。
-- **备选**：发送邮件至 <SECURITY_EMAIL>（待维护者填入真实邮箱），主题加前缀 `[SECURITY]`。
+- **唯一渠道**：GitHub Security Advisories（仓库 Security 标签页 → Report a vulnerability）。该渠道端到端私有，支持协作修复与 CVE 申请。
+- 本项目不提供邮箱报告渠道；如无法使用 GitHub 私密报告，可开一个**不含漏洞细节**的公开 Issue 请求维护者联系。
 
 ## 支持的版本范围
 
 | 版本 | 是否支持 |
 |---|---|
-| v1.0.x | ✅ |
-| < v1.0 | ❌ |
+| 最新 minor（当前 v1.3.x） | ✅ |
+| 更早版本 | ❌（请升级到最新版） |
 
 ## 响应承诺
 

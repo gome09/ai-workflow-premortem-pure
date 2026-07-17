@@ -4,6 +4,19 @@
 > 远程 `origin`（github.com/gome09/ai-workflow-premortem-pure）保有 2026-05-31 起的完整提交历史（21 次提交），如需追溯请查阅远程分支。
 > 其中 v0.1（2026-05-01）/ v0.5（2026-05-20）的日期早于可见最早 commit（2026-05-31），为里程碑回溯记录，非逐次提交日志。
 
+## v1.3.0 (2026-07-17)
+- **正式个人项目升级（formal-project-uplift，Wave A–E）**：从"毕设闭环"提升为可对外公开的正式开源项目
+  - **包名统一与可安装化（Wave A）**：`pyproject.toml` 包名 `ai-workflow-tool` → `ai-workflow-premortem`，补 license/authors/classifiers/urls 元数据 + hatchling build backend，`uv pip install -e .` 可用（发 PyPI 前需 src-layout 重构，主动不做）
+  - **治理文件补齐（Wave A）**：CODE_OF_CONDUCT.md（Contributor Covenant 2.1）/ GOVERNANCE.md（单一维护者 BDFL）/ .github/CODEOWNERS / ISSUE_TEMPLATE config.yml（禁空白 issue + 安全报告导流）；SECURITY.md 报告渠道定稿（仅 GitHub 私密报告，支持版本表对齐 v1.3.x）
+  - **README 门面改造（Wave A）**：徽章（CI/License/Python/Scorecard）+ origin story + 生态定位表 + 新增 README.en.md 英文门面
+  - **mypy 渐进式类型检查（Wave B）**：inspect_ai 模式——全局宽松基线 108→0 + core.gates/graph 近 strict 13→0，`make typecheck` target + CI non-blocking 接入；修复一处真实 bug（不存在的 note= 关键字，latent TypeError）
+  - **T3.6 LLM Judge（Wave C）**：`EVAL_LLM_JUDGE` / `EVAL_LLM_JUDGE_AUTOFINAL` 两 flag 默认 off；LLM 仅建议判分不终裁，HIGH/CRITICAL 会话永远待人工；`core/eval_llm_judge.py` + mock fixture + eval_runner 风险分层门控；spec governance-platform §5 翻转 Implemented
+  - **合规映射 2026-07-17 复核落账（Wave D）**：ISO/IEC 42005:2025（AI 系统影响评估）对标说明入 iso42001-mapping.md 第 6 节；roadmap §10.7 复核增补（EU AI Act Omnibus 公报编号待回填 / TC260 二手来源限定 / NIST [存疑] 维持 / 两个国内新法规锚点）；三个 taxonomy docstring 盖二次复核戳
+  - **公开前检查与 CI 增强（Wave E）**：全历史敏感信息扫描通过（仅演示凭据/模板占位良性命中，报告 `.upgrade/reports/pre-publication-checklist-20260717.md`）；CI 覆盖率产出（pytest-cov + `make test-cov` + job summary）；doc-check 转强制（mypy 维持 non-blocking 待远端首轮观察）；生态定位与竞品分析文档 `docs/plan/ecosystem-positioning.md`
+- **新增测试**：tests/test_llm_judge_v130.py 8 条（Wave C）
+- **测试验证**：650 passed, 1 skipped（全量，mock+SQLite）；lint/format/typecheck/doc-check/version-check 全绿；e2e-mock 63 passed
+- **实施计划**：`.upgrade/plans/2026-07-17-formal-project-uplift.md`（父计划）+ Wave A–E 五份实施方案
+
 ## 维护记录 (2026-07-16)
 - **纳入零依赖单文件 Demo**：新增 `ai_workflow_premortem_demo.html`（165KB 自包含离线可交互 Demo，数据取自真实四阶段实跑快照，`LLM_MODE=mock` / `STORAGE_BACKEND=sqlite` / `WORKFLOW_EXECUTION_MODE=single_step`），与既有 `trae_ai_risk_premortem_submission.html` 并列纳入版本控制；README「答辩演示模式」新增「零依赖单文件 Demo」小节登记两份 HTML
 - **`.upgrade` 工作区整理**：`MANIFEST.md` File Inventory 补齐遗漏条目 `decisions/doc-alignment-and-frontend-polish.md`（此前已提交但未登记）；`STATE.md` 同步维护记录

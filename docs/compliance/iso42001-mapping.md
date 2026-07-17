@@ -83,7 +83,7 @@
 | 缺口 | 说明 | 来源 |
 |------|------|------|
 | 系统停用/退役阶段 | 本项目四阶段工作流无"停用"环节，模型/系统退役时的数据清理与交接无对应能力 | TC260 智能体部署指引"停用"阶段（阶段 2 T2.4 已记录） |
-| LLM Judge 自动化评估 | T3.6 设计完成但默认未启用（flag off），校准闭环未形成 | spec §5，待企业需求确认 |
+| LLM Judge 自动化评估 | T3.6 已于 v1.3.0 实现（`core/eval_llm_judge.py`，flag 默认关）；校准闭环机制就位（human_calibrations 聚合），真实一致率数据待生产启用后累计 | spec §5，测试 `tests/test_llm_judge_v130.py` |
 | 跨租户集团视图 | 组织=tenant 边界，跨租户聚合不开放（安全边界非待开发） | spec §2 |
 | 第三方供应链风险 | 供应链安全文档已存档但未集成到门禁 | `docs/spec/supply-chain-security.md` |
 
@@ -97,7 +97,7 @@
 | 这条门禁规则谁定的、改过几次、为什么 | 规则 manifest + git 历史 + changelog | `core/gates/rules/manifest.py` RULE_MANIFEST |
 | 这份评估报告当时依据什么规则版本 | 报告内嵌 rule_versions | `core/gates/report.py` RuleDetail.rule_version |
 | 高风险项目是否经过专家复核 | expert_review 动作记录 + 审计事件 | `core/gates/rules/expert_review.py` + AuditEvent |
-| 自动化判分是否可信、如何校准 | human_calibrations 一致率指标（T3.6 启用后） | `core/eval_judge.py`（待启用） |
+| 自动化判分是否可信、如何校准 | human_calibrations 一致率指标（T3.6 已实现，flag 默认关，启用后累计） | `core/eval_llm_judge.py` + `core/eval_judge.py` |
 | 门禁通过率趋势如何 | `/governance/gate-trends` | `gate_evaluation_records` 表 |
 | 哪些规则被禁用、何时禁用 | `/health` gate_rules_disabled + 评估记录标注 | `api/main.py` health() + gate_evaluation_records.rule_versions |
 

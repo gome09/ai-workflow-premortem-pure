@@ -53,7 +53,7 @@ Before cleanup, classify each file as one of:
 
 | File | Status | Lifecycle | Notes |
 |---|---|---|---|
-| `.upgrade/STATE.md` | active | permanent | 当前升级状态（Phase 0-4 全部完成，v1.2.1） |
+| `.upgrade/STATE.md` | active | permanent | 当前升级状态（Phase 0-4 全部完成；formal-project-uplift Wave A–C 已完成，目标 v1.3.0） |
 | `.upgrade/MANIFEST.md` | active | permanent | 本文件 |
 | `.upgrade/decisions/RELEASE_CLEANUP.md` | active | permanent | v1.0 发布前组件清理决策记录（移除/归档了哪些组件及原因），moved from project root 2026-07-13 |
 | `.upgrade/decisions/branch-protection.md` | active | permanent | Phase 4 T4.2 main 分支保护策略决策（GitHub 后台手动操作步骤） |
@@ -65,9 +65,12 @@ Before cleanup, classify each file as one of:
 | `.upgrade/reports/scorecard-trend-20260714.md` | active | keep-until-superseded | Phase 4 T4.3 Scorecard 趋势报告（基线对照 + 18 项预期变化） |
 | `.upgrade/reports/nist-ai-600-1-action-summary.md` | active | keep-until-superseded | Phase 2 T2.2 NIST AI 600-1 动作项映射摘要（4 项标存疑） |
 | `.upgrade/reports/tc260-agent-deployment-summary.md` | active | keep-until-superseded | Phase 2 T2.4 TC260 智能体部署使用安全指引映射摘要 |
+| `.upgrade/reports/mypy-baseline-20260717.md` | active | keep-until-superseded | Wave B mypy 基线报告（宽松档 108 → 0 清零记录；raw 干跑输出在 `.upgrade/tmp/`，gitignored 仅本地留存） |
 | `.upgrade/research/benchmarking-20260716/` | active | keep-until-superseded | 对标调研原始数据快照（deepeval / guardrails-ai / inspect_ai / NeMo-Guardrails 的 GitHub repo/releases/tags API 采集 + README 快照，采集日 2026-07-16），供开源门面对齐与竞品定位分析引用 |
 | `.upgrade/plans/2026-07-17-formal-project-uplift.md` | active | permanent | 正式项目升级主计划（Wave A–E，Task 0–19，目标 v1.3.0） |
 | `.upgrade/plans/2026-07-17-wave-a-implementation.md` | active | permanent | Wave A 具体实施计划（探索核实修正版：A5/A6 顺序对调、MANIFEST 表格格式、README 锚点） |
+| `.upgrade/plans/2026-07-17-wave-b-mypy-implementation.md` | active | permanent | Wave B mypy 渐进式类型检查实施计划（B1–B6 分片，inspect_ai 模式宽松档 + core.gates/graph 近 strict） |
+| `.upgrade/plans/2026-07-17-wave-c-llm-judge-implementation.md` | active | permanent | Wave C T3.6 LLM Judge 实施计划（C1–C4，含 18 条探索基线与两处对父计划的记录性偏差决策） |
 
 ## Moved from Project
 

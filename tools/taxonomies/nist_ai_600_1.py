@@ -17,6 +17,9 @@ Web 核对结论（2026-07-14，主源 https://www.nist.gov/itl/ai-risk-manageme
   - MS-2.5-005  子类别 MS-2.5 存在，-005 后缀 [存疑，待人工核对]
   - MS-2.5-003  子类别 MS-2.5 存在，-003 后缀 [存疑，待人工核对]
   - MS-2.11-001 子类别 MS-2.11 存在，-001 后缀 [存疑，待人工核对]
+
+二次复核：2026-07-17——联网仍未获官方原文；MS-2.10-002 连存在性都未证实，
+全部 [存疑] 标注维持。唯一解决路径：人工直连 nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf 第 3 节逐字核对。
 """
 
 from __future__ import annotations

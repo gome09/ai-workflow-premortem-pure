@@ -8,6 +8,9 @@
 
 核对日期：2026-07-14（通过 WebFetch 抓取 genai.owasp.org 及两个交叉来源核对）。
 
+二次复核：2026-07-17（WebSearch 多源交叉，ASI01–ASI10 名称与本表一致，无需改动；
+官方 PDF 逐字定名仍待人工核对 ASI03/04/08 措辞变体）。
+
 ASI01-ASI10 编号与名称对应表（已核对，两来源一致）：
     ASI01  Agent Goal Hijack                    智能体目标劫持
     ASI02  Tool Misuse and Exploitation         工具滥用与利用

@@ -30,10 +30,8 @@ A guided four-stage analysis pipeline with risk-adaptive gates and mandatory hum
 ## Quick start (offline demo, no API key)
 
 ```bash
-cp .env.example .env
-# uncomment in .env: LLM_MODE=mock, STORAGE_BACKEND=sqlite, DEFAULT_SCENARIO_ID=generic_rag_demo
 uv sync --all-extras
-make demo-api   # backend on :8000
+make demo-api   # backend on :8000 (auto-provisions .env from .env.demo: mock LLM + SQLite)
 make demo-ui    # Streamlit frontend on :8501
 ```
 

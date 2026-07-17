@@ -9,6 +9,7 @@
 | [lite-mode.md](lite-mode.md) | SQLite 轻量模式 |
 | [demo-scenarios.md](demo-scenarios.md) | 内置场景机制说明 |
 | [acceptance_report.md](acceptance_report.md) | 四阶段全流程 E2E 测试验收报告 |
+| [../README.en.md](../README.en.md) | English project overview |
 
 ## spec/ — 系统设计与规格文档
 

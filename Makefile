@@ -1,6 +1,6 @@
 # Makefile（本地开发快捷命令）
 
-.PHONY: install clean dev-db dev-api dev-frontend dev docker-up docker-down lint typecheck test setup setup-win prod-up prod-down prod-logs demo-api demo-frontend demo-ui lite-up e2e-mock e2e-full-test version-check doc-check audit security-check
+.PHONY: install clean dev-db dev-api dev-frontend dev docker-up docker-down lint typecheck test test-cov setup setup-win prod-up prod-down prod-logs demo-api demo-frontend demo-ui lite-up e2e-mock e2e-full-test version-check doc-check audit security-check
 
 # 安装依赖
 install:
@@ -76,6 +76,10 @@ doc-check:
 # 运行测试
 test:
 	uv run pytest tests/ -v
+
+# 带覆盖率的测试（CI 用；本地看行覆盖明细可加 --cov-report=html）
+test-cov:
+	uv run pytest tests/ --cov --cov-report=term --cov-report=xml -q
 
 # ── 答辩验收 ────────────────────────────────────────────────────────────────
 

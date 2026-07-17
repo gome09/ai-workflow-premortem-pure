@@ -40,18 +40,22 @@ jobs:
         run: make typecheck
         continue-on-error: true   # 观察一轮后转强制
 
-      - name: Doc consistency check (non-blocking)
+      - name: Doc consistency check
         run: make doc-check
-        continue-on-error: true   # 初期观察，存量坏链清零后转强制
 
       - name: Dependency vulnerability audit (non-blocking)
         run: uv run pip-audit --strict
         continue-on-error: true   # 先告警不阻断，观察一轮后再评估升级
 
-      - name: Unit tests (sqlite + mock)
+      - name: Unit tests with coverage (sqlite + mock)
         run: |
           cp -f .env.demo .env
-          uv run pytest tests/ -v
+          make test-cov
+
+      - name: Coverage summary to job summary
+        if: always()
+        run: |
+          uv run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY" || true
 
   docker-lite-integration:
     runs-on: ubuntu-latest

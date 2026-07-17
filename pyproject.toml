@@ -50,6 +50,7 @@ dev = [
     "ruff>=0.8.0",
     "pip-audit>=2.7.0",  # T1.8 依赖漏洞审计
     "mypy>=1.14,<3",  # 基线在 2.3.0 测得；major 升级需重新核对基线
+    "pytest-cov>=6.0",  # CI 覆盖率产出（Wave E Task 16）
 ]
 
 [project.urls]

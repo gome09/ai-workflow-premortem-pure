@@ -58,9 +58,13 @@ uv run streamlit run frontend/app.py --server.port 8501
 当前仓库的 `docker-compose.yml` 使用 Docker secrets，而不是把这些敏感值直接写进 `.env`。
 
 ```bash
-make setup    # 自动生成 .env（从 .env.example）、secrets/（从 secrets.example/）与 TLS 证书
-make prod-up
+make setup    # 自动生成 .env、secrets/（jwt/postgres/redis/grafana 四个密钥随机生成并同步 .env）与 TLS 证书
+make prod-up  # 启动前自动做前置检查（secrets/ 六文件 + 证书存在性；示例占位值仅警告）
 ```
+
+说明：
+- `make setup` 会调用 `scripts/gen_secrets.sh`：`jwt_secret` / `postgres_password` / `redis_password` / `grafana_password` 用 `openssl rand -hex 32` 随机生成，并把 `.env` 中对应的 `CHANGE_ME` 占位行同步为相同值（`.env` 值会遮蔽容器内 `/run/secrets`，两处必须一致）；`deepseek_api_key` / `tavily_api_key` 无法生成，保留占位文件，`LLM_MODE=real` 时需手动填入真实值。
+- `make prod-up` 前置检查失败（缺 secrets 文件或证书）会直接报错并提示先跑 `make setup`，不会进入晦涩的 compose 挂载错误。
 
 若只需开发证书而不做完整 setup：
 

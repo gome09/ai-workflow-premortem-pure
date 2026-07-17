@@ -76,22 +76,19 @@ make setup
 该命令会：
 - 若 `.env` 不存在，从 `.env.example` 复制
 - 若 `secrets/` 不存在，从 `secrets.example/` 复制
+- 调用 `scripts/gen_secrets.sh`：随机生成 `jwt_secret` / `postgres_password` / `redis_password` / `grafana_password`（`openssl rand -hex 32`），并把 `.env` 中对应 `CHANGE_ME` 占位行同步为相同值
 - 签发开发用 TLS 证书
 
-然后编辑以下文件填入真实值：
+然后仅在 `LLM_MODE=real` 时需要编辑以下文件填入真实值（mock 模式可跳过）：
 - `secrets/deepseek_api_key`
 - `secrets/tavily_api_key`
-- `secrets/jwt_secret`
-- `secrets/postgres_password`
-- `secrets/redis_password`
-- `secrets/grafana_password`
 
 > **注意：** `secrets/` 目录不进入版本控制（已在 `.gitignore` 中排除），提交包中不包含任何真实密钥。
 
 启动服务：
 
 ```bash
-make prod-up
+make prod-up   # 前置检查（secrets/ 六文件 + TLS 证书存在性）通过后启动；缺失时报错提示先跑 make setup
 curl -k https://localhost/api/health/live
 ```
 

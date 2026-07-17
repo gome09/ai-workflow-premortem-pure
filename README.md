@@ -124,10 +124,10 @@ make lite-up
 #### Docker Full（PostgreSQL + Redis + 真实 LLM）
 
 ```bash
-# 生成 .env（从 .env.example）与 secrets/（从 secrets.example/），并签发 TLS 证书
+# 生成 .env 与 secrets/（jwt/postgres/redis/grafana 密钥自动随机化并同步 .env），签发 TLS 证书
 make setup
-# 编辑 secrets/ 中的 API Key
-make prod-up
+# LLM_MODE=real 时编辑 secrets/deepseek_api_key、secrets/tavily_api_key 填入真实 API Key
+make prod-up   # 启动前自动检查 secrets/ 与证书是否就绪
 curl -k https://localhost/api/health/live
 ```
 

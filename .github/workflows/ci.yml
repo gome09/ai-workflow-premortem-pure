@@ -94,3 +94,57 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose -f docker-compose.lite.yml down -v
+
+  # 完整生产栈集成（postgres/redis/api/frontend/nginx/prometheus/grafana）。
+  # mock LLM + 随机生成 secrets + 自签 TLS，经 nginx HTTPS 反代验证真实存储链路。
+  # 观察期 non-blocking（与 mypy 同策略）：远端稳定数轮后移除 continue-on-error 转强制。
+  docker-full-integration:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Prepare env file (postgres backend, mock LLM)
+        run: |
+          cp -f .env.example .env
+          sed -i 's/^LLM_MODE=real/LLM_MODE=mock/' .env
+
+      - name: Provision secrets and TLS certs
+        run: |
+          ./scripts/gen_secrets.sh
+          ./scripts/gen_certs.sh
+
+      - name: Build and start full stack
+        run: docker compose -f docker-compose.yml up --build -d
+
+      - name: Wait for api via nginx HTTPS
+        run: |
+          timeout 240 bash -c 'until curl -ksf https://localhost/api/health/live; do sleep 3; done'
+
+      - name: Smoke test api through nginx (real postgres + redis)
+        run: |
+          curl -ksf https://localhost/api/health/live
+          curl -ksf https://localhost/api/health/ready
+          curl -ksf https://localhost/api/health
+
+      - name: Smoke test frontend through nginx
+        run: |
+          timeout 120 bash -c 'until curl -ksf -o /dev/null https://localhost/; do sleep 3; done'
+
+      - name: Verify all 7 containers are running
+        run: |
+          docker compose -f docker-compose.yml ps
+          running=$(docker compose -f docker-compose.yml ps --status running --format '{{.Service}}' | sort)
+          expected=$(printf 'api\nfrontend\ngrafana\nnginx\npostgres\nprometheus\nredis\n')
+          if [ "$running" != "$expected" ]; then
+            echo "Expected 7 running services, got:"; echo "$running"; exit 1
+          fi
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.yml down -v

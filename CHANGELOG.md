@@ -4,6 +4,13 @@
 > 远程 `origin`（github.com/gome09/ai-workflow-premortem-pure）保有 2026-05-31 起的完整提交历史（21 次提交），如需追溯请查阅远程分支。
 > 其中 v0.1（2026-05-01）/ v0.5（2026-05-20）的日期早于可见最早 commit（2026-05-31），为里程碑回溯记录，非逐次提交日志。
 
+## 维护记录 (2026-07-18)
+- **生产启动链路加固（启动审计遗留项 7–9）**：
+  - **`make setup` 密钥自动随机化**：`scripts/gen_secrets.sh` 接入 setup 流程——`jwt_secret` / `postgres_password` / `redis_password` / `grafana_password` 以 `openssl rand -hex 32` 随机生成（替换此前直接复制 `secrets.example/` 示例明文的行为），并同步 `.env` 中对应 `CHANGE_ME` 占位行为相同值（`.env` 会遮蔽容器内 `/run/secrets`，两处不一致会导致 postgres/redis 认证失败）；`DEEPSEEK_API_KEY` / `TAVILY_API_KEY` 占位行注释化，使 Docker secrets 生效。幂等：已定制的值不覆盖
+  - **`make prod-up` fail-fast 前置检查**：新增 `prod-preflight` target——secrets/ 六文件与 `nginx/certs/` 证书缺失时立即报错并提示先跑 `make setup`（替代晦涩的 compose 挂载失败）；可生成密钥仍为 `CHANGE_ME` 示例值时仅警告不阻断
+  - **生产栈 CI 集成验证**：ci.yml 新增 `docker-full-integration` job（每次 push，观察期 `continue-on-error: true`，与 mypy 同策略）——mock LLM + 随机 secrets + 自签 TLS 启动完整 7 服务栈，经 nginx HTTPS 反代验证 `/api/health/live`、`/api/health/ready`（真实 postgres+redis 连通）、前端页面，并断言 7 容器全部 running
+  - **文档同步**：README / docs/startup.md / docs/local_setup.md 的 Docker Full 段落更新 setup 新行为与 preflight 说明
+
 ## v1.3.0 (2026-07-17)
 - **正式个人项目升级（formal-project-uplift，Wave A–E）**：从"毕设闭环"提升为可对外公开的正式开源项目
   - **包名统一与可安装化（Wave A）**：`pyproject.toml` 包名 `ai-workflow-tool` → `ai-workflow-premortem`，补 license/authors/classifiers/urls 元数据 + hatchling build backend，`uv pip install -e .` 可用（发 PyPI 前需 src-layout 重构，主动不做）

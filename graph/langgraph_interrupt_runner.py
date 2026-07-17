@@ -49,7 +49,8 @@ def _langgraph_config(ctx: ProjectContext, thread_id: str | None = None) -> dict
     }
 
 
-def _load_command_type():
+def _load_command_type() -> Any:
+    # -> Any: returns LangGraph's untyped `Command` class (or None) — no stub available.
     try:
         from langgraph.types import Command
     except Exception:
@@ -88,7 +89,8 @@ def _build_checkpointer() -> Any:
             return None
 
 
-def _build_one_turn_graph():
+def _build_one_turn_graph() -> Any:
+    # -> Any: returns a compiled LangGraph object — no stub available for the compiled graph.
     """Build a one-turn graph that preserves the deterministic stage model.
 
     The graph intentionally executes at most one deterministic node per user turn
@@ -111,8 +113,10 @@ def _build_one_turn_graph():
     def route_after_dispatch(ctx: ProjectContext) -> str:
         return "review_interrupt_gate" if get_pending_blocking_interrupt(ctx) else "end"
 
-    graph.add_node("dispatch_one_step", dispatch_one_step)
-    graph.add_node("review_interrupt_gate", review_interrupt_gate)
+    # add_node overloads reject a plain ProjectContext->ProjectContext callable in langgraph's
+    # generic StateGraph typing; the node contract holds at runtime.
+    graph.add_node("dispatch_one_step", dispatch_one_step)  # type: ignore[call-overload]
+    graph.add_node("review_interrupt_gate", review_interrupt_gate)  # type: ignore[call-overload]
     graph.set_entry_point("dispatch_one_step")
     graph.add_conditional_edges(
         "dispatch_one_step",
@@ -130,7 +134,8 @@ def _build_one_turn_graph():
     return graph.compile(checkpointer=checkpointer)
 
 
-def get_one_turn_interrupt_graph():
+def get_one_turn_interrupt_graph() -> Any:
+    # -> Any: caches the compiled LangGraph object from _build_one_turn_graph() — no stub available.
     global _GRAPH_CACHE
     if _GRAPH_CACHE is None:
         _GRAPH_CACHE = _build_one_turn_graph()

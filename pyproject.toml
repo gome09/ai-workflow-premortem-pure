@@ -49,7 +49,7 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "ruff>=0.8.0",
     "pip-audit>=2.7.0",  # T1.8 依赖漏洞审计
-    "mypy>=1.14",
+    "mypy>=1.14,<3",  # 基线在 2.3.0 测得；major 升级需重新核对基线
 ]
 
 [project.urls]
@@ -125,3 +125,12 @@ ignore_missing_imports = true
 # 先只检查核心逻辑包；frontend（Streamlit 脚本风格）与 tests 暂不纳入
 files = ["core", "graph", "stages", "tools", "storage", "auth", "api"]
 exclude = ["tests/", "frontend/", "scripts/", "examples/", "alembic/"]
+
+[[tool.mypy.overrides]]
+# 门禁引擎与状态机：确定性架构主张的核心载体，近 strict
+module = ["core.gates.*", "graph.*"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_decorators = true
+warn_return_any = true
+check_untyped_defs = true

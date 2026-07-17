@@ -5,8 +5,8 @@ import logging
 from typing import Any
 
 from core.gates.rules import registered_rules
-from core.models import ProjectContext
-from core.stage_readiness_service import StageGateResult, _current_version
+from core.models import LLMTrace, ProjectContext
+from core.stage_readiness_service import StageBlocker, StageGateResult, _current_version
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ def append_gate_evaluation_trace(
     result: StageGateResult,
     rules_evaluated: list[str] | None = None,
     node_name: str = "gate_engine",
-):
+) -> LLMTrace:
     """Append an optional gate trace without changing gate semantics."""
     from core.traces import append_llm_trace, create_llm_trace
 
@@ -207,7 +207,9 @@ def evaluate_stage_gate(
     return result
 
 
-def _try_persist_gate_evaluation(ctx: ProjectContext, stage: int, blockers) -> None:
+def _try_persist_gate_evaluation(
+    ctx: ProjectContext, stage: int, blockers: list[StageBlocker]
+) -> None:
     """旁路写入 gate_evaluation_records——治理趋势数据源。
 
     失败只打日志，不抛异常（治理数据缺一行可接受，评估被卡死不可接受）。

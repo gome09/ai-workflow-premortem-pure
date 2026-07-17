@@ -67,7 +67,7 @@ requires-dist = [
     { name = "langchain-openai", specifier = ">=0.2.0" },
     { name = "langgraph", specifier = ">=0.2.0" },
     { name = "langgraph-checkpoint-postgres", specifier = ">=2.0.0" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.14" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.14,<3" },
     { name = "passlib", extras = ["bcrypt"], specifier = ">=1.7.4" },
     { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.7.0" },
     { name = "prometheus-fastapi-instrumentator", specifier = ">=7.0.0" },

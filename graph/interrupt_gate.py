@@ -14,7 +14,8 @@ from graph.interrupts import (
 )
 
 
-def _load_langgraph_interrupt():
+def _load_langgraph_interrupt() -> Any:
+    # -> Any: returns LangGraph's untyped `interrupt` callable (or None) — no stub available.
     """Lazy-load LangGraph's dynamic interrupt helper.
 
     Keeping the import lazy preserves the stable single_step path even when the

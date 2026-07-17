@@ -76,7 +76,7 @@ make setup
 该命令会：
 - 若 `.env` 不存在，从 `.env.example` 复制
 - 若 `secrets/` 不存在，从 `secrets.example/` 复制
-- 调用 `scripts/gen_secrets.sh`：随机生成 `jwt_secret` / `postgres_password` / `redis_password` / `grafana_password`（`openssl rand -hex 32`），并把 `.env` 中对应 `CHANGE_ME` 占位行同步为相同值
+- 调用 `scripts/gen_secrets.sh`：随机生成 `jwt_secret` / `postgres_password` / `redis_password` / `grafana_password`（`openssl rand -hex 32`），并把 `.env` 中 `JWT_SECRET` / `POSTGRES_PASSWORD` / `REDIS_PASSWORD` 的 `CHANGE_ME` 占位行同步为相同值（`grafana_password` 仅写 secrets 文件，Grafana 经 `GF_SECURITY_ADMIN_PASSWORD__FILE` 直接读取，不经过 `.env`）
 - 签发开发用 TLS 证书
 
 然后仅在 `LLM_MODE=real` 时需要编辑以下文件填入真实值（mock 模式可跳过）：

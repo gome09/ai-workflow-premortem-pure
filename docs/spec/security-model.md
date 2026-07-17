@@ -113,7 +113,7 @@ Nginx 配置来自：
 
 ### Data Security（数据分级 / 字段加密 / PII 掩码）
 
-Phase 1（v1.0.3，T1.1–T1.4）落地的数据安全能力，完整设计见 [data-classification-and-privacy.md](data-classification-and-privacy.md)：
+Phase 1（T1.1–T1.4，自 v1.0.3 起落地并沿用至今）的数据安全能力，完整设计见 [data-classification-and-privacy.md](data-classification-and-privacy.md)：
 
 | 能力 | 实现 | 位置 |
 |------|------|------|

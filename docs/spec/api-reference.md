@@ -37,6 +37,8 @@
 | GET | `/sessions/scenarios/{scenario_id}` | 查看单个内置场景详情 |
 | GET | `/sessions/` | 列出会话 |
 | GET | `/sessions/{session_id}` | 获取完整会话上下文 |
+| PATCH | `/sessions/{session_id}/data-classification` | 覆写会话数据分级（editor+；降级须 admin 并写审计事件） |
+| DELETE | `/sessions/{session_id}` | 删除会话（admin；审计归档保留，写 `session_purged` 处置事件） |
 | POST | `/chat/{session_id}` | 发送消息并推进一个执行回合 |
 | POST | `/sessions/{session_id}/materials` | 追加用户材料 |
 | POST | `/sessions/{session_id}/flags/resolve` | 处理需核验项 |

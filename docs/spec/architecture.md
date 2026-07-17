@@ -96,14 +96,17 @@ Human review actions are resolved through service-layer coordination rather than
 
 ```text
 FastAPI / Streamlit
--> SessionService
+-> SessionService (orchestration layer)
 -> core.oversight_service.resolve_action(...)
--> graph.transition_policy.evaluate_action_resolution(...)
--> core.execution_service.sync_execution_after_action_resolution(...)
-   -> single_step: no checkpoint mutation
-   -> langgraph_interrupt: mark interrupt resumed/cancelled and consume resume once
+   -> assert_action_resolution_allowed -> graph.transition_policy.evaluate_action_resolution(...)
+-> SessionService.after_human_resolution -> stage_advancement_coordinator
+   -> core.execution_service.sync_execution_after_action_resolution(...)
+      -> single_step: no checkpoint mutation
+      -> langgraph_interrupt: mark interrupt resumed/cancelled and consume resume once
 -> stage gate re-evaluation
 ```
+
+Note: `SessionService` is the orchestrator — `oversight_service.resolve_action` validates and resolves the action (delegating the policy check to `transition_policy`), then `SessionService` triggers execution synchronization via the stage advancement coordinator. The three modules run in the order shown, but are not chained inside `oversight_service`.
 
 Stage rerun, revise, rollback, and sync-review-actions are explicit stage operations under `core.stage_operation_service` and `api.routers.stage`.
 
@@ -116,7 +119,9 @@ Stage rerun, revise, rollback, and sync-review-actions are explicit stage operat
 - Graph, API, frontend, and reports consume the same stage readiness contract.
 - Full runtime validation is intentionally separate from dependency-light contract tests.
 
-## Key coordination points (v1.0.0)
+## Key coordination points
+
+（自 v1.0.0 确立，v1.3.0 复核仍然有效）
 
 - `core/version.py` is the version source of truth.
 - `core/stage_readiness_service.py` is the authoritative stage gate source.

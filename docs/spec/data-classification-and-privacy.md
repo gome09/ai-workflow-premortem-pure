@@ -1,7 +1,7 @@
 # 数据分类分级与隐私保护设计规格
 
-> Status: Implemented（v1.0.3 落地 T1.1–T1.9：数据分级 / 字段加密 / PII 掩码 / AI 生成标识 / PIA。落地任务见 [../plan/phase-1-security-compliance.md](../plan/phase-1-security-compliance.md)）
-> Last updated: 2026-07-14
+> Status: Implemented（自 v1.0.3 起落地 T1.1–T1.9：数据分级 / 字段加密 / PII 掩码 / AI 生成标识 / PIA，沿用至今。落地任务见 [../plan/phase-1-security-compliance.md](../plan/phase-1-security-compliance.md)）
+> Last updated: 2026-07-18
 > 合规依据：PIPL 第 28/51/55/56/57 条、DSL 第 21 条、《人工智能生成合成内容标识办法》（2025-09-01 施行）、EU AI Act Art.50 透明度义务（2026-08-02 生效）、GB/T 22239-2019 日志留存要求
 
 ---
@@ -79,7 +79,7 @@
   > 依据《人工智能生成合成内容标识办法》进行显式标识。报告内容须经人工审核确认后方可用于实际决策。
   > AI-generated outputs must be reviewed by humans before real-world use.
   ```
-- **JSON 报告**：`build_report_dict` 在**字典头部**（`schema_version` 之后）新增 `ai_generated_notice` 结构化字段（`{"zh": ..., "en": ..., "basis": "《人工智能生成合成内容标识办法》"}`）；尾部 `disclaimer` 键保留。
+- **JSON 报告**：`build_report_dict` 新增 `ai_generated_notice` 结构化字段（`{"zh": ..., "en": ..., "basis": "《人工智能生成合成内容标识办法》", "generator": ..., "generator_version": ...}`）。落地位置为字典**尾部、`disclaimer` 键之前**（`core/report_service.py`，与保留的 `disclaimer` 相邻聚合；设计初稿曾拟放在头部 `schema_version` 之后，落地时调整）；首键仍为 `schema_version`。
 - **隐式标识**：JSON 本身即文件元数据载体，`ai_generated_notice` + `generated_at` + `schema_version` 组合已满足"文件元数据标注"精神；Markdown 在文首 HTML 注释中附 `<!-- ai-generated: true; generator: ai-workflow-premortem vX.Y.Z -->`。
 - 时点提示：EU AI Act 透明度义务 2026-08-02 生效（Digital Omnibus 未推迟该项）——本项目不强制适用，但导出报告若流转出企业，此标识是低成本对齐。
 

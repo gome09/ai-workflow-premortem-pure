@@ -1,12 +1,14 @@
 # 风险分类体系升级设计规格
 
 > Status: Implemented（v1.1.0 落地 T2.1–T2.6；LLM08 依赖 RAG 组件，明确缓办。落地任务见 [../plan/phase-2-risk-taxonomy.md](../plan/phase-2-risk-taxonomy.md)）
-> Last updated: 2026-07-14
+> Last updated: 2026-07-18
 > 对标依据：OWASP LLM Top 10 2025 (v2.0)、OWASP Top 10 for Agentic Applications 2026 (ASI)、NIST-AI-600-1 Generative AI Profile、TC260《智能体部署使用安全指引》（2026-07 发布）
+>
+> **阅读提示**：本文为设计规格，§1 是**设计当时（2026-07-13）的历史快照**，其中列出的缺口已随 v1.1.0 全部补齐（LLM08 除外，见 §3.5）；§3–§7 的"新增/目标形态"描述均已落地，落点见各节补注。
 
 ---
 
-## 1. 现状架构（已核实）
+## 1. 落地前现状架构（历史快照，2026-07-13 核实）
 
 当前存在**两条独立机制**，本规格分别升级、不合并（保持确定性架构原则）：
 
@@ -18,18 +20,18 @@ stages/base.py:scan_stage_io / core/session_service.py:scan_user_materials 等
   → SafetyFinding.taxonomy_refs / control_refs（list[str]）
   → core/gates/rules/safety_finding.py（门禁消费）
 ```
-- `tools/taxonomies/` 下所有标准文件（`internal.py` / `owasp_llm_2025.py` / `nist_ai_rmf.py` / `microsoft_agent_failure_modes.py`）均为**纯 dict 标签表**，唯一含逻辑的是 `mapper.py`。
-- `SafetyFinding.risk_type` 为 7 值 Literal 枚举（`core/models.py:417-425`）。
-- `medical_ai_clinical.py` / `university_ai_edu.py` 领域扩展标签**仅被测试调用**（`mapper.py:refs_for_risk_type_extended`），生产链路未接入。
+- `tools/taxonomies/` 下所有标准文件（`internal.py` / `owasp_llm_2025.py` / `nist_ai_rmf.py` / `microsoft_agent_failure_modes.py`）均为**纯 dict 标签表**，唯一含逻辑的是 `mapper.py`。（该契约保持至今；落地后新增 `nist_ai_600_1.py` / `owasp_agentic_2026.py` / `tc260_agent_deployment.py` 同样为纯 dict）
+- `SafetyFinding.risk_type` 为 7 值 Literal 枚举（当时 `core/models.py:417-425`）。→ 落地后已扩展为 10 值（现 `core/models.py:420-431`，§3.1）。
+- `medical_ai_clinical.py` / `university_ai_edu.py` 领域扩展标签**仅被测试调用**（`mapper.py:refs_for_risk_type_extended`），生产链路未接入。→ 落地后已接入（`mapper.py:apply_taxonomy_to_safety_finding` 的 domain 参数，§7）。
 
 **(B) 项目风险分级链**——`core/gates/risk_profile.py:classify_project_risk` 纯关键词匹配输出 LOW/MEDIUM/HIGH/CRITICAL，决定门禁 blocking 集合；文件头自带 FIXME"关键词匹配太粗糙"。
 
-已知缺口（对照 2026-07-13 外部核实结果）：
-1. OWASP LLM Top 10 2025 覆盖 6/10，缺 LLM05/07/08/10。
-2. NIST 映射只到 GOVERN/MAP/MEASURE/MANAGE 四个大类字母，无具体动作项。
-3. **OWASP 2026 年新发布 Agentic Applications Top 10（ASI01-ASI10）完全未覆盖**——本项目是 LangGraph Agent 工作流平台，这是最直接适用的新标准。
-4. TC260《智能体部署使用安全指引》（2026-07 正式发布，评估/准备/部署/使用/停用五阶段）未映射。
-5. slowapi 限流基础设施（`api/limiter.py`：注册 5/hour、登录 10/minute、阶段推进 20/hour、消息 30/hour）与风险分类体系脱节，无 Unbounded Consumption 风险类型。
+已知缺口（对照 2026-07-13 外部核实结果；**以下缺口均已在 v1.1.0 落地补齐**，见各条括注）：
+1. OWASP LLM Top 10 2025 覆盖 6/10，缺 LLM05/07/08/10。→ 已补 LLM05/07/10（`owasp_llm_2025.py`），LLM08 缓办（§3.5）。
+2. NIST 映射只到 GOVERN/MAP/MEASURE/MANAGE 四个大类字母，无具体动作项。→ 已建 `tools/taxonomies/nist_ai_600_1.py` 动作项表（§4）。
+3. **OWASP 2026 年新发布 Agentic Applications Top 10（ASI01-ASI10）完全未覆盖**——本项目是 LangGraph Agent 工作流平台，这是最直接适用的新标准。→ 已建 `tools/taxonomies/owasp_agentic_2026.py`（§5）。
+4. TC260《智能体部署使用安全指引》（2026-07 正式发布，评估/准备/部署/使用/停用五阶段）未映射。→ 已建 `tools/taxonomies/tc260_agent_deployment.py`（§6）。
+5. slowapi 限流基础设施（`api/limiter.py`：注册 5/hour、登录 10/minute、阶段推进 20/hour、消息 30/hour）与风险分类体系脱节，无 Unbounded Consumption 风险类型。→ 已补 `unbounded_consumption` risk_type 与会话级用量计数（§3.4）。
 
 ## 2. 设计原则
 
@@ -112,6 +114,12 @@ NIST_GAI_ACTION_DESCRIPTIONS = { "MS-2.7-008": {"zh": "...", "source": "NIST AI 
 - risk_type 侧同样给出映射（`over_autonomy` → ASI03 等）。
 - 该文件与 `owasp_llm_2025.py` 并列，`mapper.py` 聚合顺序追加。
 - 上表为设计初稿，**落地第一步是通读 genai.owasp.org 的 ASI 正式定义后逐条复核**，映射不确定的条目宁缺毋滥。
+
+**落地复核补注（2026-07-14 核对，2026-07-17 二次复核）**：上表已按官方定义逐条复核落地于 `tools/taxonomies/owasp_agentic_2026.py`，与初稿的差异如下——
+- 初稿曾拟将 `unbounded_consumption` 映射到 ASI07；经核对 ASI07 实为 "Insecure Inter-Agent Communication"（并非 Resource Abuse），**该映射错误，已按"宁缺毋滥"原则删除**。ASI08 "Cascading Failures" 语义上更相关，留待后续评估，当前 `ASI_RISK_REFS` 不含 `unbounded_consumption`。
+- `evaluator_gaming` → ASI10 保留但标注 [存疑]，其余映射标注 [已复核]。
+- `secret_exfiltration` / `fake_citation` / `unsupported_claim` 无直接 ASI 对应，不强行映射（分别更贴近 LLM02 / LLM09）。
+- 最终 `ASI_RISK_REFS` 仅含 4 个 risk_type（prompt_injection / over_autonomy / system_prompt_leakage / policy_gap），详见该文件头部说明。
 
 ## 6. TC260《智能体部署使用安全指引》映射设计
 

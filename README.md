@@ -1,9 +1,17 @@
-# AI 工作流预验尸与人机监督平台
+# AI Workflow Premortem — AI 工作流预验尸与人机监督平台
 
-> 本科毕业设计项目 · 计算机科学与技术专业
+[![CI](https://github.com/gome09/ai-workflow-premortem-pure/actions/workflows/ci.yml/badge.svg)](https://github.com/gome09/ai-workflow-premortem-pure/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/gome09/ai-workflow-premortem-pure/badge)](https://scorecard.dev/viewer/?uri=github.com/gome09/ai-workflow-premortem-pure)
 
-**版本：** v1.2.1
-**协议：** Apache-2.0
+[English](README.en.md) | 简体中文
+
+> 在 AI 系统上线之前，系统性地回答一个问题：**它会在哪里失败？**
+
+2026 年上半年，AI agent 删除生产数据库、越权转移资金等事故屡见报端——共同根因不是模型能力不足，而是**可预见的失败模式在部署前从未被系统性测试过**。本项目将软件工程的预验尸（Pre-mortem）方法论应用于 AI 项目立项阶段：四阶段引导式分析（失败模式识别 → 人机协同工作流设计 → 压力测试 → 触发策略），配合风险自适应门禁（LOW/MEDIUM/HIGH/CRITICAL）与强制人工审核，让高风险 AI 项目在完成充分评估之前无法推进。
+
+**版本：** v1.2.1 · **协议：** Apache-2.0 · 源于本科毕业设计，现作为长期维护的开源项目演进
 
 ---
 
@@ -27,6 +35,14 @@
 | Stage 2 | 人机协同工作流设计 | 明确哪些决策需要人工审核，设计监督节点 |
 | Stage 3 | Zero-Shot 压力测试生成 | 自动生成 EvalCase，评估模型在边界场景下的行为 |
 | Stage 4 | 触发策略与部署建议 | 给出部署时机、触发方式和监控策略 |
+
+### 生态定位
+
+| 相邻项目 | 定位 | 与本项目的关系 |
+|---|---|---|
+| [deepeval](https://github.com/confident-ai/deepeval) / [inspect_ai](https://github.com/UKGovernmentBEIS/inspect_ai) | LLM 评估框架（运行时/回归） | 互补：本项目的 EvalCase 是"事前生成的假设检验"，可导出到评估框架持续回归 |
+| [guardrails-ai](https://github.com/guardrails-ai/guardrails) / [NeMo-Guardrails](https://github.com/NVIDIA-NeMo/Guardrails) | 运行时护栏 | 互补：预验尸预测出的失败模式，可落地为运行时护栏的具体校验器 |
+| 对话式 AI 顾问团类产品 | 事前风险头脑风暴 | 差异：本项目工作流状态转换是**确定性代码控制**的，LLM 只生成分析内容不决定流程；门禁判定、人工审核、审计记录均为一等公民数据 |
 
 ### 核心创新：风险自适应阶段门禁
 

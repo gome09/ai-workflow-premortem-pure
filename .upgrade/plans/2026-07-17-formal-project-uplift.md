@@ -486,7 +486,7 @@ Expected: doc-check 0 违规
 - Modify: `Makefile`（新增 `typecheck` target）
 - Modify: `uv.lock`
 
-- [ ] **Step 1: 添加 dev 依赖**
+- [x] **Step 1: 添加 dev 依赖**
 
 在 `pyproject.toml` 的 `[project.optional-dependencies] dev` 列表中追加：
 
@@ -494,7 +494,7 @@ Expected: doc-check 0 违规
     "mypy>=1.14",
 ```
 
-- [ ] **Step 2: 在 `pyproject.toml` 末尾添加 `[tool.mypy]` 配置**
+- [x] **Step 2: 在 `pyproject.toml` 末尾添加 `[tool.mypy]` 配置**
 
 ```toml
 [tool.mypy]
@@ -512,7 +512,7 @@ files = ["core", "graph", "stages", "tools", "storage", "auth", "api"]
 exclude = ["tests/", "frontend/", "scripts/", "examples/", "alembic/"]
 ```
 
-- [ ] **Step 3: 同步依赖并首跑，记录基线错误数**
+- [x] **Step 3: 同步依赖并首跑，记录基线错误数**
 
 ```bash
 uv lock && uv sync --all-extras
@@ -521,7 +521,7 @@ uv run mypy 2>&1 | tail -5
 
 Expected: 输出 `Found N errors in M files` 或 `Success`。**将 N 记录到 `.upgrade/reports/mypy-baseline-20260717.md`**（一行即可：日期、mypy 版本、宽松档错误数、错误 top 分类）。
 
-- [ ] **Step 4: 修复宽松档报错至零**
+- [x] **Step 4: 修复宽松档报错至零**
 
 宽松档下常见错误类别及处理原则：
 - `assignment` / `arg-type` 真类型错误 → 修代码（这是引入 mypy 的价值所在，逐个看）
@@ -539,7 +539,7 @@ disable_error_code = ["<code>"]
 Run: `uv run mypy`
 Expected: `Success: no issues found`
 
-- [ ] **Step 5: Makefile 新增 target（加在 `lint:` 块之后）**
+- [x] **Step 5: Makefile 新增 target（加在 `lint:` 块之后）**
 
 ```makefile
 # mypy 类型检查（全局宽松 + core/graph 收紧，配置见 pyproject.toml）
@@ -547,7 +547,7 @@ typecheck:
 	uv run mypy
 ```
 
-- [ ] **Step 6: 回归 + 提交**
+- [x] **Step 6: 回归 + 提交**
 
 ```bash
 make lint && make typecheck && make test
@@ -567,7 +567,7 @@ git commit -m "chore: introduce mypy with lenient global baseline (inspect_ai-st
 - Modify: `pyproject.toml`（overrides）
 - Modify: `.github/workflows/ci.yml`
 
-- [ ] **Step 1: 在 `[tool.mypy]` 配置块之后追加 overrides**
+- [x] **Step 1: 在 `[tool.mypy]` 配置块之后追加 overrides**
 
 ```toml
 [[tool.mypy.overrides]]
@@ -580,7 +580,7 @@ warn_return_any = true
 check_untyped_defs = true
 ```
 
-- [ ] **Step 2: 跑 mypy 并补注解至零错误**
+- [x] **Step 2: 跑 mypy 并补注解至零错误**
 
 Run: `uv run mypy`
 
@@ -590,7 +590,7 @@ Run: `uv run mypy`
 
 Expected: `Success: no issues found`
 
-- [ ] **Step 3: CI 接入（非阻断观察期，与 doc-check 同模式）**
+- [x] **Step 3: CI 接入（非阻断观察期，与 doc-check 同模式）**
 
 在 `.github/workflows/ci.yml` 的 `Lint` 步骤后插入：
 
@@ -600,7 +600,7 @@ Expected: `Success: no issues found`
         continue-on-error: true   # 观察一轮后转强制
 ```
 
-- [ ] **Step 4: 回归 + 提交**
+- [x] **Step 4: 回归 + 提交**
 
 ```bash
 make lint && make typecheck && make test && make doc-check

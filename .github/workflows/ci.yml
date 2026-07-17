@@ -36,6 +36,10 @@ jobs:
       - name: Lint
         run: make lint
 
+      - name: Type check (non-blocking)
+        run: make typecheck
+        continue-on-error: true   # 观察一轮后转强制
+
       - name: Doc consistency check (non-blocking)
         run: make doc-check
         continue-on-error: true   # 初期观察，存量坏链清零后转强制

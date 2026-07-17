@@ -2,14 +2,15 @@
 
 ## Current Phase
 
-Phase 4 — **代码侧全部完成** (T4.1 / T4.2 文档 / T4.3 / T4.5；T4.4 明确不承诺)。Phase 3 全部完成 (T3.1–T3.5, T3.7；T3.6 可选未启用)。Phase 2 全部完成 (T2.1–T2.6)。Phase 1 全部完成 (T1.1–T1.9)。正式项目升级（formal-project-uplift，计划 `.upgrade/plans/2026-07-17-formal-project-uplift.md`）进行中——Wave A（门面与治理文件，Task 0–6）已完成；Wave B–E 待执行。
+Phase 4 — **代码侧全部完成** (T4.1 / T4.2 文档 / T4.3 / T4.5；T4.4 明确不承诺)。Phase 3 全部完成 (T3.1–T3.5, T3.7；T3.6 可选未启用)。Phase 2 全部完成 (T2.1–T2.6)。Phase 1 全部完成 (T1.1–T1.9)。正式项目升级（formal-project-uplift，计划 `.upgrade/plans/2026-07-17-formal-project-uplift.md`）进行中——Wave A（门面与治理文件，Task 0–6）与 Wave B（mypy 渐进式类型检查，Task 7–8）已完成；下一步 Wave C（T3.6 LLM Judge，Task 9–12），Wave D–E 待执行。
 
 ## Current Task
 
-**计划执行中**：`.upgrade/plans/2026-07-17-formal-project-uplift.md`（正式个人项目升级：门面治理文件 / mypy 渐进式类型检查 / T3.6 LLM Judge 落地 / 合规映射 2026-07-17 复核落账 / 公开前检查，目标版本 v1.3.0，Task 0–19）。**Wave A（门面与治理文件，Task 0–6）已完成**，下一步 Wave B–E。此前遗留：GitHub 后台开启 main 分支保护（步骤见 `.upgrade/decisions/branch-protection.md`，已并入新计划 Task 15 公开后动作清单）。
+**计划执行中**：`.upgrade/plans/2026-07-17-formal-project-uplift.md`（正式个人项目升级：门面治理文件 / mypy 渐进式类型检查 / T3.6 LLM Judge 落地 / 合规映射 2026-07-17 复核落账 / 公开前检查，目标版本 v1.3.0，Task 0–19）。**Wave A（门面与治理文件，Task 0–6）与 Wave B（mypy 渐进式类型检查，Task 7–8）已完成**，下一步 Wave C（T3.6 LLM Judge，Task 9–12）。此前遗留：GitHub 后台开启 main 分支保护（步骤见 `.upgrade/decisions/branch-protection.md`，已并入新计划 Task 15 公开后动作清单）。
 
 ## Last Completed
 
+- **Wave B mypy 渐进式类型检查 (2026-07-17)** — mypy 引入与全量清零：宽松档基线 108→0（inspect_ai 模式，files 限 7 核心包，排除 tests/frontend/scripts/examples/alembic），core.gates/graph 近 strict 13→0，`uv run mypy` = `Success: no issues found in 153 source files`。新增 `make typecheck` target + CI `Type check (non-blocking)` 接入 ci.yml（观察期，转正评估归 Wave E Task 16）。防漂移版本钉子：mypy>=1.14,<3、langgraph>=1.1,<2。修复含一处真实 bug（create_redteam_dataset/create_dataset_from_failed_traces 的不存在 note= 关键字，latent TypeError）+ SourceType 单一定义化。分片提交 B1–B6（873e256/57aec07/6a1fe93/cbc1193/d8ba8b4/0f64dd8 + 本收尾）。实施计划：`.upgrade/plans/2026-07-17-wave-b-mypy-implementation.md`；基线报告：`.upgrade/reports/mypy-baseline-20260717.md`。
 - **Wave A 门面与治理文件 (2026-07-17)** — 对标调研快照归档至 `.upgrade/research/benchmarking-20260716/`；包名统一 `ai-workflow-premortem` + hatchling 可安装化（`uv pip install -e .` 验证通过）；SECURITY.md 报告渠道定稿（仅 GitHub 私密报告）；新增 CODE_OF_CONDUCT.md（Contributor Covenant 2.1）/ GOVERNANCE.md（BDFL）/ .github/CODEOWNERS / issue config.yml；README 门面改造（徽章 + origin story + 生态定位）+ README.en.md。实施计划：`.upgrade/plans/2026-07-17-wave-a-implementation.md`。
 - **文档同步 + `.upgrade` 整理 (2026-07-16)** — 记录此前未纳入版本控制的单文件 Demo `ai_workflow_premortem_demo.html`（165KB 自包含离线可交互 Demo，真实四阶段实跑快照，`LLM_MODE=mock`/`STORAGE_BACKEND=sqlite`/`WORKFLOW_EXECUTION_MODE=single_step`），README「答辩演示模式」新增「零依赖单文件 Demo」小节登记两份 HTML；CHANGELOG 追加 2026-07-16 维护记录；`.upgrade/MANIFEST.md` File Inventory 补齐遗漏条目 `decisions/doc-alignment-and-frontend-polish.md`（此前已提交但未登记）。最小审查：version 1.2.1 一致 / ruff clean / doc-check 通过
 - **GitHub CI 离线全流程验证 (2026-07-15)** — 远端 `.github/workflows/ci.yml` 实测两个 job 全绿：`lint-and-unit-tests`（ruff + doc-check[non-blocking] + pip-audit[non-blocking] + `.env.demo` mock+SQLite 全量 pytest）与 `docker-lite-integration`（`docker-compose.lite.yml` 构建 + API `/health/live`+`/health` + 前端 8501 smoke test）。全程离线无真实 LLM（`LLM_MODE=mock`）/无外部 DB（`STORAGE_BACKEND=sqlite`）。CI run #13 conclusion=success。附带修复：`tests/test_taxonomy_owasp_agentic_2026.py` 两处 docstring `\d` 改 raw string 消除 SyntaxWarning。本地验证：ruff clean / 615 passed,8 skipped / version 1.2.1

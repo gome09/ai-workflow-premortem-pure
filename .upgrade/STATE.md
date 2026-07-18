@@ -97,7 +97,7 @@ Phase 4 开源社区打磨代码侧全部完成。核心成果：
 | 趋势报告 | `.upgrade/reports/scorecard-trend-20260714.md` | ✅ |
 
 ### 测试验证
-- 全量测试：642 passed, 1 skipped（回归确认无破坏）
+- 全量测试：650 passed, 1 skipped（回归确认无破坏）
 - e2e-mock：63 passed
 - lint + format：clean
 - doc-check：0 处违规（脚本新增跳过围栏代码块 + 修复真实坏链 + 消除行内误报）
@@ -120,5 +120,5 @@ Phase 4 开源社区打磨代码侧全部完成。核心成果：
 ## Last Updated
 
 - Date: 2026-07-18
-- By: claude-code (四种启动方式全流程 E2E 测试)
-- Summary: 四种启动方式（离线演示 / Docker Lite / 混合开发临时端口 / 生产栈自建 secrets）全部冷启动实测 PASS，API 冒烟 + Playwright UI 驱动 + 后台日志监控三管齐下；发现并修复 6 处缺陷（注册限流 401 / secrets CRLF / alembic 多 worker 竞态 / 治理总览不可达 / interrupt_adapter_status 缺失 / 前端丢弃字段补展示），650 passed 回归全绿。完整报告 `.upgrade/reports/startup-methods-e2e-20260718.md`。仓库仍处于"待维护者点公开按钮"状态。
+- By: claude-code (本地 CI 复现 + 远端 GitHub CI 全绿验证)
+- Summary: 本地按 ci.yml 复现 lint/testcov/lite/full 全部通过；远端首个 run 29621280076 失败后经 5b4003f 修复 doc-check 与 secrets 权限，最终 run（29647651072 / 收尾推送后 29647756391）三 job（lint-and-unit-tests / docker-lite-integration / docker-full-integration）全 success。完整报告 `.upgrade/reports/ci-run-20260718.md`。仓库仍处于"待维护者点公开按钮"状态。

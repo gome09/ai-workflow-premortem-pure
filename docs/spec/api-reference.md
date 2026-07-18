@@ -3,6 +3,8 @@
 > 本文档按当前源码静态提取整理。
 > 当前仓库可直接识别的 HTTP 路由总数为 `84`（`api/routers/*.py` 75 条 + `auth/router.py` 5 条 + `/health*`/`/health` 3 条 + `/metrics` 1 条）。
 
+> Status: Implemented（HTTP 路由按当前源码静态提取）
+
 ---
 
 ## 健康检查 & 监控

@@ -1,5 +1,7 @@
 # Architecture
 
+> Status: Implemented
+
 This project is an AI Workflow Pre-mortem & Human Oversight Tool, not a general workflow builder.
 
 ---

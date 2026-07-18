@@ -65,7 +65,7 @@ Before cleanup, classify each file as one of:
 | `.upgrade/reports/scorecard-trend-20260714.md` | active | keep-until-superseded | Phase 4 T4.3 Scorecard 趋势报告（基线对照 + 18 项预期变化） |
 | `.upgrade/reports/nist-ai-600-1-action-summary.md` | active | keep-until-superseded | Phase 2 T2.2 NIST AI 600-1 动作项映射摘要（4 项标存疑） |
 | `.upgrade/reports/tc260-agent-deployment-summary.md` | active | keep-until-superseded | Phase 2 T2.4 TC260 智能体部署使用安全指引映射摘要 |
-| `.upgrade/reports/mypy-baseline-20260717.md` | active | keep-until-superseded | Wave B mypy 基线报告（宽松档 108 → 0 清零记录；raw 干跑输出在 `.upgrade/tmp/`，gitignored 仅本地留存） |
+| `.upgrade/reports/mypy-baseline-20260717.md` | active | keep-until-superseded | Wave B mypy 基线报告（宽松档 108 → 0 清零记录；raw 干跑输出已于 2026-07-17 清理，可由 `uv run mypy` 再生） |
 | `.upgrade/reports/standard-tracking-2026-07-14.md` | active | keep-until-superseded | 外部标准动态跟踪记录（未成年人指南 2026-08-16 截止 / TC260 / NIST / OWASP ASI），STATE.md Required Context File；2026-07-17 Mode 3 自 gitignored 的 `logs/` 移入 reports/ 纳入版本控制 |
 | `.upgrade/research/benchmarking-20260716/` | active | keep-until-superseded | 对标调研原始数据快照（deepeval / guardrails-ai / inspect_ai / NeMo-Guardrails 的 GitHub repo/releases API 采集 + README 快照；tags 快照仅 deepeval 与 inspect_ai 两家，采集日 2026-07-16），供开源门面对齐与竞品定位分析引用；2026-07-17 Mode 3 删除冗余截断副本 `readme_deepeval.md`（为 `readme_deepeval_full.md` 的前缀截断） |
 | `.upgrade/plans/2026-07-17-formal-project-uplift.md` | active | permanent | 正式项目升级主计划（Wave A–E，Task 0–19，目标 v1.3.0） |
@@ -75,7 +75,9 @@ Before cleanup, classify each file as one of:
 | `.upgrade/plans/2026-07-17-wave-d-compliance-refresh-implementation.md` | active | permanent | Wave D 合规映射复核落账实施计划（D1–D3，含 17 条探索基线与三处对父计划的记录性偏差决策：ISO 附录编号 §6 / TC260 [信源说明] 措辞修正 / §10.7 插入尾注前） |
 | `.upgrade/reports/pre-publication-checklist-20260717.md` | active | keep-until-superseded | Wave E 公开前安全扫描报告（三项检查通过 + 已知良性命中判定留档 + 公开后 10 步人工动作清单 + CI 门槛转正评估结论） |
 | `.upgrade/plans/2026-07-17-wave-e-publication-ci-implementation.md` | active | permanent | Wave E 公开前检查与 CI/发布收尾实施计划（E1–E4 + 附录 E5，含 20 条探索基线与六处对父计划的记录性偏差决策） |
+| `.upgrade/plans/2026-07-18-local-then-remote-ci-execution.md` | active | permanent | 本地→远端 CI 执行计划（Phase A 本机复现 ci.yml 三 job + Phase B gh CLI 分诊远端基线失败并修复） |
 | `.upgrade/reports/startup-methods-e2e-20260718.md` | active | keep-until-superseded | 四种启动方式全流程 E2E 测试报告（离线演示/Docker Lite/混合开发临时端口/生产栈，全部 PASS；6 缺陷修复明细 + 遗留观察项：死代码 panels 与无 UI 入口端点） |
+| `.upgrade/reports/ci-run-20260718.md` | active | keep-until-superseded | 本地+远端 CI 验证运行报告（本地复现三 job 全过 + 远端 run 29621280076 失败分诊、5b4003f 修复 doc-check/secrets 权限、最终 run 三 job 全 success） |
 | `.upgrade/archive/show.md` | archived | archive | v1.0 时期项目展示文档（毕设介绍），内容已被 README.md (v1.3.0) 取代且无任何文件引用，moved from project root 2026-07-17 |
 
 ## Moved from Project

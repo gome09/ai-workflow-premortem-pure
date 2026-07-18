@@ -2,6 +2,8 @@
 
 > **Last updated:** 2026-07-14
 
+> Status: Implemented
+
 This project has two security layers:
 
 1. **Infrastructure security**: authentication, RBAC, tenant isolation, secrets, reverse proxy, rate limiting

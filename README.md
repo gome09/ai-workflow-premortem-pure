@@ -223,7 +223,8 @@ uv run pytest tests/ -q
 ├── data/                   # SQLite 数据文件（运行时自动生成，非仓库自带）
 ├── alembic/                # 数据库迁移
 ├── tests/                  # 测试
-├── docker-compose.yml      # Docker 生产部署配置
-├── docker-compose.lite.yml # Docker 轻量演示配置
+├── docker-compose.yml          # Docker 生产部署配置
+├── docker-compose.override.yml # Docker 开发覆盖（HTTP 无 TLS、热重载、端口直连，与 yml 自动合并）
+├── docker-compose.lite.yml     # Docker 轻量演示配置
 └── Dockerfile
 ```

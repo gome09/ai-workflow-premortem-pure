@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-AI 工作流预验尸与人机监督平台（本科毕业设计项目）。借鉴软件工程"预验尸"（Pre-mortem）方法论，在 AI 项目立项阶段通过四阶段引导式分析（失败模式识别 → 人机协同工作流设计 → Zero-Shot 压力测试 → 触发策略生成），结合风险自适应门禁（LOW/MEDIUM/HIGH/CRITICAL）系统性发现 AI 系统可能的失败模式。详见 [README.md](README.md) 与 [docs/spec/architecture.md](docs/spec/architecture.md)。
+AI 工作流预验尸与人机监督平台（本科毕业设计）。借鉴软件工程"预验尸"（Pre-mortem）方法论，在 AI 项目立项阶段通过四阶段引导式分析（失败模式识别 → 人机协同工作流设计 → Zero-Shot 压力测试 → 触发策略生成），结合风险自适应门禁（LOW/MEDIUM/HIGH/CRITICAL）系统性发现失败模式。详见 [README.md](README.md) 与 [docs/spec/architecture.md](docs/spec/architecture.md)。
 
 ## 技术栈
 
@@ -13,70 +13,58 @@ FastAPI + LangGraph 状态机 + Streamlit 前端 + PostgreSQL/SQLite + Redis + J
 ## 常用命令
 
 ```bash
-# 依赖安装
-uv sync --all-extras
+uv sync --all-extras          # 依赖安装
 
-# 离线演示模式（无需 API Key / DB，推荐用于日常开发验证）
-make demo-api      # 后端，自动使用 .env.demo
-make demo-ui       # 前端
+# 离线演示模式（无需 API Key / DB，推荐日常开发验证，自动用 .env.demo）
+make demo-api                 # 后端 / make demo-ui  前端
 
-# 测试
-make test          # 全量 pytest
-make e2e-mock      # Mock 场景快速验收（~5秒）
-make e2e-full-test # 全量测试（~8秒）
+make test                     # 全量 pytest
+make e2e-mock                 # Mock 场景快速验收
+make e2e-full-test            # 全量端到端
+make lint                     # ruff check + format --check（CI 强制）
+make version-check            # 校验 pyproject.toml 与 core/version.py 对齐
 
-# Lint（ruff check + format --check，CI 强制）
-make lint
+make dev-db && make dev-api && make dev-frontend   # 本地 Postgres+Redis 全量开发
 
-# 版本一致性检查（pyproject.toml 与 core/version.py 对齐）
-make version-check
-
-# 本地 Postgres+Redis 全量开发
-make dev-db && make dev-api && make dev-frontend
-
-# Docker
-make lite-up   # SQLite + Mock，零外部依赖
-make setup && make prod-up   # 生产模式（PostgreSQL + Redis + 真实 LLM）
+make lite-up                  # Docker：SQLite + Mock，零外部依赖
+make setup && make prod-up    # Docker：生产模式（PostgreSQL + Redis + 真实 LLM）
 ```
 
 ## 架构要点
 
-- 工作流状态转换是**确定性的、代码控制的**——LLM 只负责生成分析内容，不自主决定流程跳转。
+- 工作流状态转换是**确定性的、代码控制的**——LLM 只生成分析内容，不自主决定流程跳转。
 - 高风险决策必须走人工审核（`PendingHumanAction`）。
-- Evidence / SafetyFinding / EvalCase / EvalRun / InterruptRecord / ReportArtifact 都是一等公民记录，不是附属数据。
-- 请求执行路径：`SessionService` → `core.execution_service.execute_one_turn` → `graph.runner.run_one_step`（默认稳定路径 `single_step`；`langgraph_interrupt` 为实验性路径，仅在 `WORKFLOW_EXECUTION_MODE=langgraph_interrupt` 时启用）。
+- `EvidenceSource` / `SafetyFinding` / `EvalCase` / `EvalRun` / `InterruptRecord` / `ReportArtifact` 是一等公民记录（均定义于 `core/models.py`），非附属数据。
+- 请求执行路径：`SessionService` → `core.execution_service.execute_one_turn` → `graph.runner.run_one_step`。默认稳定路径 `single_step`；`langgraph_interrupt` 为实验路径，仅 `WORKFLOW_EXECUTION_MODE=langgraph_interrupt` 时启用。
 - 人工动作解决路径：`core.oversight_service.resolve_action` → `graph.transition_policy.evaluate_action_resolution` → `core.execution_service.sync_execution_after_action_resolution` → 门禁重新评估。
-- `core/version.py` 是版本号唯一来源；`core/stage_readiness_service.py` 是阶段门禁权威判定源。
-- 完整架构图与时序图见 [docs/spec/architecture.md](docs/spec/architecture.md)。
+- 权威源：`core/version.py`（版本号唯一来源）、`core/stage_readiness_service.py`（阶段门禁判定）。
 
 ## 目录结构关键点
 
 | 目录 | 说明 |
 |---|---|
-| `api/` | FastAPI 路由入口 `api/main.py` + `api/routers/` |
+| `api/` | FastAPI 入口 `api/main.py` + `api/routers/` |
 | `auth/` | JWT 认证 + RBAC + 多租户隔离 |
-| `core/` | 核心业务服务；`core/gates/` 门禁引擎，`core/llm/` LLM 适配层（含 `mock_fixtures/`），`core/migrations/` 为 ProjectContext 数据 schema 迁移（区别于 `alembic/` 的数据库表结构迁移） |
-| `stages/` | 四阶段执行逻辑，`stages/domain_profiles/` 领域提示词配置 |
+| `core/` | 核心业务；`gates/` 门禁引擎，`llm/` 适配层（`adapters/mock_fixtures/` 含 Mock 数据），`migrations/` 为 ProjectContext schema 迁移（区别于 `alembic/` 的数据库表迁移） |
+| `stages/` | 四阶段执行逻辑，`domain_profiles/` 领域提示词 |
 | `graph/` | LangGraph 状态机 |
 | `tools/taxonomies/` | 风险分类体系（NIST AI RMF / OWASP LLM Top 10 等） |
 | `storage/backends/` | PostgreSQL / SQLite 存储实现 |
-| `scenarios/manifests/` | 可插拔 Demo 场景定义 |
+| `scenarios/manifests/` | 可插拔 Demo 场景定义（JSON） |
 | `docs/` | 项目文档，索引见 [docs/README.md](docs/README.md) |
 | `.upgrade/` | 升级工作区，见下方规则 |
 
 ## 代码规范
 
-- Ruff：`line-length = 100`，`target-version = py311`，规则集 `E,F,I,UP`（`E501` 忽略）。提交前跑 `make lint`。
-- 测试用 pytest，约定 `test_*.py` / `Test*` / `test_*`，测试目录固定在 `tests/`。
-- 测试使用内存存储与 monkeypatched LLM，不依赖外部服务；跑全量流程验证需要 Mock 模式（`.env.demo`）。
+- Ruff：`line-length=100`，`target-version=py311`，规则集 `E,F,I,UP,S`（`E501` 忽略）。提交前跑 `make lint`。
+- pytest：约定 `test_*.py` / `Test*` / `test_*`，测试目录固定 `tests/`。测试用内存存储与 monkeypatched LLM，不依赖外部服务；全量流程验证需 Mock 模式（`.env.demo`）。
 
 ## 文档维护
 
-- 修改 `docs/` 下文档后请同步检查 [docs/README.md](docs/README.md) 索引是否需要更新条目。
-- `docs/plan/improvement-roadmap.md` 是持续维护的分阶段改进路线图（合规映射/企业工程/开源社区三条坐标轴），涉及安全或合规相关改动时应参照其差距清单；其第 10 节是外部标准复核增补，与正文冲突处以第 10 节为准。
-- 路线图已展开为五份分阶段实施计划：[docs/plan/phase-0-repo-governance.md](docs/plan/phase-0-repo-governance.md) ~ [docs/plan/phase-4-community.md](docs/plan/phase-4-community.md)。**执行任一改进任务前先读对应阶段计划及其关联 spec**；任务完成后同步勾选该计划文件中的验收清单。
-- `docs/spec/` 存放系统设计与规格文档，当前**全部已实现**（architecture / api-reference / security-model / stage3-risk-adaptive-gate / supply-chain-security / data-classification-and-privacy / risk-taxonomy-engine / governance-platform，文件头 `Status:` 行标注落地版本；曾经的四份"设计态"规格已随 Phase 1–4 落地并翻转为 `Status: Implemented`）。今后新增设计态规格时用 `Status: Designed, not implemented` 标注，实现后必须更新其 Status 行。
-- `docs/plan/` 存放规划与路线图文档。外部标准动态（NIST 修订 / TC260 征求意见 / EU AI Act）有时效性，启动新阶段前按路线图第 10 节的清单重新核实。
+- 改动 `docs/` 后同步检查 [docs/README.md](docs/README.md) 索引。
+- `docs/plan/improvement-roadmap.md` 是分阶段改进路线图（合规映射 / 企业工程 / 开源社区三轴）；安全或合规改动参照其差距清单，冲突处以第 10 节（外部标准复核增补）为准。第 10 节亦是启动新阶段前重新核实外部标准动态（NIST / TC260 / EU AI Act）的清单。
+- 路线图展开为 [phase-0](docs/plan/phase-0-repo-governance.md) ~ [phase-4](docs/plan/phase-4-community.md) 五份实施计划。**执行任一改进任务前先读对应阶段计划及关联 spec**，完成后勾选该文件验收清单。
+- `docs/spec/` 存放系统设计规格，当前全部 `Status: Implemented`（architecture / api-reference / security-model / stage3-risk-adaptive-gate / supply-chain-security / data-classification-and-privacy / risk-taxonomy-engine / governance-platform）。新增设计态规格用 `Status: Designed, not implemented` 标注，实现后必须更新 Status 行。
 
 <!-- project-upgrade:start -->
 ## Upgrade Workspace Rules

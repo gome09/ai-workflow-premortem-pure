@@ -137,6 +137,11 @@ def check_file(source: Path, make_targets: set[str]) -> list[str]:
             # 通配符路径跳过（如 docs/**/*.md）
             if "*" in path_str:
                 continue
+            # 省略号占位路径跳过（如 tests/...、alembic/versions/V005_..）。
+            # Windows 会忽略路径结尾的点号使 exists() 误判为 True，Linux 则报
+            # 不存在——统一按占位符处理，两端行为一致。
+            if path_str.rstrip().endswith(".."):
+                continue
             target = REPO_ROOT / path_str
             if not target.exists():
                 violations.append(f"{rel}:{lineno} 反引号路径不存在: `{path_str}`")

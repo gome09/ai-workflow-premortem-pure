@@ -114,6 +114,10 @@ jobs:
         run: |
           ./scripts/gen_secrets.sh
           ./scripts/gen_certs.sh
+          # CI 专用：gen_secrets.sh 的 600 权限让容器内非 root 用户
+          # （api appuser / grafana）读不到挂载的 /run/secrets/*。
+          # 这些是一次性随机值，放宽为可读仅限 CI runner。
+          chmod 644 secrets/*
 
       - name: Build and start full stack
         run: docker compose -f docker-compose.yml up --build -d

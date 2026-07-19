@@ -37,7 +37,7 @@ jobs:
           scorecard --repo=gome09/ai-workflow-premortem-pure --show-details || true
 
       - name: Upload Scorecard results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: scorecard-baseline
           path: scorecard-results.json

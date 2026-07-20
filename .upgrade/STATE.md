@@ -119,6 +119,12 @@ Phase 4 开源社区打磨代码侧全部完成。核心成果：
 
 ## Last Updated
 
+- Date: 2026-07-20
+- By: claude-code (全面整理扫描 Mode 5+4+3)
+- Summary: 三路并行只读扫描（Mode 5 健康检查 / Mode 4 项目根扫描 / Mode 3 工作区审计）结论：根目录无杂散文件（两个 HTML 为已入库交付物，coverage/缓存/data 均被 .gitignore 正确覆盖，.env 未被 git 追踪）；工作区无硬错误。经用户确认执行两项整理：① 删除 `.upgrade/logs/` 全部 12 个一次性 CI 日志（~1.83MB，gitignored，分诊结论已固化于 `.upgrade/reports/ci-run-20260718.md`）；② MANIFEST.md 修补规则悬空（FINAL_REPORT.md / reviews/ 标注"尚未产出"，补 research/ 非标准目录结构说明，登记 artifacts_live_e2e.log 已删）。plans/ 整批归档与 scorecard-trend 刷新继续 defer 至仓库公开 + Task 19 闭环后。上一轮记录（2026-07-18 CI 全绿验证）见下。
+
+### 上一轮（2026-07-18）
+
 - Date: 2026-07-18
 - By: claude-code (本地 CI 复现 + 远端 GitHub CI 全绿验证)
 - Summary: 本地按 ci.yml 复现 lint/testcov/lite/full 全部通过；远端首个 run 29621280076 失败后经 5b4003f 修复 doc-check 与 secrets 权限，最终 run（29647651072 / 收尾推送后 29647756391）三 job（lint-and-unit-tests / docker-lite-integration / docker-full-integration）全 success。完整报告 `.upgrade/reports/ci-run-20260718.md`。仓库仍处于"待维护者点公开按钮"状态。

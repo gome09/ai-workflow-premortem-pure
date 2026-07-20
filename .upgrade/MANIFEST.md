@@ -7,9 +7,10 @@ Defines file lifecycle rules for `.upgrade/`. Update this file whenever files ar
 - `.upgrade/STATE.md` — current upgrade state
 - `.upgrade/MANIFEST.md` — this file
 - `.upgrade/plans/*.md` — phase/wave planning documents（本工作区以 `plans/` 承担标准结构中 `stages/` 的角色）
-- `.upgrade/reports/FINAL_REPORT.md` — final upgrade report
+- `.upgrade/reports/FINAL_REPORT.md` — final upgrade report（尚未产出：主计划 Task 19 待仓库公开后闭环，届时补齐）
 - `.upgrade/decisions/*.md` — all decision records
-- `.upgrade/reviews/*.md` — all review records
+- `.upgrade/reviews/*.md` — all review records（目录尚未创建：截至 2026-07-20 无独立评审记录，评审结论均内嵌于 plans/ 与 reports/；首次产出独立评审文件时创建该目录）
+- `.upgrade/research/**` — 调研原始数据快照（非标准目录，扩展项：承载对标调研的一次性采集数据，供 `docs/plan/ecosystem-positioning.md` 等溯源引用；标准结构无对应目录）
 
 ## Keep Until Phase Complete (Discard After)
 
@@ -94,4 +95,4 @@ Before cleanup, classify each file as one of:
 | `docs/api-reference.md` | `docs/spec/api-reference.md` | docs/ 拆分 plan/spec 子目录，API 参考文档归入 spec/ | low | 无 |
 | `release_manifest_v1.0.md` | `.upgrade/reports/release_manifest_v1.0.md` | v1.0 生产文件范围快照，属于一次性发布报告，非持续维护文档 | low (no refs found) | 2026-07-17 Mode 3 再归档至 `.upgrade/archive/` |
 | `show.md` | `.upgrade/archive/show.md` | v1.0 时期项目展示/答辩文档，与 README 大量重叠且版本号落后（v1.0 vs v1.3.0），全仓无引用，已被 README.md 取代 | low (no refs found; git mv 保留历史) | 无（2026-07-17 Mode 4 扫描归档） |
-| `artifacts_live_e2e.log` | `.upgrade/logs/artifacts_live_e2e.log` | live E2E 四阶段实跑日志（RESULT: PASS），一次性运行产物，本就被 `.gitignore` `*.log` 忽略 | low (no refs; untracked) | 无（`.upgrade/logs/` gitignored，仅本地留存） |
+| `artifacts_live_e2e.log` | `.upgrade/logs/artifacts_live_e2e.log` | live E2E 四阶段实跑日志（RESULT: PASS），一次性运行产物，本就被 `.gitignore` `*.log` 忽略 | low (no refs; untracked) | 2026-07-20 Mode 3 清理已删除（结论早已固化进后续 E2E 报告） |

@@ -4,6 +4,14 @@
 > 远程 `origin`（github.com/gome09/ai-workflow-premortem-pure）保有 2026-05-31 起的完整提交历史（21 次提交），如需追溯请查阅远程分支。
 > 其中 v0.1（2026-05-01）/ v0.5（2026-05-20）的日期早于可见最早 commit（2026-05-31），为里程碑回溯记录，非逐次提交日志。
 
+## 维护记录 (2026-07-20)
+- **本地 CI 复现 + 远端 GitHub CI 三 job 全绿**（计划 `.upgrade/plans/2026-07-18-local-then-remote-ci-execution.md`，报告 `.upgrade/reports/ci-run-20260718.md`）：
+  - **Phase A 本机复现**：按 ci.yml 逐步复现 lint/typecheck/doc-check/version-check/pip-audit/test-cov（650 passed, 1 skipped，覆盖率 69%）+ docker lite 冒烟 + docker full 7 容器 TLS 断言，全部通过
+  - **Phase B 远端分诊修复（commit 5b4003f）**：①`scripts/doc_consistency_check.py` 规则 3 跳过 `..` 结尾省略号占位路径——Windows 忽略路径尾点号使本地 `exists()` 误判通过、Linux 报 9 处违规的平台差异；②ci.yml docker-full job 生成 secrets 后 `chmod 644`——runner 属主 600 权限致容器内非 root 用户读不到（仅限 CI 一次性随机值）。修复后 run 29647651072 三 job 全 success，`docker-full-integration` 观察期首次转绿
+- **README 目录树补 `docker-compose.override.yml`**（Docker 开发覆盖配置，此前树中缺项）
+- **`.upgrade` 工作区整理（Mode 3/4/5）**：三路只读扫描确认根目录无杂散文件、工作区无硬错误；删除 `logs/` 12 个一次性 CI 日志（gitignored，分诊结论已固化于 ci-run 报告）；MANIFEST 修补规则悬空（FINAL_REPORT/reviews 标注"尚未产出"、补 research/ 目录说明）；`docs/spec/` 补齐缺失 Status 行
+- **最小审查**：version 1.3.0 一致；ruff lint/format clean；doc-check 0 违规
+
 ## 维护记录 (2026-07-18)
 - **四种启动方式全流程 E2E 测试 + 6 缺陷修复**：
   - **测试范围**：离线演示（uv+mock+SQLite）/ Docker Lite（2 容器）/ 混合开发（容器 DB 临时端口 15432/16379 + 本机应用）/ 生产栈（7 容器 + nginx TLS + Prometheus/Grafana），全部冷启动实测 PASS。方法：API 冒烟 + Playwright 浏览器驱动真实 UI 交互（方式1 双路径走满四阶段至 complete，四阶段 gate-report 全 passed）+ 后台日志监控；Docker 构建 `--no-cache` 防旧镜像污染。完整报告：`.upgrade/reports/startup-methods-e2e-20260718.md`

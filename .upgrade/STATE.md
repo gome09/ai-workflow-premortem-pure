@@ -120,8 +120,14 @@ Phase 4 开源社区打磨代码侧全部完成。核心成果：
 ## Last Updated
 
 - Date: 2026-07-20
+- By: claude-code (记录同步复核 Mode 3 复检 + CHANGELOG 补账)
+- Summary: 三路并行只读复核（.upgrade 记录完整性 / 项目级 md 与验收报告时效性 / Mode 3 清理复检）。结论：① .upgrade 完整性 5 项检查全一致（MANIFEST↔磁盘↔git 追踪 35 文件逐一对应、STATE 无悬空引用、近 5 commit 均已落账、traces 最旧仅 3 天）；② Mode 3 复检无需清理（38 个受控文件全 keep，tmp/logs 已空，总 ~621KB；三处指向已删 gitignored 临时产物的内联路径均属既定取舍/自带免责标注，登记为观察项不动作）；③ 唯一实质缺口为 CHANGELOG 未覆盖最近 5 个 commit——已补「维护记录 (2026-07-20)」条目（CI 全绿验证 + 5b4003f 修复明细 + README tree 补项 + 工作区整理 + spec Status 行）。观察项（不动作）：README.en.md 无显式版本行与目录树（英文精简门面设计取舍）；acceptance_report 未收 07-18 CI 运维事件（版本级快照定位，属正常范围）。上一轮记录（2026-07-20 上午 Mode 5+4+3 扫描）见下。
+
+### 上一轮（2026-07-20 上午）
+
+- Date: 2026-07-20
 - By: claude-code (全面整理扫描 Mode 5+4+3)
-- Summary: 三路并行只读扫描（Mode 5 健康检查 / Mode 4 项目根扫描 / Mode 3 工作区审计）结论：根目录无杂散文件（两个 HTML 为已入库交付物，coverage/缓存/data 均被 .gitignore 正确覆盖，.env 未被 git 追踪）；工作区无硬错误。经用户确认执行两项整理：① 删除 `.upgrade/logs/` 全部 12 个一次性 CI 日志（~1.83MB，gitignored，分诊结论已固化于 `.upgrade/reports/ci-run-20260718.md`）；② MANIFEST.md 修补规则悬空（FINAL_REPORT.md / reviews/ 标注"尚未产出"，补 research/ 非标准目录结构说明，登记 artifacts_live_e2e.log 已删）。plans/ 整批归档与 scorecard-trend 刷新继续 defer 至仓库公开 + Task 19 闭环后。上一轮记录（2026-07-18 CI 全绿验证）见下。
+- Summary: 三路并行只读扫描（Mode 5 健康检查 / Mode 4 项目根扫描 / Mode 3 工作区审计）结论：根目录无杂散文件（两个 HTML 为已入库交付物，coverage/缓存/data 均被 .gitignore 正确覆盖，.env 未被 git 追踪）；工作区无硬错误。经用户确认执行两项整理：① 删除 `.upgrade/logs/` 全部 12 个一次性 CI 日志（~1.83MB，gitignored，分诊结论已固化于 `.upgrade/reports/ci-run-20260718.md`）；② MANIFEST.md 修补规则悬空（FINAL_REPORT.md / reviews/ 标注"尚未产出"，补 research/ 非标准目录结构说明，登记 artifacts_live_e2e.log 已删）。plans/ 整批归档与 scorecard-trend 刷新继续 defer 至仓库公开 + Task 19 闭环后。
 
 ### 上一轮（2026-07-18）
 

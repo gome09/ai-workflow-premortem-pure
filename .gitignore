@@ -13,6 +13,8 @@ build/
 .env.*
 !.env.example
 !.env.demo
+.envrc
+.direnv/
 .venv/
 venv/
 env/
@@ -25,12 +27,23 @@ env/
 .mypy_cache/
 .ruff_cache/
 .coverage
+.coverage.*
 coverage.xml
 htmlcov/
+junit*.xml
+test-results/
+.hypothesis/
+.tox/
+.nox/
 
 # IDE
 .idea/
 .vscode/
+.claude/settings.local.json
+.agents/
+.codex/
+.cursor/
+.windsurf/
 *.swp
 *.swo
 .DS_Store
@@ -44,6 +57,16 @@ redis_data/
 secrets/
 nginx/certs/*
 !nginx/certs/.gitkeep
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
 
 # 报告输出
 exports/
@@ -56,11 +79,14 @@ artifacts/
 # 临时文件
 *.log
 *.tmp
+*.bak
 tmp/
 temp/
+.cache/
 
 # 本地数据库
 *.sqlite
+*.sqlite3
 *.db
 *.db-shm
 *.db-wal

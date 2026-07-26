@@ -1,6 +1,24 @@
+# Local environment and secrets. Docker Compose injects runtime values from the
+# host; none of these files should ever enter the build context or image layer.
 .env
 .env.*
-!.env.example
+.envrc
+.direnv/
+secrets/
+secrets.*
+.streamlit/
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+
+# Local virtual environments, caches, test output and generated data.
 .venv/
 venv/
 __pycache__/
@@ -8,23 +26,32 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.hypothesis/
+.tox/
+.nox/
+.cache/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
+junit*.xml
+test-results/
 dist/
 build/
 *.egg-info/
 .git/
 .gitignore
+.gitattributes
 .DS_Store
 postgres_data/
 redis_data/
 exports/
 *.log
 *.tmp
+*.bak
 
 # TLS certificates (generated at deploy time, never committed)
-nginx/certs/server.crt
-nginx/certs/server.key
+nginx/certs/
 
 # Archived and legacy scripts — not part of production runtime
 archive/
@@ -32,6 +59,8 @@ scripts/archive/
 
 # SQLite data files (dev/test only)
 data/
+*.sqlite
+*.sqlite3
 *.db
 *.db-shm
 *.db-wal
@@ -42,7 +71,28 @@ artifacts/
 # IDE and editor files
 .idea/
 .vscode/
+.claude/
+.agents/
+.codex/
+.cursor/
+.windsurf/
 *.swp
+*.swo
+
+# Repository governance, documentation, tests and deployment-only assets are
+# not imported by the API/Streamlit runtime image. Keep examples/: scenario
+# manifests load those Markdown samples at runtime.
+.github/
+docs/
+tests/
+scripts/
+monitoring/
+nginx/
+/*.md
+/*.html
+/docker-compose*.yml
+/Dockerfile
+/.dockerignore
 
 # project-upgrade:start
 .upgrade/

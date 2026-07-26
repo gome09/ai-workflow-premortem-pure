@@ -8,7 +8,7 @@ The current database schema migration mechanism is **Alembic**.
 
 1. `api/main.py` initializes the session store in the `lifespan` context manager.
 2. `storage/backends/postgres.py::PostgresSessionStore.initialize()` runs `alembic upgrade head`.
-3. Alembic migrations are under `alembic/versions/` (V001 → V003 at v1.0).
+3. Alembic migrations are under `alembic/versions/` (currently V001 → V005).
 
 ### SQLite (lite mode)
 

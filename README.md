@@ -141,13 +141,7 @@ curl -k https://localhost/api/health/live
 
 ### 启动方式
 
-```bash
-# 一键启动后端 API（自动使用 .env.demo 配置）
-make demo-api
-
-# 另一终端，启动前端
-make demo-ui
-```
+启动命令与环境说明统一见上方[离线演示模式](#离线演示模式无需-api-key)，答辩时同样运行 `make demo-api`，并在另一终端运行 `make demo-ui`。
 
 打开浏览器访问 `http://localhost:8501`，在左侧选择内置场景（如 `generic_rag_demo`），点击「新建会话」即可演示完整四阶段流程。
 
@@ -171,10 +165,10 @@ make demo-ui
 ### 验收测试
 
 ```bash
-# Mock 场景验收（快速，约 5 秒）
+# Mock 场景验收
 make e2e-mock
 
-# 全量测试（约 8 秒）
+# 全量测试
 make e2e-full-test
 ```
 
@@ -187,6 +181,12 @@ uv run pytest tests/ -q
 ```
 
 测试使用内存存储和 monkeypatched LLM，无需外部依赖。
+
+---
+
+## 文档
+
+启动、架构、API、安全、合规和历史计划索引见 [docs/README.md](docs/README.md)。当前实现以 `docs/spec/`、启动指南和业务代码为准；`docs/plan/` 保留为历史设计/实施基线。
 
 ---
 

@@ -14,7 +14,7 @@ graph TD
     API["API 层<br/>FastAPI + Nginx 反向代理"]
     Auth["认证授权<br/>JWT + RBAC + 多租户隔离"]
     Core["核心业务层<br/>Session / Stage / Gate Services"]
-    Graph["工作流引擎<br/>LangGraph 状态机"]
+    Graph["工作流引擎<br/>确定性 single_step（默认）<br/>LangGraph interrupt（实验）"]
     S1["Stage 1<br/>失败模式识别"]
     S2["Stage 2<br/>Human-in-the-Loop 设计"]
     S3["Stage 3<br/>Zero-Shot 压力测试"]
@@ -22,8 +22,8 @@ graph TD
     Gate["门禁引擎<br/>Review Gate + Stage Gate"]
     LLM["LLM 适配层<br/>DeepSeek V4 Pro/Flash<br/>Mock LLM（演示模式）"]
     Search["搜索工具<br/>Tavily Search API"]
-    DB["PostgreSQL<br/>会话持久化 + Alembic 迁移"]
-    Cache["Redis<br/>限流计数器 + 状态缓存"]
+    DB["存储后端<br/>PostgreSQL + Alembic<br/>或 SQLite Lite"]
+    Cache["缓存/限流<br/>Redis（PostgreSQL）<br/>或内存（SQLite）"]
     Monitor["可观测性<br/>Prometheus + Grafana"]
 
     FE -->|HTTPS / HTTP| API
@@ -48,7 +48,7 @@ graph TD
 sequenceDiagram
     participant U as 用户
     participant API as FastAPI
-    participant Graph as LangGraph
+    participant Graph as 默认 single_step 调度器
     participant LLM as DeepSeek LLM
     participant Gate as 门禁引擎
 
@@ -87,7 +87,7 @@ FastAPI / Streamlit
 -> StageExecutor
 -> Review Gate
 -> PendingHumanAction / SafetyFinding / EvidenceSource / EvalCase / EvalRun
--> PostgreSQL + Redis cache
+-> PostgreSQL + Redis cache，或 SQLite + MemoryCache
 ```
 
 `single_step` remains the default stable path. `langgraph_interrupt` is an experimental adapter path selected only through `WORKFLOW_EXECUTION_MODE=langgraph_interrupt`.

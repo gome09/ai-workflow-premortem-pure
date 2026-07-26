@@ -18,8 +18,18 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# 扫描范围：README.md、CLAUDE.md、docs/**/*.md
-SCAN_GLOBS = ["README.md", "CLAUDE.md", "docs/**/*.md"]
+# 扫描全部项目 Markdown；升级历史、运行时产物和工具缓存不属于当前产品文档。
+EXCLUDED_DIRS = {
+    ".git",
+    ".upgrade",
+    ".venv",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".claude",
+    "archive",
+    "artifacts",
+}
 
 # 已知顶层目录（用于仓库路径启发式识别）
 TOP_LEVEL_DIRS = {
@@ -47,7 +57,9 @@ TOP_LEVEL_DIRS = {
 LINK_RE = re.compile(r"\[(?P<text>[^\]]*)\]\((?P<url>[^)\s]+)(?:\s+\"[^\"]*\")?\)")
 
 # make target 引用正则：`make <target>` 或行首 "make <target>"
-MAKE_RE = re.compile(r"`?make\s+(?P<target>[a-z][a-z0-9-]*)`?")
+MAKE_RE = re.compile(
+    r"(?:`make\s+(?P<inline>[a-z][a-z0-9-]*)`|^\s*make\s+(?P<line>[a-z][a-z0-9-]*))"
+)
 
 # 反引号包裹的仓库路径正则：`path/to/something`
 BACKTICK_PATH_RE = re.compile(r"`(?P<path>[a-zA-Z0-9._-]+(?:/[a-zA-Z0-9._*-]+)+)`")
@@ -123,9 +135,9 @@ def check_file(source: Path, make_targets: set[str]) -> list[str]:
                     f"{rel}:{lineno} 坏链 [{m.group('text')}]({url}) -> {target.relative_to(REPO_ROOT) if target.is_relative_to(REPO_ROOT) else target}"
                 )
 
-        # 规则 2：make target 存在性（仅扫描反引号或代码块内的 make 引用）
+        # 规则 2：make target 存在性（仅扫描反引号内或行首的 make 引用）
         for m in MAKE_RE.finditer(line):
-            target = m.group("target")
+            target = m.group("inline") or m.group("line")
             if target not in make_targets:
                 violations.append(f"{rel}:{lineno} 未知 make target: make {target}")
 
@@ -156,11 +168,15 @@ def main() -> int:
 
     all_violations: list[str] = []
     files_scanned = 0
-    for pattern in SCAN_GLOBS:
-        for source in REPO_ROOT.glob(pattern):
-            if source.is_file():
-                files_scanned += 1
-                all_violations.extend(check_file(source, make_targets))
+    sources = sorted(
+        source
+        for source in REPO_ROOT.rglob("*.md")
+        if source.is_file()
+        and not any(part in EXCLUDED_DIRS for part in source.relative_to(REPO_ROOT).parts)
+    )
+    for source in sources:
+        files_scanned += 1
+        all_violations.extend(check_file(source, make_targets))
 
     print(f"扫描 {files_scanned} 个 Markdown 文件，发现 {len(all_violations)} 处违规")
     if all_violations:

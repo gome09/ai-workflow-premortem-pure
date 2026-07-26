@@ -59,16 +59,6 @@
 - **测试验证**：642 passed + 1 skipped（unit，回归确认无破坏）；lint + format clean；doc-check 运行正常（26 处存量违规，均为既有问题与设计文档代码示例误报，CI non-blocking）
 - **详细设计方案**：[docs/plan/phase-4-design.md](docs/plan/phase-4-design.md)
 
-## v1.0 (2026-06-10)
-- 完成四阶段工作流引擎（失败模式识别 → 工作流设计 → 压力测试 → 触发策略）
-- 完成风险自适应门禁系统
-- 完成人机监督闭环（PendingHumanAction）
-- 完成 Eval 评估体系（EvalCase/EvalRun、Eval 数据集管理、Eval 实验对比）与 Red Team 对抗测试
-- 完成证据核验与安全发现模块
-- 完成报告导出与审计追踪
-- Docker Compose 部署调通
-- Streamlit Review Workbench 前端
-
 ## v1.2.0 (2026-07-14)
 - **Phase 3 组织级治理平台（T3.1–T3.5, T3.7；T3.6 可选未启用）**：
   - **T3.1 门禁规则元数据清单（manifest）**：新建 `core/gates/rules/manifest.py`，13 条规则每条声明 `version`/`owner`/`rationale`/`standard_refs`/`changelog`/`safety_bottom_line`；`registered_rules()` 启动双向完整性校验（WARNING-only 不阻断）。回答 ISO/IEC 42001 "谁定的、改过几次、为什么"提问，规则保持代码化不引入 DB 存储
@@ -91,7 +81,7 @@
   - **T2.3 OWASP Agentic Security Initiative Top 10 2026**：新建 `tools/taxonomies/owasp_agentic_2026.py`，8 个 attack_type + 5 个 risk_type 映射；ASI07 经核实为 Insecure Inter-Agent Communication（非 Resource Abuse），已删除错误映射
   - **T2.4 TC260《智能体部署使用安全指引》**：新建 `tools/taxonomies/tc260_agent_deployment.py`，五阶段（评估/准备/部署/使用/停用）+ 6 control + 6 risk_type；停用阶段=None 标产品缺口；含 `.upgrade/reports/tc260-agent-deployment-summary.md`
   - **T2.5 领域扩展标签接入生产链路**：`apply_taxonomy_to_safety_finding` 新增 `domain` 参数，命中 `university_ai`/`medical_ai` 时叠加领域专属标签（PIPL/HIPAA 等）；`safety_classifier._finding` + `safety_classifier.add_findings_dedup` + `safety_service.resolve_safety_finding` 透传 `domain=current_domain_profile(ctx)`
-  - **T2.6 标准动态跟踪记录**：新建 `.upgrade/logs/standard-tracking-2026-07-14.md`（2026-07-17 移入 `.upgrade/reports/` 纳入版本控制），记录 7 项已落地标准基线 + 6 项跟踪项（未成年人指南/TC260 分行业/NIST AI RMF 修订/OWASP ASI 正式版/PIPL 实施细则/GENAI 立法）
+  - **T2.6 标准动态跟踪记录**：新建 `.upgrade/reports/standard-tracking-2026-07-14.md`（初始位于 logs，2026-07-17 移入 reports 纳入版本控制），记录 7 项已落地标准基线 + 6 项跟踪项（未成年人指南/TC260 分行业/NIST AI RMF 修订/OWASP ASI 正式版/PIPL 实施细则/GENAI 立法）
   - **mapper.py 三表聚合接入**：`refs_for_risk_type` 追加 NIST_GAI + ASI + TC260 三表；`refs_for_attack_type` 追加 ASI
 - **新增测试**：`test_owasp_llm_completion.py`(19)、`test_context_migrations_v090.py`(6)、`test_taxonomy_nist_ai_600_1.py`(6)、`test_taxonomy_owasp_agentic_2026.py`(12)、`test_taxonomy_tc260_agent_deployment.py`(10)、`test_taxonomy_mapper_aggregation.py`(17)、`test_domain_labels_production.py`(20)
 - **Context schema 升级**：v0.8.0 → v0.9.0（`ProjectContext` 新增 `llm_call_count`/`llm_token_estimate` 字段）
@@ -127,6 +117,16 @@
 - 完成本地离线全流程测试验证（SQLite + Mock LLM）
 - **修复证据门控与人工动作状态不联通问题**：在 `resolve_action` 函数中添加处理 `verify_evidence` 动作时自动更新 `evidence.verified` 字段的逻辑，解决"人工动作已完成但阶段仍被阻断"的问题
 - 生成完整验收报告与会话导出文档
+
+## v1.0 (2026-06-10)
+- 完成四阶段工作流引擎（失败模式识别 → 工作流设计 → 压力测试 → 触发策略）
+- 完成风险自适应门禁系统
+- 完成人机监督闭环（PendingHumanAction）
+- 完成 Eval 评估体系（EvalCase/EvalRun、Eval 数据集管理、Eval 实验对比）与 Red Team 对抗测试
+- 完成证据核验与安全发现模块
+- 完成报告导出与审计追踪
+- Docker Compose 部署调通
+- Streamlit Review Workbench 前端
 
 ## v0.5 (2026-05-20)
 - 基本框架搭建，FastAPI + LangGraph 状态机

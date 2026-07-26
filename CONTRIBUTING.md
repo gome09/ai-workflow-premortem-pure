@@ -14,15 +14,16 @@ uv run uvicorn api.main:app --reload --port 8000
 
 ## 提交前检查
 
-每次提交前请本地运行以下三步，CI 会执行相同检查：
+每次提交前至少运行当前阻断检查：
 
 ```bash
 make lint            # ruff check + ruff format --check
 make test            # uv run pytest tests/ -v
+make doc-check       # Markdown 链接、命令与仓库路径一致性
 make version-check   # pyproject.toml 与 core/version.py 版本一致性
 ```
 
-> `make e2e-mock` 可跑离线场景验收（注册、Mock LLM、流程），约 5 秒。
+CI 还会运行覆盖率测试与 docker-lite 集成；mypy、pip-audit 和 docker-full 当前处于 non-blocking 观察期。涉及离线流程时可额外运行 `make e2e-mock`。
 
 ## 分支与提交约定
 
@@ -34,10 +35,12 @@ make version-check   # pyproject.toml 与 core/version.py 版本一致性
 
 ## 分支保护
 
-`main` 分支已开启保护：
-- 所有改动必须通过 PR 合并（不接受直接 push main）
-- PR 必须通过 CI（lint + unit tests + docker-lite integration）才能合并
-- 个人项目无强制第二人 review，但鼓励自我 review 后再合
+本地仓库无法证明 GitHub 后台状态；按当前项目状态记录，`main` 分支保护仍待维护者在仓库 Settings 中开启。目标策略为：
+- 所有改动通过 PR 合并，不直接 push main
+- PR 必须通过 CI（lint + unit tests + docker-lite integration）
+- 个人项目暂不强制第二人 review，但鼓励自我 review 后再合
+
+远端启用后，应同步更新 `.upgrade/STATE.md` 与供应链安全规格，避免状态再次分叉。
 
 ## 测试约定
 
@@ -47,7 +50,7 @@ make version-check   # pyproject.toml 与 core/version.py 版本一致性
 
 ## PR 流程
 
-1. 确保本地三步检查全绿。
+1. 确保上述本地检查全绿。
 2. PR 描述说明：动机、改动点、测试方式。
 3. 等待 CI（lint + 单测 + docker-lite 集成冒烟）通过后合并。
 4. 个人项目无强制第二人 review，但鼓励自我 review 后再合。

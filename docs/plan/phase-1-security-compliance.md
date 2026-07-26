@@ -3,7 +3,7 @@
 > 上游路线图：[improvement-roadmap.md](improvement-roadmap.md) 第 6 节「阶段 1」。
 > 配套设计规格：[../spec/data-classification-and-privacy.md](../spec/data-classification-and-privacy.md)（子系统①-⑤）、[../spec/supply-chain-security.md](../spec/supply-chain-security.md) 第 4-5 节（SAST）。
 > 现状基线核实日期：2026-07-13。
-> 状态：未启动。前置依赖：建议阶段 0 先行（新代码走加固后的 CI）；与阶段 2 可并行。
+> 状态：**已完成（历史实施计划）**。本文保留执行前基线；当前实现及部署条件以对应 spec、业务代码和 `.upgrade/STATE.md` 为准。
 
 ---
 

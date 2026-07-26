@@ -3,7 +3,7 @@
 > 上游路线图：[improvement-roadmap.md](improvement-roadmap.md) 第 6 节「阶段 0」。
 > 配套设计规格：[../spec/supply-chain-security.md](../spec/supply-chain-security.md)。
 > 现状基线核实日期：2026-07-13（下表全部条目经代码仓库直接核实，非估算）。
-> 状态：未启动。前置依赖：无——本阶段是所有后续阶段的地基。
+> 状态：**已完成（历史实施计划）**。本文保留 2026-07-13 的执行前基线与验收设计；当前事实以对应 spec、业务代码和 `.upgrade/STATE.md` 为准。
 
 ---
 

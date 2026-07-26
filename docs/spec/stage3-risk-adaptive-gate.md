@@ -1,8 +1,8 @@
 # Stage 3 Risk-Adaptive Gate
 
-> **Last updated:** 2026-07-14
+> **Last updated:** 2026-07-27
 > **Status:** Implemented and validated (including `expert review` for CRITICAL tier — T3.3)
-> **Tests:** 26/26 PASS, 3 smokes PASS
+> **Tests:** 原风险自适应门禁验证 26 项 + 3 个 smoke；expert-review 为 T3.3 后续能力，由 `tests/test_expert_review_gate_v110.py` 单独覆盖
 
 ---
 
@@ -42,10 +42,12 @@ Implemented risk-adaptive Stage 3 gate that classifies projects into risk tiers 
 
 ## Risk Tiers
 
-| Tier | Domain Keywords | Gate Profile |
+下表关键词仅为便于理解的示例；完整且可执行的中英文关键词、场景覆盖和优先级以 `core/gates/risk_profile.py` 为准。
+
+| Tier | Domain Keyword Examples | Gate Profile |
 |------|----------------|--------------|
-| **CRITICAL** | 药物、处方、诊断、患者、临床、drug, medication, prescription | Strongest: all gates |
-| **HIGH** | 金融、贷款、法律、合同、儿童、认证、多租户, finance, legal | Strong: redteam + regression + trace |
+| **CRITICAL** | 药物、处方、诊断、患者、临床、手术、心理健康、军事, drug, medication, prescription | Strongest: all gates |
+| **HIGH** | 金融、贷款、法律、合同、儿童、学生、认证、多租户、自动发送, finance, legal | Strong: redteam + regression + trace |
 | **MEDIUM** | 团队管理、项目协作 (no explicit low-risk markers) | Medium: eval coverage + failed eval |
 | **LOW** | 个人、学习、读书、笔记、本地、非生产, personal, learning | Basic: safety底线 only |
 
@@ -59,7 +61,7 @@ Implemented risk-adaptive Stage 3 gate that classifies projects into risk tiers 
 | parser error | ✅ block | ✅ block | ✅ block | ✅ block |
 | pending blocking action | ✅ block | ✅ block | ✅ block | ✅ block |
 | rejected action | ✅ block | ✅ block | ✅ block | ✅ block |
-| open critical safety finding | ✅ block | ✅ block | ✅ block | ✅ block |
+| open high/critical safety finding requiring human review | ✅ block | ✅ block | ✅ block | ✅ block |
 | stale dependency | ✅ block | ✅ block | ✅ block | ✅ block |
 | eval coverage (critical nodes) | ✅ block | ✅ block | ✅ block | ✅ block |
 | eval coverage (high nodes) | — | ✅ block | ✅ block | ✅ block |
@@ -83,7 +85,7 @@ Regardless of risk tier, these safety底线 **always block**:
 - Parser error
 - Unresolved blocking pending action
 - Rejected action without remediation
-- Open critical safety finding
+- Open high/critical safety finding that requires human review
 - Stale dependency
 
 ---

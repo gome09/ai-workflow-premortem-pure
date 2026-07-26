@@ -3,7 +3,7 @@
 > 上游路线图：[improvement-roadmap.md](improvement-roadmap.md) 第 6 节「阶段 3」。
 > 配套设计规格：[../spec/governance-platform.md](../spec/governance-platform.md)。
 > 现状基线核实日期：2026-07-13。
-> 状态：未启动。前置依赖：阶段 2 的 T2.1（LLM 用量计数与业务指标共用数据源）建议先行；其余无硬依赖。这是最长期的阶段，按子系统分批交付。
+> 状态：**已完成（历史实施计划）**。本文第 2 节等内容是执行前基线，包含当时的 12 条规则/V004 等旧事实；当前实现为 13 条规则、治理聚合能力和 Alembic V005，以对应 spec、代码和 `.upgrade/STATE.md` 为准。
 
 ---
 

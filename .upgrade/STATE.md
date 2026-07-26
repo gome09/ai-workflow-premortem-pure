@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Phase 4 — **代码侧全部完成** (T4.1 / T4.2 文档 / T4.3 / T4.5；T4.4 明确不承诺)。Phase 3 全部完成 (T3.1–T3.7，T3.6 已于 v1.3.0 落地、flag 默认关)。Phase 2 全部完成 (T2.1–T2.6)。Phase 1 全部完成 (T1.1–T1.9)。正式项目升级（formal-project-uplift，计划 `.upgrade/plans/2026-07-17-formal-project-uplift.md`）进行中——Wave A–D 已完成（Wave D：合规映射 2026-07-17 复核落账，Task 13–14，实施方案 `.upgrade/plans/2026-07-17-wave-d-compliance-refresh-implementation.md`）；**Wave E 已完成（Task 15–18，实施方案 `.upgrade/plans/2026-07-17-wave-e-publication-ci-implementation.md`），formal-project-uplift 全部收尾，v1.3.0 已 bump + tag**。Task 19（CodeQL 转正）待仓库公开后执行。
+Phase 0–4 代码侧已完成；formal-project-uplift Wave A–E（Task 0–18）已完成并收尾为 v1.3.0。剩余项均为远端治理或外部复核：Task 19 CodeQL 转正、main 分支保护、发布设置及标准原文复核。
 
 ## Current Task
 
@@ -10,6 +10,10 @@ Phase 4 — **代码侧全部完成** (T4.1 / T4.2 文档 / T4.3 / T4.5；T4.4 �
 
 ## Last Completed
 
+- **文档—代码深度复核与失效脚本清理 (2026-07-27)** — 4 个子代理只读审查规格、运行文档、文档清单与安全合规，主代理按代码/配置/测试复核并定点修正：默认执行器与 SQLite 路径、供应链 workflow 当前态、治理 Gauge 占位边界、Stage 3 safety finding 条件、Context 迁移删除条件、本地真实模式 secrets 初始化、PII 掩码覆盖范围、心理健康示例数据分级、显式同意缺口及双重密钥存储。删除 3 个无调用且在当前认证 API 上不可运行/硬编码旧 alpha 假设的归档脚本，保留一次性 tenant 迁移参考。未删除或合并职责独立的 spec、PIA、plan 历史基线。验证：`python scripts/doc_consistency_check.py` 扫描 51 份 Markdown、0 违规；version 1.3.0 一致；全量测试 623 passed / 8 skipped；`git diff --check` 通过。当前 Windows 环境没有 `make`，故直接运行 Makefile 对应底层命令。
+- **Git / Docker ignore 边界加固 (2026-07-25)** — 审查确认 Git 当前及历史均未跟踪真实 `.env`、`secrets/`、TLS 私钥、SQLite 数据、coverage 或缓存；发现 `.dockerignore` 未排除真实 `secrets/` 且 Dockerfile 使用 `COPY . .`，存在密钥进入 build context/镜像层的高风险。已补齐 `.gitignore` 的 agent local settings、通用私钥/keystore、环境管理、扩展测试缓存与数据库规则；`.dockerignore` 现排除所有 `.env*`、`secrets/`、证书/私钥、agent 配置、测试/文档/CI/升级记录、部署配置、缓存与运行时数据，同时保留运行时需要的 `examples/`。验证：无 tracked-ignore 冲突、context 模拟 `included_risky=NONE`、Full/Lite compose config 通过；实际 build 因本机 Docker daemon 未运行未完成。决策：`.upgrade/decisions/ignore-boundary-hardening-20260725.md`。
+- **代理指导文件同步 (2026-07-25)** — 基于当前业务代码、`.upgrade/STATE.md` / `MANIFEST.md` 和项目验证链，更新根目录 `AGENTS.md` 与 `CLAUDE.md`：AGENTS 成为仓库级代理权威入口，CLAUDE 作为补充并显式服从 AGENTS；同步 v1.3.0、Alembic V005、ProjectContext 0.9.0、623 passed/8 skipped 基线、Phase 计划历史定位、doc-check/typecheck/docker-full CI 状态，以及字段加密默认未启用/留存无自动清理器等真实边界。保留 project-upgrade 受控块原文。决策：`.upgrade/decisions/agent-guidance-sync-20260725.md`。
+- **文档与业务代码一致性整理 (2026-07-25)** — 子代理独立审查 + 主代理代码实证复核。修正迁移链、CI 状态、当前测试基线、归档版本措辞、安全/PIA/留存能力边界、备份与应急可执行性、分支保护状态等事实漂移；10 份 Phase 0–4 计划/设计文档统一标为历史基线；README 合并重复启动说明。`doc_consistency_check.py` 扫描范围由 35 份扩展到 51 份当前项目 Markdown（排除升级历史/archive/运行时产物/缓存）。删除未跟踪且无引用的旧 v1.2.2 运行时导出 `artifacts/live_e2e_four_stage/session_export.md`。当前验证：623 passed/8 skipped、doc-check 51 文件 0 违规、version 1.3.0 一致。决策记录：`.upgrade/decisions/doc-code-reconciliation-20260725.md`。
 - **本地 CI 复现 + 远端 GitHub CI 全绿 (2026-07-18)** — 按计划 `.upgrade/plans/2026-07-18-local-then-remote-ci-execution.md` 两阶段执行：Phase A 本机完整复现 ci.yml 三 job（lint/typecheck/doc-check/version-check/pip-audit/test-cov 650 passed 1 skipped 覆盖率 69%/docker lite 冒烟/docker full 7 容器 TLS 断言）全绿，每个长耗时步骤附独立后台监控窗口 + 硬超时预算，日志留存 `.upgrade/logs/ci-{local,remote}-20260718-*`；Phase B 安装 gh CLI 2.96.0 后分诊基线失败 run 29621280076：①doc-check 平台差异（Windows 忽略路径尾点号使 `tests/...` 省略号占位在本地 `exists()` 误判通过、Linux 报 9 处违规）→ `scripts/doc_consistency_check.py` 规则 3 跳过 `..` 结尾占位路径；②docker-full api/grafana 容器读不到 600 权限 secrets（runner 属主 vs 容器内非 root 用户）→ ci.yml 生成后 `chmod 644 secrets/*`（仅限 CI 一次性随机值）。修复 commit 5b4003f 推送后 run 29647651072 三 job 全 success——**docker-full-integration 观察期首次转绿**。附带发现本机 `pytest-of-embar` 临时目录 ACL 损坏致 68 errors（TMP 重定向绕过，需用户重启后清理）。完整报告：`.upgrade/reports/ci-run-20260718.md`。
 - **文档-代码一致性核查与修复 (2026-07-18)** — 6 个并行子代理全维度核查（根目录门面 / 架构与 API / 安全合规 / 门禁与分类体系 / 启动部署 / 版本与索引），结论：无高危不一致。修复 3 中危 + 5 低危：①`risk-taxonomy-engine.md` §1 改标"历史快照"并逐条括注缺口已在 v1.1.0 补齐（LLM05/07/10、NIST 600-1 动作项、ASI、TC260），§5 补落地复核补注（unbounded_consumption→ASI07 错误映射已按宁缺毋滥删除，与 `owasp_agentic_2026.py` 文件头决策对齐）；②`startup.md`/`local_setup.md` 修正 grafana_password 同步描述（`gen_secrets.sh` 仅同步 jwt/postgres/redis 三项进 .env，grafana 走 `GF_SECURITY_ADMIN_PASSWORD__FILE` secrets 挂载）；③过时版本自指清理：`architecture.md` "(v1.0.0)" 标题改为"自 v1.0.0 确立，v1.3.0 复核仍有效"、`security-model.md`/`data-classification-and-privacy.md` 的 "v1.0.3 落地" 改为"自 v1.0.3 起落地并沿用至今"；④`api-reference.md` 补录 `PATCH /sessions/{id}/data-classification` 与 `DELETE /sessions/{id}` 两端点（此前计入总数 84 但未列明细）；⑤`architecture.md` 动作解析链路图补编排层注记（SessionService 为 orchestrator，三模块非在 oversight_service 内部串联）；⑥`data-classification-and-privacy.md` §5 `ai_generated_notice` 位置描述改为与实现一致（字典尾部 disclaimer 前，非头部）；⑦`acceptance_report.md` 3 处失效 `file:///...pure-main` 绝对 URI 改仓库相对链接。验证：doc-check 35 文件 0 违规 / version-check OK (1.3.0)。改动纯文档，未触生产代码。
 - **四种启动方式全流程 E2E 测试 + 6 缺陷修复 (2026-07-18)** — 四种启动方式全部冷启动实测 PASS（方式1 离线演示：API+UI 双路径走满四阶段至 complete、四阶段 gate-report 全 passed；方式2 Docker Lite：`--no-cache` 全新构建避免旧镜像污染；方式3 混合开发：临时端口 15432/16379 避开本机原生 postgres 5432 冲突，alembic 自动建 21 表 + 数据落库验证；方式4 生产栈：自建 secrets 后 7 容器全 healthy，nginx TLS 全链路 + Prometheus/Grafana 验证）。测试方法：API 冒烟 + Playwright 浏览器驱动真实 UI 交互 + 后台日志监控。修复 6 缺陷：①前端 ensure_auth 注册限流 429 致全站 401（改先登录后注册）；②`gen_secrets.sh` Windows CRLF 污染 secrets 致 redis 认证失败（`tr -d '\r\n'`）；③postgres 多 worker 并发 alembic 竞态 UniqueViolation（pg_advisory_lock 串行化）；④`nav_page` 无赋值点致治理总览页不可达（侧栏新增页面导航 radio + 总览页补 4 指标/双分布/周明细）；⑤`/health` 缺 `interrupt_adapter_status` 字段致前端恒显"未知"（后端补齐）；⑥前端补展示后端已返回字段（eval pass_criteria / judge_reason / violated_criteria、实验人工校准分歧率、审计 before/after 快照）。回归：650 passed, 1 skipped + ruff clean + 浏览器复测全过。完整报告：`.upgrade/reports/startup-methods-e2e-20260718.md`。遗留观察项（死代码 panels / 无 UI 入口端点）见报告第 5 节。
@@ -56,8 +60,9 @@ Phase 4 — **代码侧全部完成** (T4.1 / T4.2 文档 / T4.3 / T4.5；T4.4 �
 
 ## Blockers
 
+- **旧 Docker 镜像敏感文件复核**：本次已修复 build context，但 Docker Desktop daemon 当前未运行，无法检查修复前构建的本地/远端镜像是否含 `/app/secrets`。daemon 恢复后需重建并检查；如旧镜像曾被推送或分享，应轮换相关密钥。步骤见 `.upgrade/decisions/ignore-boundary-hardening-20260725.md`。
 - **Phase 4 T4.2 分支保护**：决策记录已入库（`.upgrade/decisions/branch-protection.md`），但实际开启需维护者登录 GitHub 后台手动操作（Settings → Branches → main → Enable protection）。操作后预期 Scorecard Branch-Protection 0→8+、Code-Review 0→3-5。
-- **Phase 4 T4.1 doc-check 转强制**：存量违规已清零（doc-check 0 处违规，脚本已支持跳过围栏代码块）。CI 仍为 non-blocking（`continue-on-error: true`），可择机移除该行转强制。
+- **Phase 4 T4.1 doc-check 转强制**：已完成。当前 `.github/workflows/ci.yml` 的 doc-check 步骤没有 `continue-on-error`，文档一致性失败会阻断 CI。
 - Phase 3 T3.6 (LLM Judge)：~~gated on user confirming real demand~~ 已解除——用户确认需求后于 2026-07-17 作为 Wave C 落地（v1.3.0，flag 默认关）。真实 LLM 一致率数据待生产启用后经 human_calibrations 累计。
 - NIST AI 600-1 中 4 项动作项编号标 [存疑]（MS-2.10-002 / MS-2.5-005 / MS-2.5-003 / GV-1.3-002），待 NIST 发布修订版后核对。
 - TC260《智能体部署使用安全指引》条款文字基于二手摘要，待补全文核对。
@@ -72,7 +77,7 @@ Phase 4 开源社区打磨代码侧全部完成。核心成果：
 |---|---|---|
 | 检查脚本 | `scripts/doc_consistency_check.py`（三类规则：链接/make target/仓库路径） | ✅ |
 | Makefile target | `make doc-check` | ✅ |
-| CI 接入 | ci.yml lint job 追加 doc-check 步骤（non-blocking 观察期） | ✅ |
+| CI 接入 | ci.yml lint job 追加 doc-check 阻断步骤 | ✅ |
 | 存量坏链修复 | stage3 悬空引用补档 `docs/archive/verification-reports/` | ✅ |
 
 ### 社区响应约定（T4.5）
@@ -96,11 +101,13 @@ Phase 4 开源社区打磨代码侧全部完成。核心成果：
 | 基线报告 | `.upgrade/archive/scorecard-baseline-20260713.md`（2026-07-17 Mode 3 归档） | ✅ |
 | 趋势报告 | `.upgrade/reports/scorecard-trend-20260714.md` | ✅ |
 
-### 测试验证
-- 全量测试：650 passed, 1 skipped（回归确认无破坏）
+### 历史测试验证（2026-07-14）
+- 全量测试：650 passed, 1 skipped
 - e2e-mock：63 passed
 - lint + format：clean
-- doc-check：0 处违规（脚本新增跳过围栏代码块 + 修复真实坏链 + 消除行内误报）
+- doc-check：0 处违规（当时扫描范围）
+
+当前基线见 `Last Completed` 最新条目与 `docs/acceptance_report.md`，不从本历史小节推断当前测试数量。
 
 ## Validation Commands
 
@@ -114,14 +121,14 @@ Phase 4 开源社区打磨代码侧全部完成。核心成果：
 ## Next Action
 
 1. **维护者手动操作（公开序列）**：按 `.upgrade/reports/pre-publication-checklist-20260717.md` 文末清单执行——push（含 tags）→ 转 Public → 分支保护 → Private vulnerability reporting → Dependabot → CodeQL 转正（Task 19）→ Scorecard dispatch → 徽章核验 → GitHub Release v1.3.0
-2. **远端首轮 CI 全绿后**：移除 ci.yml mypy 步骤 `continue-on-error: true` 转强制；`docker-full-integration` job（2026-07-18 新增，观察期 non-blocking）稳定数轮后同样评估转强制
+2. **观察期评估**：mypy 与 `docker-full-integration` 均继续 non-blocking；待远端稳定数轮并单独评估后再决定是否移除 `continue-on-error`
 3. **2026-08 下旬强制复核点**：《未成年人 AI 应用安全指南》征求意见截止（2026-08-16）后核对定稿内容（roadmap §10.7）
 
 ## Last Updated
 
-- Date: 2026-07-20
-- By: claude-code (记录同步复核 Mode 3 复检 + CHANGELOG 补账)
-- Summary: 三路并行只读复核（.upgrade 记录完整性 / 项目级 md 与验收报告时效性 / Mode 3 清理复检）。结论：① .upgrade 完整性 5 项检查全一致（MANIFEST↔磁盘↔git 追踪 35 文件逐一对应、STATE 无悬空引用、近 5 commit 均已落账、traces 最旧仅 3 天）；② Mode 3 复检无需清理（38 个受控文件全 keep，tmp/logs 已空，总 ~621KB；三处指向已删 gitignored 临时产物的内联路径均属既定取舍/自带免责标注，登记为观察项不动作）；③ 唯一实质缺口为 CHANGELOG 未覆盖最近 5 个 commit——已补「维护记录 (2026-07-20)」条目（CI 全绿验证 + 5b4003f 修复明细 + README tree 补项 + 工作区整理 + spec Status 行）。观察项（不动作）：README.en.md 无显式版本行与目录树（英文精简门面设计取舍）；acceptance_report 未收 07-18 CI 运维事件（版本级快照定位，属正常范围）。上一轮记录（2026-07-20 上午 Mode 5+4+3 扫描）见下。
+- Date: 2026-07-27
+- By: Codex（4 个子代理只读审查 + 主代理代码实证复核）
+- Summary: 完成全仓 Markdown 与业务代码/配置/测试的深度对账，收窄 PII、治理指标与远端治理能力声明，修复运行、迁移、架构和供应链事实漂移；删除 3 个已失效且无调用的归档脚本，保留有独立职责的当前文档与历史基线。
 
 ### 上一轮（2026-07-20 上午）
 

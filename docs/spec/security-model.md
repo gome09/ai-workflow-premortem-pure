@@ -1,6 +1,6 @@
 # Security Model
 
-> **Last updated:** 2026-07-14
+> **Last updated:** 2026-07-27
 
 > Status: Implemented
 
@@ -56,7 +56,7 @@ This project has two security layers:
 
 ### Rate Limiting
 
-限流基于 `slowapi`，计数依赖 Redis。
+限流基于 `slowapi`：PostgreSQL/full 模式使用 Redis 计数，SQLite/demo/lite 模式使用进程内 `memory://` 计数器。内存计数器不跨进程共享，只适合本地演示。
 
 当前文档主线中已确认的限制包括：
 
@@ -89,9 +89,7 @@ Nginx 配置来自：
 
 ### Secrets Management
 
-当前生产 compose 不再把敏感值主存放在 `.env`。
-
-`docker-compose.yml` 使用 Docker secrets：
+`docker-compose.yml` 挂载以下文件型 secrets：
 - `jwt_secret`
 - `postgres_password`
 - `redis_password`
@@ -99,8 +97,7 @@ Nginx 配置来自：
 - `tavily_api_key`
 - `grafana_password`
 
-`.env.example` 和 `.env.demo` 主要承载非敏感配置与本地演示配置。
-其中 `.env.demo` 是脱敏离线模板，不包含真实 API Key、数据库密码或证书私钥。
+`scripts/gen_secrets.sh` 会把 JWT、PostgreSQL、Redis 三项同时同步到 `.env`，因为应用环境变量优先级高于 `/run/secrets`；Grafana 密码只读 secret，API key 的 `.env` 占位行会被注释以便读取 secret。因而不能笼统宣称完整栈完全不在 `.env` 保存敏感值。`.env.demo` 仍是脱敏离线模板，不包含真实 API Key、数据库密码或证书私钥。
 
 ### Additional Hardening Already Present
 
@@ -120,7 +117,7 @@ Phase 1（T1.1–T1.4，自 v1.0.3 起落地并沿用至今）的数据安全能
 | 能力 | 实现 | 位置 |
 |------|------|------|
 | 数据分类分级 | `ProjectContext` 落库数据打三级标签（公开示例 / 客户业务材料 / 敏感个人信息），支持覆写并留审计 | `core/models.py` `data_classification` 字段；`PATCH /sessions/{id}/data-classification` |
-| 字段级加密 | 存储层对敏感字段做 Fernet 对称加密（可验证密文），密钥来自 `DATA_ENCRYPTION_KEY` | `storage/field_security.py` |
+| 字段级加密 | 存储层支持 Fernet 对称加密；仅在配置有效 `DATA_ENCRYPTION_KEY` 时启用。当前 `make setup`/Docker secrets 不自动生成该密钥，未配置时 PostgreSQL 会告警并明文存储 | `storage/field_security.py`；`/health.data_encryption` |
 | PII 掩码 | LLM 调用前对材料做 PII 检测与掩码（`PII_MASK_BEFORE_LLM` 开关），命中产出 finding | `tools/safety_classifier.py`（`PII_PATTERNS`） |
 | AI 生成标识 | 报告导出首屏中文免责声明，对齐《生成合成内容标识办法》 | `core/report_service.py` |
 
@@ -130,6 +127,7 @@ Phase 1（T1.1–T1.4，自 v1.0.3 起落地并沿用至今）的数据安全能
 - 企业级租户隔离
 - 外部 SIEM / 审计日志汇聚
 - 专业 secrets manager 集成（如 Vault / KMS）
+- 默认生产初始化中的字段加密密钥自动生成与挂载（当前需运维者在 `.env` 显式设置 `DATA_ENCRYPTION_KEY`）
 - Streamlit 端的完整登录门户界面
 
 当前前端更像内部工作台，认证能力主要在 API 层完成。

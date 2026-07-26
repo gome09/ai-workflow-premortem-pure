@@ -1,18 +1,20 @@
 # 组织级治理平台设计规格
 
 > Status: Implemented（v1.2.0 落地 T3.1–T3.5、v1.2.0 落地 T3.7、v1.3.0 落地 T3.6（flag 默认关）。落地任务见 [../plan/phase-3-governance-platform.md](../plan/phase-3-governance-platform.md)）
-> Last updated: 2026-07-17
+> Last updated: 2026-07-27
 > 对标依据：ISO/IEC 42001:2023（AI 管理体系）——从"单次评估工具"升级为"可审计的组织级 AI 治理台账"
 
 ---
 
-## 1. 现状事实（已核实，2026-07-13）
+> **阅读提示**：第 1 节是 2026-07-13 落地前历史基线。当前已实现 13 条版本化门禁规则、治理聚合 API/前端、业务指标和可选 LLM Judge，具体状态见后续各节及代码链接。
+
+## 1. 落地前历史基线（2026-07-13）
 
 | # | 事实 | 证据 |
 |---|---|---|
 | 1 | 门禁规则纯硬编码：12 条规则类在 `core/gates/rules/` 中实现，`registered_rules()` 硬编码列表注册；无版本号、无 owner、无"谁定的/何时改过"的应用层记录 | `core/gates/rules/__init__.py:21-35`、`core/gates/engine.py:98` |
 | 2 | `AuditEvent`/`ActionResolutionLog` 只审计运行时人工动作，不审计规则定义变更 | `core/models.py:271-300` |
-| 3 | CRITICAL 档的 `require_expert_review` 开关已由 expert_review 规则消费（T3.3 落地：Stage 3 就绪评估自动创建 escalate 阻断 PendingHumanAction，source_type=`expert_review`） | `core/gates/rules/expert_review.py`、[stage3-risk-adaptive-gate.md](stage3-risk-adaptive-gate.md) |
+| 3 | CRITICAL 档已有 `require_expert_review` 配置，但当时尚无规则消费该开关 | `core/gates/risk_profile.py`；后续落地状态见 §3.4 |
 | 4 | 可观测性只有 HTTP 通用指标（prometheus_fastapi_instrumentator 自动生成），无任何业务指标；Grafana 仅一块 FastAPI Overview 面板 | `api/main.py:37-48,72-92`、`monitoring/grafana/dashboards/fastapi-overview.json` |
 | 5 | 全仓无按 tenant/项目的聚合查询（唯一 GROUP BY 是数用户总数）；存储层 `list_sessions(tenant_id="")` 跨租户分支存在但无 API 暴露 | `storage/backends/postgres.py:947-972,1024` |
 | 6 | `eval_judge.py` 纯规则判分、刻意不做语义判定；`human_calibrations` 表已建但校准闭环未成体系 | `core/eval_judge.py:7-67`、`alembic/versions/V003_schema_alignment.py` |
@@ -60,8 +62,8 @@ RULE_MANIFEST = {
 
 ### 3.3 规则禁用的显式治理
 
-- 新增 settings `GATE_RULES_DISABLED: list[str]`（默认空）：禁用任何规则需显式配置，启动时打 WARNING、`/health` 暴露、每次评估的 `gate_evaluation_records.rule_versions` 标注 disabled——"弱化门禁"永远留痕。
-- 安全底线规则（missing_output/parser_error/safety_finding 等 6 类硬阻断）**不允许禁用**（配置了也忽略并告警）。
+- 新增环境配置 `GATE_RULES_DISABLED`（默认空、逗号分隔字符串；代码通过 `gate_rules_disabled_set` 转为集合）：禁用任何规则需显式配置，启动时打 WARNING、`/health` 暴露、每次评估的 `gate_evaluation_records.rule_versions` 标注 disabled——"弱化门禁"永远留痕。
+- 安全底线规则（当前 manifest 中 `disable_allowed=False` 的 7 条规则）**不允许禁用**（配置了也忽略并告警）；具体清单以 `core/gates/rules/manifest.py` 为准，避免数量随规则演进后失真。
 
 ### 3.4 expert_review 落地（补历史欠账）
 
@@ -88,10 +90,10 @@ Streamlit 新增"治理总览"页：三张卡片（项目数/风险分布/积压
 
 ### 4.3 业务指标接入 Prometheus/Grafana
 
-- 在现有 instrumentator 之上注册自定义指标（`api/metrics.py` 新文件）：
-  - `premortem_sessions_total{tenant,state}`（Gauge，定时刷新）
+- 在现有 instrumentator 之上注册自定义指标（`api/metrics.py`）：
+  - `premortem_sessions_total{tenant,state}`（Gauge；当前仅在 API 启动时用空租户刷新一次，属于零值 scaffold，尚不是实时多租户统计）
   - `premortem_gate_evaluations_total{result}` / `premortem_gate_blocked_total{rule_id}`（Counter，评估路径打点）
-  - `premortem_pending_actions{risk_level}`（Gauge）
+  - `premortem_pending_actions{risk_level}`（Gauge；与 sessions Gauge 一样尚未接入周期性真实聚合）
   - `premortem_llm_calls_total` / `premortem_llm_tokens_total`（Counter，与阶段 2 LLM10 计数共用数据源）
 - Grafana 新增 `governance-overview.json` 面板（与现有 fastapi-overview.json 并列，provisioning 自动加载）。
 - 注意基数控制：tenant 标签用 tenant 名而非 UUID，且内部工具租户数有限，无高基数风险。
@@ -104,7 +106,7 @@ Streamlit 新增"治理总览"页：三张卡片（项目数/风险分布/积压
 
 - 新增 `judge_mode="llm"`：`core/eval_judge.py` 保持现有规则分支为第一层；新增第二层——配置 `EVAL_LLM_JUDGE=on`（默认 off）时，对规则层判为 `needs_review` 的 run 调用 LLM（走 `core/llm/provider.py` 现有工厂，mock 模式天然可测）生成结构化建议：`{"suggested_result": "passed|failed", "rationale": str, "confidence": float}`，存入 EvalRun 新字段 `llm_judge_suggestion`。
 - **judge_result 本身不被 LLM 直接改写**：HIGH/CRITICAL 风险会话的 run 永远保持 `needs_review` 待人工；LOW/MEDIUM 会话允许配置 `EVAL_LLM_JUDGE_AUTOFINAL=on` 后采纳 LLM 建议为终值（该开关的启用属于 3.3 同级的显式治理决策）。
-- **校准闭环**：人工最终判定与 LLM 建议的一致率通过 `human_calibrations` 表（已存在）累计，治理视图展示一致率——一致率是决定是否扩大 AUTOFINAL 范围的量化依据。
+- **校准闭环**：人工最终判定与 LLM 建议的一致率通过 `human_calibrations` 累计，并在 Eval 实验/报告链路展示。当前治理总览的三个 `/governance/*` 端点尚未聚合该一致率；它仍是决定是否扩大 AUTOFINAL 范围的量化依据。
 - Prompt 注入面：eval 输入本身可能含对抗内容，judge prompt 采用防注入模板（材料置于明确分隔的引用块、指令置后），且 judge 输出仅结构化字段入库。
 
 ## 6. ISO/IEC 42001 对齐说明

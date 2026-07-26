@@ -23,7 +23,7 @@
 - [ ] **下线端点**：
   - 数据库泄露：暂停 API 服务（`docker compose down`），断开数据库网络
   - LLM API Key 泄露：在 DeepSeek/Tavily 控制台吊销 key
-- [ ] **保留证据**：日志、数据库快照、Loki/Grafana 截图，勿清理
+- [ ] **保留证据**：Docker JSON/应用日志、数据库快照、Prometheus/Grafana 截图，勿清理；Loki 仅在外部部署另行接入时适用
 
 ## 3. 影响评估（4-24h）
 
@@ -54,10 +54,10 @@
 
 | 概念 | 本项目对应 |
 |------|------------|
-| "敏感数据存储位置" | PostgreSQL `sessions.context_json` 字段（加密后）/ SQLite `sessions.context_json` |
+| "敏感数据存储位置" | PostgreSQL / SQLite 的 `sessions.context_json`；仅配置有效 `DATA_ENCRYPTION_KEY` 时相关字段为 `enc:v1:` 密文 |
 | "审计日志位置" | `audit_events` 表 + `audit_events_archive` 表（删除会话后归档） |
-| "密钥存储位置" | 环境变量 `DATA_ENCRYPTION_KEY` / `JWT_SECRET`，生产部署走 Docker secrets |
-| "外部数据流" | 用户材料 → DeepSeek API（`core/evidence_service.py:format_evidence_for_prompt`） |
-| "PII 掩码开关" | 环境变量 `PII_MASK_BEFORE_LLM` |
+| "密钥存储位置" | setup 将 `JWT_SECRET` / PostgreSQL / Redis 密码同时写入文件型 secrets 与 `.env`；`DATA_ENCRYPTION_KEY` 仅由 `.env` 传入且不自动生成，事件排查与轮换必须覆盖两处 |
+| "外部数据流" | evidence/user_materials、直接用户消息与会话历史均可能进入 DeepSeek prompt |
+| "PII 掩码开关" | `PII_MASK_BEFORE_LLM` 仅覆盖 evidence/user_materials 格式化路径，直接消息/历史不覆盖 |
 | "会话删除端点" | `DELETE /sessions/{id}`（admin only，归档审计后级联删除） |
 | "/health 暴露项" | `data_encryption` / `audit_retention_days` / `session_retention_days` |

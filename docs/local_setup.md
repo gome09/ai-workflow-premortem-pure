@@ -1,6 +1,6 @@
 # Local Environment Setup Guide
 
-> **Last updated:** 2026-07-17
+> **Last updated:** 2026-07-27
 
 ---
 
@@ -16,6 +16,8 @@
 ---
 
 ## 方案 1：演示环境
+
+可复制的 API、前端启动与验证步骤统一见 [startup.md](startup.md)。本页只补充环境模板、密钥和平台差异。
 
 ```bash
 cp .env.demo .env
@@ -35,7 +37,8 @@ uv run uvicorn api.main:app --reload --port 8000
 ## 方案 2：本地真实使用环境
 
 ```bash
-cp .env.example .env
+make setup
+# 编辑 .env：设置 DEEPSEEK_API_KEY / TAVILY_API_KEY
 docker compose up postgres redis -d
 uv sync --all-extras
 uv run uvicorn api.main:app --reload --port 8000
@@ -45,8 +48,9 @@ uv run streamlit run frontend/app.py --server.port 8501
 需要填写：
 - `DEEPSEEK_API_KEY`
 - `TAVILY_API_KEY`
-- `POSTGRES_PASSWORD`
-- `JWT_SECRET`
+- `POSTGRES_PASSWORD` / `REDIS_PASSWORD` / `JWT_SECRET` 由 setup 生成并在 secrets 与 `.env` 间同步；需要自定义时必须保持两处一致
+
+不能只复制 `.env.example` 后启动数据库：compose 的 PostgreSQL/Redis 服务实际读取文件型 secrets。
 
 ---
 
@@ -65,7 +69,7 @@ make lite-up
 
 ## 方案 4：Docker Full（PostgreSQL + Redis + 真实 LLM）
 
-使用 `docker-compose.yml`，敏感值来自 Docker secrets。
+使用 `docker-compose.yml`。六项文件型 secrets 会挂载进容器，其中 JWT/PostgreSQL/Redis 三项还会同步进 `.env`；两处都属于需要保护和轮换的敏感面。
 
 一键初始化 `.env`、`secrets/` 和 TLS 证书：
 
@@ -77,6 +81,7 @@ make setup
 - 若 `.env` 不存在，从 `.env.example` 复制
 - 若 `secrets/` 不存在，从 `secrets.example/` 复制
 - 调用 `scripts/gen_secrets.sh`：随机生成 `jwt_secret` / `postgres_password` / `redis_password` / `grafana_password`（`openssl rand -hex 32`），并把 `.env` 中 `JWT_SECRET` / `POSTGRES_PASSWORD` / `REDIS_PASSWORD` 的 `CHANGE_ME` 占位行同步为相同值（`grafana_password` 仅写 secrets 文件，Grafana 经 `GF_SECURITY_ADMIN_PASSWORD__FILE` 直接读取，不经过 `.env`）
+- 不生成 `DATA_ENCRYPTION_KEY`；生产如需字段加密，需按 `.env.example` 注释生成 Fernet key 并写入 `.env`
 - 签发开发用 TLS 证书
 
 然后仅在 `LLM_MODE=real` 时需要编辑以下文件填入真实值（mock 模式可跳过）：
@@ -85,12 +90,16 @@ make setup
 
 > **注意：** `secrets/` 目录不进入版本控制（已在 `.gitignore` 中排除），提交包中不包含任何真实密钥。
 
+`gen_secrets.sh` 默认使用 `0600`。Linux 上若宿主文件属主与容器内非 root UID 不一致，应使用受控 ACL/属主映射授予容器读取权限；CI 对一次性密钥使用的 `0644` 规避方式不应直接照搬到生产长期密钥。
+
 启动服务：
 
 ```bash
 make prod-up   # 前置检查（secrets/ 六文件 + TLS 证书存在性）通过后启动；缺失时报错提示先跑 make setup
 curl -k https://localhost/api/health/live
 ```
+
+生产启动后还应检查 `curl -k https://localhost/api/health`，确认 `data_encryption` 为 `enabled`；若为 `disabled`，业务材料会按明文写入存储。
 
 开发 HTTPS 证书由 `make setup` 自动生成，如需手动生成：
 
@@ -149,4 +158,4 @@ curl -X POST http://localhost:8000/auth/register \
 - `docker-compose.lite.yml` 存在，轻量 Docker 模式使用 `.env.demo` 配置（`make lite-up` 自动复制）。
 - Docker Full 模式使用 `.env.example` + `secrets/`（`make setup` 自动生成）。
 - `secrets/` 目录不进入版本控制，由 `make setup` 从 `secrets.example/` 模板生成。
-- 当前本地环境缺少 `prometheus_fastapi_instrumentator` 时，`tests/test_api.py` 整个模块会被 `pytest.importorskip` 跳过，`tests/test_health.py` 中有 1 个用例因其他依赖条件被跳过；两者均为 skip，不是 fail。依赖齐全时全量结果为 `650 passed, 1 skipped`（v1.3.0 实测，2026-07-17）。
+- 当前与历史测试基线统一记录在 `docs/acceptance_report.md`；测试文件增删后，以实际收集和执行结果为准。

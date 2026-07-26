@@ -61,6 +61,9 @@ Before cleanup, classify each file as one of:
 | `.upgrade/decisions/doc-alignment-and-frontend-polish.md` | active | permanent | 文档-代码对齐 + 前端中文化收尾（demo 可运行性打磨）决策，commit 545c827 |
 | `.upgrade/decisions/doc-check-stage3-dangling-ref.md` | active | permanent | Phase 4 T4.1 stage3 文档悬空引用补档决策 |
 | `.upgrade/decisions/scorecard-baseline.md` | active | permanent | Phase 4 T4.3 Scorecard 基线扫描决策 |
+| `.upgrade/decisions/doc-code-reconciliation-20260725.md` | active | permanent | 2026-07-25 文档与业务代码一致性审查、清理边界及删除决策 |
+| `.upgrade/decisions/agent-guidance-sync-20260725.md` | active | permanent | 2026-07-25 AGENTS.md / CLAUDE.md 当前事实、优先级与安全边界同步决策 |
+| `.upgrade/decisions/ignore-boundary-hardening-20260725.md` | active | permanent | 2026-07-25 Git 跟踪与 Docker build context 的隐私、密钥及运行时产物隔离决策 |
 | `.upgrade/archive/release_manifest_v1.0.md` | archived | archive | v1.0 生产文件范围清单（已被 v1.3.0 取代），moved from project root 2026-07-13，2026-07-17 Mode 3 归档 |
 | `.upgrade/archive/scorecard-baseline-20260713.md` | archived | archive | Phase 4 T4.3 Scorecard 基线报告（2026-07-13 快照，数据已被趋势报告吸收），2026-07-17 Mode 3 归档 |
 | `.upgrade/reports/scorecard-trend-20260714.md` | active | keep-until-superseded | Phase 4 T4.3 Scorecard 趋势报告（基线对照 + 18 项预期变化） |
@@ -93,6 +96,6 @@ Before cleanup, classify each file as one of:
 | `docs/security-model.md` | `docs/spec/security-model.md` | docs/ 拆分 plan/spec 子目录，安全模型文档归入 spec/ | low | 无 |
 | `docs/stage3-risk-adaptive-gate.md` | `docs/spec/stage3-risk-adaptive-gate.md` | docs/ 拆分 plan/spec 子目录，门禁设计文档归入 spec/ | low | ~~悬空引用~~ 已由 stage3 补档决策修复（`docs/archive/verification-reports/risk_adaptive_gate_final_validation.md` 现已存在，见 `.upgrade/decisions/doc-check-stage3-dangling-ref.md`） |
 | `docs/api-reference.md` | `docs/spec/api-reference.md` | docs/ 拆分 plan/spec 子目录，API 参考文档归入 spec/ | low | 无 |
-| `release_manifest_v1.0.md` | `.upgrade/reports/release_manifest_v1.0.md` | v1.0 生产文件范围快照，属于一次性发布报告，非持续维护文档 | low (no refs found) | 2026-07-17 Mode 3 再归档至 `.upgrade/archive/` |
+| `release_manifest_v1.0.md` | `.upgrade/archive/release_manifest_v1.0.md` | v1.0 生产文件范围快照，属于一次性发布报告，非持续维护文档 | low (no refs found) | 2026-07-17 Mode 3 已再归档至 `.upgrade/archive/` |
 | `show.md` | `.upgrade/archive/show.md` | v1.0 时期项目展示/答辩文档，与 README 大量重叠且版本号落后（v1.0 vs v1.3.0），全仓无引用，已被 README.md 取代 | low (no refs found; git mv 保留历史) | 无（2026-07-17 Mode 4 扫描归档） |
 | `artifacts_live_e2e.log` | `.upgrade/logs/artifacts_live_e2e.log` | live E2E 四阶段实跑日志（RESULT: PASS），一次性运行产物，本就被 `.gitignore` `*.log` 忽略 | low (no refs; untracked) | 2026-07-20 Mode 3 清理已删除（结论早已固化进后续 E2E 报告） |

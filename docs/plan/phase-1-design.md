@@ -3,7 +3,7 @@
 > 关系定位：本文档是 [phase-1-security-compliance.md](phase-1-security-compliance.md)（实施计划 / 任务清单 + 验收标准）的**落地设计层**——给出每个任务的具体文件改动、代码草稿、配置参数、决策依据、执行顺序与并行策略、风险。
 > 配套规格：[../spec/data-classification-and-privacy.md](../spec/data-classification-and-privacy.md)（子系统①-⑤）、[../spec/supply-chain-security.md](../spec/supply-chain-security.md) 第 4-5 节（SAST）。
 > 现状核实日期：2026-07-14（全部条目经代码仓库直接实测，非估算）。
-> 状态：设计完成，待用户决策 3 项后可启动执行。
+> 状态：**已实施完成，本文作为历史设计记录保留**。其中代码行号、版本号、未勾选框和“待决策”措辞均反映执行前快照，不作为当前事实来源。
 >
 > **关于 spec 文件**：现有两份 spec 已完整覆盖阶段 1 全部 9 个任务的设计意图（数据分级 / 加密 / PII / AI 标识 / 生命周期 / PIA / SAST / 应急响应），**不新增 spec 文件**，本设计方案直接落地。
 

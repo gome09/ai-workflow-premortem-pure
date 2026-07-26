@@ -1,12 +1,14 @@
 # 数据分类分级与隐私保护设计规格
 
 > Status: Implemented（自 v1.0.3 起落地 T1.1–T1.9：数据分级 / 字段加密 / PII 掩码 / AI 生成标识 / PIA，沿用至今。落地任务见 [../plan/phase-1-security-compliance.md](../plan/phase-1-security-compliance.md)）
-> Last updated: 2026-07-18
+> Last updated: 2026-07-27
 > 合规依据：PIPL 第 28/51/55/56/57 条、DSL 第 21 条、《人工智能生成合成内容标识办法》（2025-09-01 施行）、EU AI Act Art.50 透明度义务（2026-08-02 生效）、GB/T 22239-2019 日志留存要求
 
 ---
 
-## 1. 现状事实（已核实，2026-07-13）
+> **阅读提示**：第 1 节是 2026-07-13 落地前历史基线，不代表当前实现；当前能力及其启用条件见第 3–6 节。字段加密代码已实现，但默认生产初始化不会生成 `DATA_ENCRYPTION_KEY`，未配置时仍为明文存储。
+
+## 1. 落地前历史基线（2026-07-13）
 
 | # | 事实 | 证据 |
 |---|---|---|
@@ -41,11 +43,11 @@
 |---|---|---|
 | `public_demo` | 内置演示场景数据，无真实业务信息 | 会话由 `scenarios/registry.py` 场景创建 |
 | `business_internal` | 用户输入的真实业务材料 | 非场景创建的会话默认值 |
-| `sensitive_personal` | 材料含敏感个人信息（PIPL 28 条：医疗健康、未成年人、生物识别等） | PII 扫描命中敏感类别时自动升级；或人工标记 |
+| `sensitive_personal` | 材料含敏感个人信息（PIPL 28 条：医疗健康、未成年人、生物识别等） | 当前四类正则 PII 命中时自动升级；语义敏感但未命中正则的材料必须人工标记 |
 
 ### 3.2 判定与覆写
 
-- 自动判定发生在会话创建与 `add_materials` 时（`core/session_service.py` 的 `scan_user_materials` 已有挂载点）。
+- 会话创建时只按是否为内置场景设置 `public_demo` / `business_internal`；加入材料时扫描身份证号、手机号、邮箱、银行卡号四类模式，命中后可升级为 `sensitive_personal`。当前不识别姓名、学号或“心理健康”等语义类别，部署方必须人工覆写这类敏感场景。
 - 人工覆写走新增端点 `PATCH /sessions/{id}/data-classification`（editor/admin），**只允许升级或同级修改，降级必须 admin** 且写 `AuditEvent`。
 - 分级**向上联动 AI 风险分级**：`sensitive_personal` 会话在 `core/gates/risk_profile.py:classify_project_risk` 中作为升档信号（至少 HIGH）——这同时修复第 1 节事实 6 的缺口。数据分级与 AI 风险分级仍是两个独立维度（一个关于"处理的数据"，一个关于"被评估的 AI 系统"），仅单向联动。
 
@@ -61,6 +63,7 @@
 - **加密范围**：`data_classification ∈ {business_internal, sensitive_personal}` 会话的用户材料字段——`user_materials`、`evidence_sources.summary/claims`（source_type=user_material 的记录）。`public_demo` 保持明文（保住"零配置离线演示"这一核心亮点）。
 - **实现位置**：`storage/backends/` 的 `_build_context_json_for_storage`（写侧）与 `load()`（读侧）各加一层 encode/decode 钩子，密文带 `enc:v1:` 前缀以便识别与将来轮换；PostgreSQL 与 SQLite 两个后端行为一致。
 - **降级行为**：未配置密钥时——demo/lite 模式静默明文（现状不回退）；生产模式（postgres backend）启动时打 WARNING 并在 `/health` 暴露 `data_encryption: disabled`。
+- **当前部署事实（2026-07-25）**：`.env.example` 的 `DATA_ENCRYPTION_KEY` 默认为空，`make setup` / `scripts/gen_secrets.sh` 不生成该值，Docker Compose 仅通过 `.env` 传入。因此“代码已实现”不等于“默认生产部署已启用”；上线前必须生成 Fernet key、写入 `.env`，并确认 `/health` 返回 `data_encryption=enabled`。
 - **不做**：全库透明加密（TDE 属部署层，不属应用层）、可搜索加密（当前无按材料内容检索的需求）。
 
 ### 4.2 PII 检测与出境前掩码
@@ -68,8 +71,8 @@
 动机：用户材料会随 prompt 发送到外部 LLM API（DeepSeek），这是一次"向第三方提供个人信息"的数据流转，PIPL 视角必须可控。
 
 - `tools/safety_classifier.py` 新增 `PII_PATTERNS` 规则组：中国大陆身份证号（18 位含校验特征）、手机号（`1[3-9]\d{9}`）、邮箱、银行卡号（Luhn 可后置）。命中产出 `sensitive_info` finding（复用现有 risk_type），敏感类别（如身份证）severity=high。
-- 新增配置 `PII_MASK_BEFORE_LLM`（默认 `false`，避免破坏现有演示行为）：开启后 `core/evidence_service.py:format_evidence_for_prompt` 在拼 prompt 前对命中 PII 做模式保留掩码（`110***********1234`）。
-- 掩码只作用于**发往 LLM 的 prompt 路径**，落库仍存原文（由 4.1 加密保护）——保证人工审核者看到的是真实材料。
+- 新增配置 `PII_MASK_BEFORE_LLM`（默认 `false`，避免破坏现有演示行为）：开启后 `core/evidence_service.py:format_evidence_for_prompt` 对 evidence summary 与 `user_materials` 注入文本中的命中项做模式保留掩码（`110***********1234`）。
+- **当前边界**：直接 `user_message`、INIT 输入和 `conversation_history` 仍可能原文进入阶段 prompt，不受该开关覆盖。因此它不是统一的“所有 LLM 输入脱敏”开关；真实 PII 场景应避免在聊天消息中提交原文，或由部署侧增加入口级脱敏。落库的材料原文仅在 4.1 所列字段范围且配置有效密钥时加密。
 
 ## 5. 子系统③：AI 生成内容标识（《标识办法》+ EU AI Act Art.50）
 
@@ -85,7 +88,7 @@
 
 ## 6. 子系统④：数据生命周期
 
-- **留存策略配置化**：`core/config.py` 新增 `audit_retention_days`（默认 **183**，对齐等保"日志留存不少于 6 个月"）与 `session_retention_days`（默认 0=永久）。留存策略首期只做**声明与检查**（`/health` 暴露配置值 + 文档承诺），自动清理任务后置——审计数据 append-only 优先级高于自动删除。
+- **留存策略配置化**：`core/config.py` 新增 `audit_retention_days`（默认 **183**）与 `session_retention_days`（默认 0=永久）。当前只做**声明与健康检查展示**；代码中没有定时清理器，配置值不会自动删除数据，不应视为已经执行的留存控制。
 - **删除能力**：新增 `DELETE /sessions/{id}`（admin），级联删除各独立表记录，但**审计事件不删除**（改为写入一条 `session_purged` 审计事件保留处置痕迹）——PIPL 删除权与审计完整性的平衡点。
 - **备份指引**：`docs/` 补充生产部署备份章节（`pg_dump` 定时 + volume 快照 + 恢复演练清单），属文档交付，不写代码。
 
@@ -100,9 +103,9 @@
 
 ```
 用户粘贴材料
-  → PII 扫描（新）→ sensitive_info finding + 自动数据分级（新）
+  → 四类正则 PII 扫描 → sensitive_info finding + 命中时自动数据升级（其他敏感语义需人工标级）
   → 落库：business_internal 及以上字段级加密（新）
-  → 进 prompt：可选 PII 掩码（新）→ DeepSeek API（既有数据流，PIA 中披露）
+  → 进 prompt：evidence/user_materials 路径可选 PII 掩码；直接消息/历史当前不覆盖 → DeepSeek API
   → 报告导出：首屏双语 AI 标识（新）+ 分级标签展示
   → 生命周期：留存策略声明 / admin 删除 + 审计痕迹（新）
 ```
@@ -111,4 +114,4 @@
 
 - `data_classification` 字段经 `core/migrations/` 的 ProjectContext schema 迁移添加（默认 `business_internal`，存量演示会话由场景 ID 回填 `public_demo`）；数据库表结构无新表，PostgreSQL 侧无 alembic 变更。
 - 加密开关关闭时全部现有测试不回退；开启时新增读写往返测试（两后端各一组）。
-- 验收口径（对应路线图阶段 1）：存储层敏感字段加密"已在代码里生效"（非计划中）；PIA 文档对高敏场景实际跑过一次；报告标识中文化且首屏可见。
+- 验收口径（对应路线图阶段 1）：存储层指定敏感字段的加密代码已实现（是否启用取决于密钥）；高敏场景 PIA 已按当前实现边界复核；报告标识中文化且首屏可见。

@@ -3,7 +3,7 @@
 > 上游路线图：[improvement-roadmap.md](improvement-roadmap.md) 第 6 节「阶段 2」。
 > 配套设计规格：[../spec/risk-taxonomy-engine.md](../spec/risk-taxonomy-engine.md)（本计划的所有技术决策依据在 spec 中，此处只列任务与验收）。
 > 现状基线核实日期：2026-07-13。
-> 状态：未启动。前置依赖：无硬依赖（可与阶段 1 并行）；建议在阶段 0 完成后启动以便新增代码走安全化的 CI。
+> 状态：**已完成（历史实施计划）**。本文保留执行前基线；当前风险分类实现以对应 spec、taxonomy 代码和 `.upgrade/STATE.md` 为准。
 
 ---
 

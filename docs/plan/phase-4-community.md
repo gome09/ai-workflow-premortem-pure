@@ -2,7 +2,7 @@
 
 > 上游路线图：[improvement-roadmap.md](improvement-roadmap.md) 第 6 节「阶段 4」。
 > 配套设计规格：[../spec/supply-chain-security.md](../spec/supply-chain-security.md) 第 6-8 节。
-> 状态：未启动。前置依赖：阶段 0 的 Scorecard 基线（T0.7）是本阶段所有量化目标的对照起点。本阶段与阶段 1-3 并行推进，没有终点。
+> 状态：**代码侧已完成，外部治理动作待维护者执行（历史实施计划 + 持续清单）**。分支保护等 GitHub 后台状态以 `.upgrade/STATE.md` 为权威记录。
 
 ---
 

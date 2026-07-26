@@ -28,11 +28,11 @@ make doc-check
 ```
 
 Three rule classes (see `docs/spec/supply-chain-security.md` §7):
-1. Link existence (relative paths in README.md / CLAUDE.md / docs/**/*.md)
+1. Link existence across current project Markdown (excluding `.upgrade/`, archive trees, runtime artifacts, and tool caches)
 2. Make target existence
 3. Backtick repo path existence (heuristic: must start with a known top-level dir)
 
-Non-blocking in CI initially (`continue-on-error: true`); promoted to blocking after存量坏链 cleared.
+This check is blocking in CI. The earlier observation-period `continue-on-error` setting has been removed.
 
 ### gen_certs.sh / gen_certs.ps1
 
@@ -54,14 +54,11 @@ bash scripts/gen_secrets.sh
 
 ## Archive
 
-`scripts/archive/` contains scripts that are **not** part of the current v1.0 release:
+`scripts/archive/` contains scripts that are **not** part of the current production workflow:
 
 | Script | Reason archived |
 |---|---|
-| `stage_advancement_source_freeze_audit_alpha11.py` | Validates alpha.11 assumptions, stale for v1.0 |
 | `migrate_add_tenant_once.py` | One-time tenant backfill migration, already applied |
-| `live_e2e_low_risk_room_booking.py` | Manual live E2E, not in CI |
-| `live_e2e_student_management_v2.py` | Manual live E2E, not in CI |
 
 Archived scripts are not invoked by CI, Makefile, or Docker builds.
-See `scripts/archive/README.md` for per-script details.
+See `scripts/archive/README.md` for the retained migration's safety boundary and the cleanup record.

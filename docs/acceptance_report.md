@@ -13,6 +13,18 @@
 | 前端验证 | ✅ Streamlit 工作台正常渲染，JWT 自动登录，无控制台错误，无失败网络请求 |
 | 后端监控 | ✅ 全部 HTTP 200 OK，无 WARNING / ERROR / Exception |
 
+## 当前代码基线复核（2026-07-25）
+
+本节记录当前工作区的文档-代码一致性复核结果；下文 `650 passed, 1 skipped` 等数据仍作为 2026-07-17/18 的历史验收证据保留。
+
+| 验证项 | 当前结果 |
+|------|------|
+| 版本一致性 | ✅ `core/version.py` = `pyproject.toml` = 1.3.0 |
+| 全量测试 | ✅ `623 passed, 8 skipped`（`python -m pytest tests/ -q`） |
+| 文档一致性检查 | ✅ 扫描 51 个当前项目 Markdown 文件，0 处违规 |
+| 数据库迁移链 | ✅ Alembic V001 → V005 |
+| ProjectContext 迁移链 | ✅ 0.6.0-alpha.8 → 0.7.0 → 0.8.0 → 0.9.0 |
+
 ## v1.3.0 回归验证（2026-07-17）
 
 v1.3.0（formal-project-uplift Wave A–E）在 v1.2.1 基础上的变更均不改动四阶段工作流执行路径：治理门面文件（CODE_OF_CONDUCT / GOVERNANCE / CODEOWNERS）、mypy 渐进式类型检查（153 源文件 0 issue）、T3.6 LLM Judge（`EVAL_LLM_JUDGE` / `EVAL_LLM_JUDGE_AUTOFINAL` 双 flag，默认全关）、合规映射 2026-07-17 复核落账（ISO/IEC 42005 对标 + roadmap §10.7）、公开前安全扫描与 CI 覆盖率产出（doc-check 转 blocking）。
@@ -165,7 +177,7 @@ v1.3.0（formal-project-uplift Wave A–E）在 v1.2.1 基础上的变更均不�
 ---
 
 *报告生成时间: 2026-07-14T15:20:18（四阶段 E2E 实测，v1.2.1）*
-*报告最近更新: 2026-07-17（v1.3.0 回归验证段追加，报告架构版本同步 1.3.0）*
+*报告最近更新: 2026-07-25（新增当前代码基线复核；历史验收快照保持不变）*
 *报告架构版本: 1.3.0*
 *历史修复版本: v1.0.1 / v1.0.2（证据门控与红队覆盖门控联通）*
 *复测覆盖: Phase 1 安全合规 + Phase 2 风险分类 + Phase 3 治理平台 + Phase 4 社区打磨 + formal-project-uplift Wave A–E（v1.3.0）*

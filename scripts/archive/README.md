@@ -1,22 +1,6 @@
 # Archived Scripts
 
-This directory contains scripts that are no longer part of the current v1.0 production workflow.
-
-## stage_advancement_source_freeze_audit_alpha11.py
-
-Archived from `scripts/static/stage_advancement_source_freeze_audit.py` during v1.0 cleanup.
-
-This script validates v0.8.0-alpha.11 release assumptions that no longer match the current v1.0 codebase.
-
-Known stale assumptions:
-- Expected `APP_VERSION = "0.8.0-alpha.11"` — current is `"1.0.0"`
-- Expected `PACKAGE_STAGE = "v0.8.0-alpha.11-freeze-fix"` — current is `"v1.0.0"`
-- Expected `ROADMAP.md` to exist at the project root — file does not exist
-- Expected `docs/stage_advancement_api_return_audit_alpha11.md` to exist — file does not exist
-- Checked for `"policy_version": "v0.8.0-alpha.9"` in `eval_regression_policy.py` — that file now uses `APP_VERSION` dynamically
-
-Do not use this script for current release validation. For v1.0 gate contract consistency
-checks, add equivalent assertions to the pytest suite under `tests/`.
+This directory contains scripts that are no longer part of the current production workflow.
 
 ## migrate_add_tenant_once.py
 
@@ -32,20 +16,11 @@ not invoked by Alembic. Retained for reference only.
 **Do not run again** — re-running is idempotent for the INSERT but could mask issues
 in a multi-tenant deployment.
 
-## live_e2e_low_risk_room_booking.py
+## 2026-07-27 cleanup
 
-Archived from `scripts/live_e2e_low_risk_room_booking.py` during v1.0 cleanup.
+Removed three tracked but unusable scripts after reference and behavior review:
 
-Manual live E2E script that drives a full Stage 0–4 workflow through the real API for
-the enterprise meeting-room booking scenario. Requires a running local API on port 8000.
+- `stage_advancement_source_freeze_audit_alpha11.py` hard-coded obsolete alpha-version assumptions and paths that no longer exist.
+- `live_e2e_low_risk_room_booking.py` and `live_e2e_student_management_v2.py` called protected session/stage endpoints without registering, logging in, or sending an Authorization header, so they return 401 against the current API.
 
-Not part of CI. Retained for manual acceptance testing reference.
-
-## live_e2e_student_management_v2.py
-
-Archived from `scripts/live_e2e_student_management_v2.py` during v1.0 cleanup.
-
-Manual live E2E script that drives a full Stage 0–4 workflow through the real API for
-the university student management scenario. Requires a running local API on port 8000.
-
-Not part of CI. Retained for manual acceptance testing reference.
+None was called by Makefile, CI, production code, or the current test suite. Their history remains recoverable from Git; current authenticated acceptance coverage lives in `scripts/live_e2e_four_stage.py` and `tests/`.

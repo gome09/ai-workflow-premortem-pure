@@ -6,7 +6,7 @@
 
 ## 决策方式
 
-- 常规改动：直接以 PR + CI 全绿合入 main（受分支保护约束）。
+- 常规改动的目标流程：通过 PR 且 CI 全绿后合入 main。按当前本地状态记录，GitHub 后台分支保护仍待维护者开启；启用前由维护者自律执行同等流程。
 - 重大决策（架构、合规映射口径、破坏性变更）：决策记录写入 `.upgrade/decisions/` 或 `docs/plan/`，理由留档可追溯。
 - 外部贡献：按 [CONTRIBUTING.md](CONTRIBUTING.md) 提交 Issue/PR，维护者承诺 7 个自然日内响应。
 

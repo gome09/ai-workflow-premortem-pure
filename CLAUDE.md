@@ -1,10 +1,12 @@
 # CLAUDE.md
 
-本文件为 Claude Code（及其他 AI 编码工具）在本仓库工作时的指导文件。
+本文件是 Claude Code 在本仓库的补充指导。仓库级通用规则以 [AGENTS.md](AGENTS.md) 为准；如两者冲突，优先遵守 AGENTS.md 和最新 `.upgrade/STATE.md`。
 
 ## 项目概述
 
-AI 工作流预验尸与人机监督平台（本科毕业设计）。借鉴软件工程"预验尸"（Pre-mortem）方法论，在 AI 项目立项阶段通过四阶段引导式分析（失败模式识别 → 人机协同工作流设计 → Zero-Shot 压力测试 → 触发策略生成），结合风险自适应门禁（LOW/MEDIUM/HIGH/CRITICAL）系统性发现失败模式。详见 [README.md](README.md) 与 [docs/spec/architecture.md](docs/spec/architecture.md)。
+AI 工作流预验尸与人机监督平台。项目源于本科毕业设计，当前按长期维护的开源项目演进。系统在 AI 项目立项阶段通过四阶段分析（失败模式识别 → 人机协同工作流设计 → Zero-Shot 压力测试 → 触发策略生成），结合 LOW/MEDIUM/HIGH/CRITICAL 风险自适应门禁与人工监督，系统性发现部署前风险。详见 [README.md](README.md) 与 [docs/spec/architecture.md](docs/spec/architecture.md)。
+
+当前事实基线：应用版本 `1.3.0`、Alembic head `V005`、ProjectContext schema `0.9.0`；最近一次本地全量测试为 `623 passed, 8 skipped`（2026-07-25）。Phase 0–4 已完成，`docs/plan/` 是历史计划，不是当前待办清单。
 
 ## 技术栈
 
@@ -22,6 +24,8 @@ make test                     # 全量 pytest
 make e2e-mock                 # Mock 场景快速验收
 make e2e-full-test            # 全量端到端
 make lint                     # ruff check + format --check（CI 强制）
+make typecheck                # mypy（本地应通过；CI 当前仍 non-blocking）
+make doc-check                # 当前项目 Markdown 一致性检查（CI 强制）
 make version-check            # 校验 pyproject.toml 与 core/version.py 对齐
 
 make dev-db && make dev-api && make dev-frontend   # 本地 Postgres+Redis 全量开发
@@ -30,6 +34,8 @@ make lite-up                  # Docker：SQLite + Mock，零外部依赖
 make setup && make prod-up    # Docker：生产模式（PostgreSQL + Redis + 真实 LLM）
 ```
 
+完整栈注意：`make setup` 不生成 `DATA_ENCRYPTION_KEY`。生产环境需按 `.env.example` 生成 Fernet key 并在启动后确认 `/health.data_encryption` 为 `enabled`。
+
 ## 架构要点
 
 - 工作流状态转换是**确定性的、代码控制的**——LLM 只生成分析内容，不自主决定流程跳转。
@@ -37,7 +43,8 @@ make setup && make prod-up    # Docker：生产模式（PostgreSQL + Redis + 真
 - `EvidenceSource` / `SafetyFinding` / `EvalCase` / `EvalRun` / `InterruptRecord` / `ReportArtifact` 是一等公民记录（均定义于 `core/models.py`），非附属数据。
 - 请求执行路径：`SessionService` → `core.execution_service.execute_one_turn` → `graph.runner.run_one_step`。默认稳定路径 `single_step`；`langgraph_interrupt` 为实验路径，仅 `WORKFLOW_EXECUTION_MODE=langgraph_interrupt` 时启用。
 - 人工动作解决路径：`core.oversight_service.resolve_action` → `graph.transition_policy.evaluate_action_resolution` → `core.execution_service.sync_execution_after_action_resolution` → 门禁重新评估。
-- 权威源：`core/version.py`（版本号唯一来源）、`core/stage_readiness_service.py`（阶段门禁判定）。
+- 版本权威源：`core/version.py` 与 `pyproject.toml` 必须一致；阶段门禁以 `core/stage_readiness_service.py` 和 `core/gates/` 为准。
+- Alembic 负责数据库 schema；`core/migrations/` 只负责历史 ProjectContext JSON 迁移，当前版本为 0.9.0。
 
 ## 目录结构关键点
 
@@ -52,19 +59,22 @@ make setup && make prod-up    # Docker：生产模式（PostgreSQL + Redis + 真
 | `storage/backends/` | PostgreSQL / SQLite 存储实现 |
 | `scenarios/manifests/` | 可插拔 Demo 场景定义（JSON） |
 | `docs/` | 项目文档，索引见 [docs/README.md](docs/README.md) |
-| `.upgrade/` | 升级工作区，见下方规则 |
+| `.upgrade/` | 升级工作区；当前状态看 `STATE.md`，生命周期看 `MANIFEST.md` |
 
 ## 代码规范
 
 - Ruff：`line-length=100`，`target-version=py311`，规则集 `E,F,I,UP,S`（`E501` 忽略）。提交前跑 `make lint`。
-- pytest：约定 `test_*.py` / `Test*` / `test_*`，测试目录固定 `tests/`。测试用内存存储与 monkeypatched LLM，不依赖外部服务；全量流程验证需 Mock 模式（`.env.demo`）。
+- pytest：约定 `test_*.py` / `Test*` / `test_*`，测试目录固定 `tests/`。单元测试主要使用内存存储与 monkeypatched LLM；全流程验证优先使用 Mock 模式（`.env.demo`）。测试数量会变化，引用数字时必须附日期。
+- 开始修改前运行 `git status --short`；保留现有工作树改动，不格式化或覆盖任务范围外文件。
+- 完成前至少运行与改动相称的测试，以及 `make doc-check`、`make version-check`、`git diff --check`。
 
 ## 文档维护
 
 - 改动 `docs/` 后同步检查 [docs/README.md](docs/README.md) 索引。
-- `docs/plan/improvement-roadmap.md` 是分阶段改进路线图（合规映射 / 企业工程 / 开源社区三轴）；安全或合规改动参照其差距清单，冲突处以第 10 节（外部标准复核增补）为准。第 10 节亦是启动新阶段前重新核实外部标准动态（NIST / TC260 / EU AI Act）的清单。
-- 路线图展开为 [phase-0](docs/plan/phase-0-repo-governance.md) ~ [phase-4](docs/plan/phase-4-community.md) 五份实施计划。**执行任一改进任务前先读对应阶段计划及关联 spec**，完成后勾选该文件验收清单。
+- `docs/plan/improvement-roadmap.md` 与 phase-0~4 计划现在承担历史决策追溯职责；其中旧代码行号、旧迁移版本和未勾选项不代表当前状态。
+- 当前状态以代码、`docs/spec/`、`.upgrade/STATE.md` 和最新 decisions 为准。不要继续在历史计划里维护当前待办；新的升级实施计划应写入 `.upgrade/plans/`。
 - `docs/spec/` 存放系统设计规格，当前全部 `Status: Implemented`（architecture / api-reference / security-model / stage3-risk-adaptive-gate / supply-chain-security / data-classification-and-privacy / risk-taxonomy-engine / governance-platform）。新增设计态规格用 `Status: Designed, not implemented` 标注，实现后必须更新 Status 行。
+- 字段加密属于“代码支持、部署条件启用”；留存天数属于“配置已暴露、自动清理未实现”。更新安全/合规文档时必须保留这两个边界。
 
 <!-- project-upgrade:start -->
 ## Upgrade Workspace Rules

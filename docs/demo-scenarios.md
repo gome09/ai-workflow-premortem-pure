@@ -1,6 +1,6 @@
 # Demo Scenarios Guide
 
-> **Last updated:** 2026-06-08
+> **Last updated:** 2026-07-31
 
 本文专门说明当前项目中的“可插拔 Demo 场景机制”，面向两个读者：
 
@@ -222,13 +222,22 @@
 - `university_ai`
 - `medical_ai`
 
-如果新场景属于新领域，应在 `stages/domain_profiles/` 下新增 profile 文件。
+如果新场景属于新领域，需要新增 domain profile。
 
-例如：
+> ⚠️ **domain profile 不是零改动扩展点。** profile 分发在代码中是硬编码分支，只认 `university_ai` 与 `medical_ai`。仅在 `stages/domain_profiles/` 下新增 `finance_ai.py` **不会生效**——四阶段会继续使用 default 提示词。`scenarios/registry.py` 只校验模块可导入，因此 manifest 校验也会通过。
+>
+> 自 2026-07-31 起，未注册的 profile 名会在 `get_stage_prompts` / `get_json_prompts` 打 WARNING，但行为仍是回落 default。
 
-- `finance_ai.py`
+新增 profile 必须同步修改以下 **4 处分发点**，缺一处就会在该维度上静默回落 default：
 
-该 profile 应至少提供：
+| 分发点 | 作用 |
+|---|---|
+| `stages/prompts.py` — `KNOWN_PROFILES` + `get_stage_prompts` | Stage 1–4 / init / review 的 Markdown prompt |
+| `stages/json_prompts.py` — `get_json_prompts` | JSON-first 模式的 Stage 1–4 prompt |
+| `tools/risk_taxonomy.py` — `get_risk_descriptions` | 领域风险描述 |
+| `graph/nodes.py` — `_extract_init_fields` / `_mock_init_response` | INIT 阶段的字段解析与 mock 响应 |
+
+profile 文件本身应至少提供：
 
 - `INIT_SYSTEM`
 - Stage 1–4 prompts
@@ -395,13 +404,17 @@ manifest 中的 `input_sample_path` 必须指向仓库内真实存在的文件�
 
 这可以避免“前端能看到场景，但一运行就崩”的情况。
 
-### 缺失 mock fixture 时应回退到通用实现
+### 缺失 mock fixture 的实际行为
 
-当前 mock 层的设计是：
+当前 mock 层（`core/llm/adapters/mock.py`）的实际行为是：
 
 - 若指定 fixture 可用，则按场景 fixture 返回结果
-- 若只给出 profile 名称，mock adapter 会尝试按该名称加载 fixture
-- 对未知 profile / fixture，应回退到 `default` / generic fixture，而不是让核心流程直接依赖某个特定 demo
+- 若只给出 profile 名称，mock adapter 会尝试按该名称加载 `core.llm.adapters.mock_fixtures.<name>`
+- **对未知 fixture 名不做回退**：`importlib.import_module` 直接抛 `ModuleNotFoundError`，没有 try/except
+
+这不是疏漏而是前移的校验：`scenarios/registry.py` 在加载 manifest 时就强校验 fixture 可导入，所以正常路径不会走到运行时报错。唯一的绕过口是旧 session 中已持久化的 `ctx.scenario_config["mock_fixture"]`（`core/scenario_context.py`），它不经过 registry 校验——删除或重命名 fixture 模块时需要留意存量 session。
+
+与 domain profile 不同，**mock fixture 确实是零改动扩展点**：新增一个 `mock_fixtures/<name>.py` 即可被按名加载，无需修改分发代码。
 
 对于后续开发者，这里的原则很重要：
 
@@ -417,8 +430,10 @@ manifest 中的 `input_sample_path` 必须指向仓库内真实存在的文件�
 
 1. 场景不是硬编码在前端下拉框里的
 2. 场景不是硬编码在后端主流程里的
-3. 新增场景主要通过“新增 manifest + 输入样例 + profile/mock fixture 文件”完成
+3. 复用已有 domain profile 的新场景，只需“新增 manifest + 输入样例（+ 可选 mock fixture）”即可完成，无需改代码
 4. 默认无场景模式仍可用
 5. mock 模式下可以稳定演示完整阶段链路
+
+需要如实说明的边界：第 3 点仅对**复用已有 domain profile** 的场景成立。引入**新领域**时，domain profile 的分发仍是硬编码的，必须同步修改上文列出的 4 处分发点——这一层目前不是可插拔的。
 
 如果以上五点成立，那么这个“可插拔 Demo 场景机制”就不仅是一个演示功能，而是一个可复用、可扩展、可维护的系统设计点。

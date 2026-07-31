@@ -4,6 +4,14 @@
 所有模板使用 {变量} 占位，由 context_manager 在运行时注入。
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+# 已注册的 domain profile。新增 profile 必须同步更新此集合与下方 get_stage_prompts
+# 的分发分支——仅在 stages/domain_profiles/ 下新增文件不会生效。
+KNOWN_PROFILES = frozenset({"default", "university_ai", "medical_ai"})
+
 STAGE_1_SYSTEM = """你是一位专注于 AI 系统失败模式分析的专家研究员。
 
 {context_summary}
@@ -206,8 +214,18 @@ def get_stage_prompts(profile: str = "default") -> dict[str, str | dict[int, str
     """Return the full prompt bundle for *profile*.
 
     Keys: stage_1, stage_2, stage_3, stage_4, init, review.
-    Falls back to default for any unknown profile name.
+    Falls back to default for any unknown profile name, with a WARNING — dropping a
+    file into stages/domain_profiles/ is not enough to register a new profile.
     """
+    if profile not in KNOWN_PROFILES:
+        logger.warning(
+            "Unknown domain profile %r; falling back to default stage prompts. "
+            "Registering a new profile requires editing the dispatch branches in "
+            "stages/prompts.py, stages/json_prompts.py, tools/risk_taxonomy.py and "
+            "graph/nodes.py — adding stages/domain_profiles/%s.py alone has no effect.",
+            profile,
+            profile,
+        )
     if profile == "university_ai":
         from stages.domain_profiles.university_ai import STAGE_PROMPTS
 

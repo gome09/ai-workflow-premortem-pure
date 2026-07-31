@@ -1,6 +1,12 @@
 # stages/json_prompts.py
 """四阶段 JSON-first prompt。旧 Markdown prompt 仍保留作为 fallback。"""
 
+import logging
+
+from stages.prompts import KNOWN_PROFILES
+
+logger = logging.getLogger(__name__)
+
 JSON_OUTPUT_RULES = """
 必须只输出一个合法 JSON 对象，不要输出 Markdown 表格，不要包裹额外解释。
 如果内容不确定，请在对应字段中明确写入【需核验】。
@@ -151,8 +157,14 @@ def get_json_prompts(profile: str = "default") -> dict[str, str]:
     """Return JSON-mode prompt bundle for *profile*.
 
     Keys: stage_1, stage_2, stage_3, stage_4.
-    Falls back to default for any unknown profile name.
+    Falls back to default for any unknown profile name, with a WARNING — see
+    ``stages.prompts.get_stage_prompts`` for the full list of dispatch points.
     """
+    if profile not in KNOWN_PROFILES:
+        logger.warning(
+            "Unknown domain profile %r; falling back to default JSON prompts.",
+            profile,
+        )
     if profile == "university_ai":
         from stages.domain_profiles.university_ai import JSON_STAGE_PROMPTS
 

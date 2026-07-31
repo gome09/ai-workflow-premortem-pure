@@ -62,8 +62,9 @@ RULE_MANIFEST = {
 
 ### 3.3 规则禁用的显式治理
 
-- 新增环境配置 `GATE_RULES_DISABLED`（默认空、逗号分隔字符串；代码通过 `gate_rules_disabled_set` 转为集合）：禁用任何规则需显式配置，启动时打 WARNING、`/health` 暴露、每次评估的 `gate_evaluation_records.rule_versions` 标注 disabled——"弱化门禁"永远留痕。
-- 安全底线规则（当前 manifest 中 `disable_allowed=False` 的 7 条规则）**不允许禁用**（配置了也忽略并告警）；具体清单以 `core/gates/rules/manifest.py` 为准，避免数量随规则演进后失真。
+- 新增环境配置 `GATE_RULES_DISABLED`（默认空、逗号分隔字符串；代码通过 `gate_rules_disabled_set` 转为集合）：禁用任何规则需显式配置，`/health` 暴露当前禁用集合，每次评估的 `gate_evaluation_records.rule_versions` 标注 disabled——"弱化门禁"永远留痕。
+- 告警时机以实现为准（`core/gates/engine.py`）：WARNING 只在**评估时**触发，且仅针对"试图禁用安全底线规则"这一种情况；普通规则被禁用时是**静默跳过**，不打启动告警也不打评估告警。应用启动（`api/main.py` lifespan）不检查该配置。依赖告警发现误配置的部署方需自行监控 `/health` 的 `gate_rules_disabled` 字段。
+- 安全底线规则（当前 manifest 中 `safety_bottom_line=True` 的 7 条规则）**不允许禁用**（配置了也忽略并告警）；具体清单以 `core/gates/rules/manifest.py` 为准，避免数量随规则演进后失真。
 
 ### 3.4 expert_review 落地（补历史欠账）
 
@@ -104,7 +105,7 @@ Streamlit 新增"治理总览"页：三张卡片（项目数/风险分布/积压
 
 设计原则：LLM 只提供**建议判分**，最终裁决权始终在人工或确定性规则——与全局架构原则一致。
 
-- 新增 `judge_mode="llm"`：`core/eval_judge.py` 保持现有规则分支为第一层；新增第二层——配置 `EVAL_LLM_JUDGE=on`（默认 off）时，对规则层判为 `needs_review` 的 run 调用 LLM（走 `core/llm/provider.py` 现有工厂，mock 模式天然可测）生成结构化建议：`{"suggested_result": "passed|failed", "rationale": str, "confidence": float}`，存入 EvalRun 新字段 `llm_judge_suggestion`。
+- 新增 `judge_mode="llm"`：`core/eval_judge.py` 保持现有规则分支为第一层；新增第二层——配置 `EVAL_LLM_JUDGE=on`（默认 off）时，对规则层判为 `needs_review` 的 run 调用 LLM（走 `core/llm/provider.py` 现有工厂，mock 模式天然可测）生成结构化建议：`{"suggested_result": "passed|failed", "rationale": str, "confidence": float}`，写入 `EvalRun.llm_judge_suggestion`（`core/models.py:522` 的 Pydantic 字段）。**该字段没有独立的数据库列**：它随 `ProjectContext` 序列化进 `context_json` 落库，并镜像一份到 `eval_judgments` 的 `metadata`（`core/eval_runner.py:190-193`）。因此无法直接对它做 SQL 聚合查询。
 - **judge_result 本身不被 LLM 直接改写**：HIGH/CRITICAL 风险会话的 run 永远保持 `needs_review` 待人工；LOW/MEDIUM 会话允许配置 `EVAL_LLM_JUDGE_AUTOFINAL=on` 后采纳 LLM 建议为终值（该开关的启用属于 3.3 同级的显式治理决策）。
 - **校准闭环**：人工最终判定与 LLM 建议的一致率通过 `human_calibrations` 累计，并在 Eval 实验/报告链路展示。当前治理总览的三个 `/governance/*` 端点尚未聚合该一致率；它仍是决定是否扩大 AUTOFINAL 范围的量化依据。
 - Prompt 注入面：eval 输入本身可能含对抗内容，judge prompt 采用防注入模板（材料置于明确分隔的引用块、指令置后），且 judge 输出仅结构化字段入库。
@@ -125,6 +126,6 @@ Streamlit 新增"治理总览"页：三张卡片（项目数/风险分布/积压
 
 ## 7. 兼容性与验证
 
-- alembic V005（`gate_evaluation_records` 表 + EvalRun 建议字段）；SQLite 内联 DDL 同步。
+- alembic V005 只创建 `gate_evaluation_records` 一张表；SQLite 内联 DDL 同步。**`eval_runs` 表没有 `llm_judge_suggestion` 列**——V005 不含任何 `ALTER TABLE eval_runs`，两个后端的 `_sync_eval_runs` INSERT 列清单也不含该列。
 - 现有 `evaluate_stage_gate` 签名不变，落表为旁路写入（失败不阻断评估主路径，只打日志）。
 - 验收口径（对应路线图阶段 3）：一个界面看到"几个项目在评估、各处于什么风险等级、通过率如何"；任一规则能回答版本与变更历史；LLM Judge 若启用，有一致率数据支撑。

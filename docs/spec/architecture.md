@@ -102,7 +102,8 @@ FastAPI / Streamlit
 -> core.oversight_service.resolve_action(...)
    -> assert_action_resolution_allowed -> graph.transition_policy.evaluate_action_resolution(...)
 -> SessionService.after_human_resolution -> stage_advancement_coordinator
-   -> core.execution_service.sync_execution_after_action_resolution(...)
+   -> core.execution_service.sync_execution_after_action_resolutions(...)   # 复数：批量入口
+      -> core.execution_service.sync_execution_after_action_resolution(...) # 单数：由批量入口内部逐条调用
       -> single_step: no checkpoint mutation
       -> langgraph_interrupt: mark interrupt resumed/cancelled and consume resume once
 -> stage gate re-evaluation

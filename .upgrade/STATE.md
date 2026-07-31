@@ -10,7 +10,8 @@ Phase 0–4 代码侧已完成；formal-project-uplift Wave A–E（Task 0–18�
 
 ## Last Completed
 
-- **文档—代码深度复核与失效脚本清理 (2026-07-27)** — 4 个子代理只读审查规格、运行文档、文档清单与安全合规，主代理按代码/配置/测试复核并定点修正：默认执行器与 SQLite 路径、供应链 workflow 当前态、治理 Gauge 占位边界、Stage 3 safety finding 条件、Context 迁移删除条件、本地真实模式 secrets 初始化、PII 掩码覆盖范围、心理健康示例数据分级、显式同意缺口及双重密钥存储。删除 3 个无调用且在当前认证 API 上不可运行/硬编码旧 alpha 假设的归档脚本，保留一次性 tenant 迁移参考。未删除或合并职责独立的 spec、PIA、plan 历史基线。验证：`python scripts/doc_consistency_check.py` 扫描 51 份 Markdown、0 违规；version 1.3.0 一致；全量测试 623 passed / 8 skipped；`git diff --check` 通过。当前 Windows 环境没有 `make`，故直接运行 Makefile 对应底层命令。
+- **文档—代码矛盾复核与结构性去重 (2026-07-31)** — 4 个只读子代理分区审查（根目录门面 / `docs/spec` 8 份 / 运行部署 / 合规+计划+`.upgrade`），主代理对每条发现做代码实证复核后落笔，5 组取舍问题逐项询问用户。**查出并修正 4 条高危**：①`623 passed, 8 skipped` 基线系用系统 Python（缺 `prometheus-fastapi-instrumentator`，触发 7 处 `importorskip`）而非 `uv run` 录制的降级结果，已更正并在 AGENTS.md 加"基线必须走 uv run"的硬约定；②`sensitive_personal` 声称"至少 HIGH"但实测可落 LOW（low-scope 降档在升档之后执行）；③`report_service.py` 声称的 Markdown 转义从未实现；④domain profile 声称是零改动扩展点，实为 4 处硬编码分发链，新增 profile 静默失效。②③按用户决策**只改文档、如实记录缺口，未改代码**；④改文档并补 `KNOWN_PROFILES` + 未知 profile WARNING（10 条新测试）。结构性去重：`CLAUDE.md` 去除与 AGENTS.md 重复的 5 组可漂移事实（H1 正是在两处同步错的）、`local_setup.md` 去除约 52% 与 startup.md 的逐字重复、`lite-mode.md` 并入 startup.md 后删除。删除 `examples/` 两个零引用且 schema 停在 `0.8.0-alpha.11` 的 JSON、`FIRST_ADMIN_*` 悬空行、`storage/README.md` 无法证实的 "removed in v1.0" 段。另修 CHANGELOG 提交历史（远端不存在 2026-05-31 起的历史，全部 ref 最早为 2026-06-13）、README.en 的 ISO42001 误归类、README 技术栈漏 SQLite 与 Workbench 命名冲突、`LLM_MODE=deepseek` 非法候选值等十余处。验证：doc-check 50 份 0 违规、version 1.3.0、ruff clean、**660 passed / 1 skipped**、mypy 155 文件 0 issue、`git diff --check` 通过。决策：`.upgrade/decisions/doc-code-reconciliation-20260731.md`。
+- **文档—代码深度复核与失效脚本清理 (2026-07-27)** — 4 个子代理只读审查规格、运行文档、文档清单与安全合规，主代理按代码/配置/测试复核并定点修正：默认执行器与 SQLite 路径、供应链 workflow 当前态、治理 Gauge 占位边界、Stage 3 safety finding 条件、Context 迁移删除条件、本地真实模式 secrets 初始化、PII 掩码覆盖范围、心理健康示例数据分级、显式同意缺口及双重密钥存储。删除 3 个无调用且在当前认证 API 上不可运行/硬编码旧 alpha 假设的归档脚本，保留一次性 tenant 迁移参考。未删除或合并职责独立的 spec、PIA、plan 历史基线。验证：`python scripts/doc_consistency_check.py` 扫描 51 份 Markdown、0 违规；version 1.3.0 一致；全量测试 623 passed / 8 skipped（**该数字已于 2026-07-31 判定无效**：系用系统 Python 而非 `uv run` 录制，缺 `prometheus-fastapi-instrumentator` 致 7 处 `importorskip` 跳过；同期真实值为 650 passed / 1 skipped）；`git diff --check` 通过。当前 Windows 环境没有 `make`，故直接运行 Makefile 对应底层命令。
 - **Git / Docker ignore 边界加固 (2026-07-25)** — 审查确认 Git 当前及历史均未跟踪真实 `.env`、`secrets/`、TLS 私钥、SQLite 数据、coverage 或缓存；发现 `.dockerignore` 未排除真实 `secrets/` 且 Dockerfile 使用 `COPY . .`，存在密钥进入 build context/镜像层的高风险。已补齐 `.gitignore` 的 agent local settings、通用私钥/keystore、环境管理、扩展测试缓存与数据库规则；`.dockerignore` 现排除所有 `.env*`、`secrets/`、证书/私钥、agent 配置、测试/文档/CI/升级记录、部署配置、缓存与运行时数据，同时保留运行时需要的 `examples/`。验证：无 tracked-ignore 冲突、context 模拟 `included_risky=NONE`、Full/Lite compose config 通过；实际 build 因本机 Docker daemon 未运行未完成。决策：`.upgrade/decisions/ignore-boundary-hardening-20260725.md`。
 - **代理指导文件同步 (2026-07-25)** — 基于当前业务代码、`.upgrade/STATE.md` / `MANIFEST.md` 和项目验证链，更新根目录 `AGENTS.md` 与 `CLAUDE.md`：AGENTS 成为仓库级代理权威入口，CLAUDE 作为补充并显式服从 AGENTS；同步 v1.3.0、Alembic V005、ProjectContext 0.9.0、623 passed/8 skipped 基线、Phase 计划历史定位、doc-check/typecheck/docker-full CI 状态，以及字段加密默认未启用/留存无自动清理器等真实边界。保留 project-upgrade 受控块原文。决策：`.upgrade/decisions/agent-guidance-sync-20260725.md`。
 - **文档与业务代码一致性整理 (2026-07-25)** — 子代理独立审查 + 主代理代码实证复核。修正迁移链、CI 状态、当前测试基线、归档版本措辞、安全/PIA/留存能力边界、备份与应急可执行性、分支保护状态等事实漂移；10 份 Phase 0–4 计划/设计文档统一标为历史基线；README 合并重复启动说明。`doc_consistency_check.py` 扫描范围由 35 份扩展到 51 份当前项目 Markdown（排除升级历史/archive/运行时产物/缓存）。删除未跟踪且无引用的旧 v1.2.2 运行时导出 `artifacts/live_e2e_four_stage/session_export.md`。当前验证：623 passed/8 skipped、doc-check 51 文件 0 违规、version 1.3.0 一致。决策记录：`.upgrade/decisions/doc-code-reconciliation-20260725.md`。
@@ -62,7 +63,9 @@ Phase 0–4 代码侧已完成；formal-project-uplift Wave A–E（Task 0–18�
 
 - **旧 Docker 镜像敏感文件复核**：本次已修复 build context，但 Docker Desktop daemon 当前未运行，无法检查修复前构建的本地/远端镜像是否含 `/app/secrets`。daemon 恢复后需重建并检查；如旧镜像曾被推送或分享，应轮换相关密钥。步骤见 `.upgrade/decisions/ignore-boundary-hardening-20260725.md`。
 - **Phase 4 T4.2 分支保护**：决策记录已入库（`.upgrade/decisions/branch-protection.md`），但实际开启需维护者登录 GitHub 后台手动操作（Settings → Branches → main → Enable protection）。操作后预期 Scorecard Branch-Protection 0→8+、Code-Review 0→3-5。
-- **Phase 4 T4.1 doc-check 转强制**：已完成。当前 `.github/workflows/ci.yml` 的 doc-check 步骤没有 `continue-on-error`，文档一致性失败会阻断 CI。
+- **`sensitive_personal` 升档不是地板值**（2026-07-31 发现，未修复）：`core/gates/risk_profile.py` 中 low-scope 降档在敏感数据升档之后执行，`sensitive_personal` 会话仍可落到 LOW。已按用户决策在 `docs/spec/data-classification-and-privacy.md` 如实标注为已知缺口。如需强制下限需改代码 + 补回归测试。
+- **报告 Markdown 导出无转义**（2026-07-31 发现，未修复）：`core/report_service.py` 直接 f-string 拼接 LLM 生成内容，导出报告若被下游渲染器直接渲染仍可能执行 `<script>` 或伪协议链接。已在 `docs/spec/risk-taxonomy-engine.md` 标注；当前唯一防线是 `improper_output_handling` finding（检测非阻断）。
+- **`premortem_pending_actions` 指标语义错配**（未修复）：`api/metrics.py` 把会话风险档位分布喂给了本应表示待处理动作数的 Gauge，且 `refresh_gauge_metrics()` 传空 tenant_id 导致取到零值模板。本轮未在确认范围内。
 - Phase 3 T3.6 (LLM Judge)：~~gated on user confirming real demand~~ 已解除——用户确认需求后于 2026-07-17 作为 Wave C 落地（v1.3.0，flag 默认关）。真实 LLM 一致率数据待生产启用后经 human_calibrations 累计。
 - NIST AI 600-1 中 4 项动作项编号标 [存疑]（MS-2.10-002 / MS-2.5-005 / MS-2.5-003 / GV-1.3-002），待 NIST 发布修订版后核对。
 - TC260《智能体部署使用安全指引》条款文字基于二手摘要，待补全文核对。
@@ -126,9 +129,15 @@ Phase 4 开源社区打磨代码侧全部完成。核心成果：
 
 ## Last Updated
 
+- Date: 2026-07-31
+- By: claude-code（4 个只读子代理分区审查 + 主代理逐条代码实证复核 + 5 组取舍问题用户确认）
+- Summary: 查出 4 条高危文档—代码矛盾并处置：测试基线录自错误解释器、`sensitive_personal` 升档非地板值、报告 Markdown 转义从未实现、domain profile 非零改动扩展点。后两类中 ②③ 按用户决策只改文档保留代码缺口，④ 补 WARNING + 10 条测试。结构性去重 CLAUDE.md / local_setup.md，删除 lite-mode.md 与 2 个失效 examples JSON。测试基线 660 passed / 1 skipped，doc-check 扫描数 51 → 50。
+
+### 上一轮（2026-07-27）
+
 - Date: 2026-07-27
 - By: Codex（4 个子代理只读审查 + 主代理代码实证复核）
-- Summary: 完成全仓 Markdown 与业务代码/配置/测试的深度对账，收窄 PII、治理指标与远端治理能力声明，修复运行、迁移、架构和供应链事实漂移；删除 3 个已失效且无调用的归档脚本，保留有独立职责的当前文档与历史基线。
+- Summary: 完成全仓 Markdown 与业务代码/配置/测试的深度对账，收窄 PII、治理指标与远端治理能力声明，修复运行、迁移、架构和供应链事实漂移；删除 3 个已失效且无调用的归档脚本，保留有独立职责的当前文档与历史基线。（该轮记录的 623/8 测试基线已于 2026-07-31 判定无效，见上。）
 
 ### 上一轮（2026-07-20 上午）
 

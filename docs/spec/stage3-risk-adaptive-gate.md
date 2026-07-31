@@ -46,10 +46,12 @@ Implemented risk-adaptive Stage 3 gate that classifies projects into risk tiers 
 
 | Tier | Domain Keyword Examples | Gate Profile |
 |------|----------------|--------------|
-| **CRITICAL** | 药物、处方、诊断、患者、临床、手术、心理健康、军事, drug, medication, prescription | Strongest: all gates |
-| **HIGH** | 金融、贷款、法律、合同、儿童、学生、认证、多租户、自动发送, finance, legal | Strong: redteam + regression + trace |
-| **MEDIUM** | 团队管理、项目协作 (no explicit low-risk markers) | Medium: eval coverage + failed eval |
-| **LOW** | 个人、学习、读书、笔记、本地、非生产, personal, learning | Basic: safety底线 only |
+| **CRITICAL** | 药物、处方、诊断、患者、临床、医疗、手术、肿瘤、急诊, drug, medication, prescription, surgery, oncology | Strongest: all gates（含 expert_review） |
+| **HIGH** | 金融、贷款、法律、合同、儿童、学生、认证、多租户、自动发送、**心理健康**、**军事**、核电、自动驾驶, finance, legal, mental health, military | Strong: redteam + regression + trace |
+| **MEDIUM** | 团队管理、项目协作 (no explicit low-risk markers) | eval coverage + failed eval |
+| **LOW** | 个人、学习、读书、笔记、本地、非生产, personal, learning | 与 MEDIUM 相同：eval coverage + failed eval |
+
+> 两处易错点：①「心理健康」与「军事」属 **HIGH** 而非 CRITICAL（分别对应 `_HIGH_KEYWORDS` 的 `mental health domain` 与 `nuclear/military domain`）；②**LOW 档并非只有安全底线**——`build_stage3_gate_profile` 中 LOW 与 MEDIUM 的 `require_*` 标志逐字段相同，两档都强制 `require_eval_coverage` 与 `require_failed_eval_resolution`，仅 rationale 文案不同。
 
 ---
 

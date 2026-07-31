@@ -1,6 +1,8 @@
 # AGENTS.md
 
-本文件适用于整个仓库。所有编码代理在修改代码、文档、配置或升级记录前，应先遵守本文件；`CLAUDE.md` 是面向 Claude Code 的补充说明，不得与本文件冲突。
+本文件适用于整个仓库，是当前事实基线、常用命令、架构不变量与安全边界的**唯一权威源**。所有编码代理在修改代码、文档、配置或升级记录前，应先遵守本文件。
+
+`CLAUDE.md` 是面向 Claude Code 的补充说明，不得与本文件冲突，也**不重复**本文件已有的可漂移事实——它只承载三块本文件未覆盖的内容：目录结构表、Ruff/pytest 细则、`docs/spec/` 状态清单。新增可漂移事实（版本号、测试基线、CI 状态、能力边界）一律只写入本文件。
 
 ## 项目现状
 
@@ -9,7 +11,8 @@
 - 当前数据库迁移头：Alembic `V005`；当前 `ProjectContext` schema：`0.9.0`。
 - Phase 0–4 代码侧已完成；`docs/plan/phase-*.md` 与 `phase-*-design.md` 是历史实施/设计基线，不得把其中旧版本、旧行号或未勾选项当作当前事实。
 - formal-project-uplift Wave A–E 已完成；剩余工作主要是仓库公开后的远端治理动作，如 CodeQL 转正、main 分支保护和发布设置。权威状态见 `.upgrade/STATE.md`。
-- 最近一次本地全量测试基线：`623 passed, 8 skipped`（2026-07-25）。测试数量会随测试集合变化，不应硬编码为永久断言。
+- 最近一次本地全量测试基线：`660 passed, 1 skipped`（2026-07-31，`make test` 即 `uv run pytest tests/`）。测试数量会随测试集合变化，不应硬编码为永久断言。
+- 录制测试基线必须走 `uv run`（项目 `.venv`）。用系统 Python 直接跑 `python -m pytest` 会因缺少 `prometheus-fastapi-instrumentator` 等主依赖触发 7 处 `importorskip` 跳过，得到 `623 passed, 8 skipped` 的降级结果——该数字不是有效基线。
 
 ## 事实来源优先级
 
@@ -46,7 +49,7 @@ make doc-check
 make version-check
 ```
 
-- `make doc-check` 当前是 CI 阻断项，扫描 51 份当前项目 Markdown（排除 `.upgrade/`、archive、运行时产物和缓存）。
+- `make doc-check` 当前是 CI 阻断项，扫描 50 份当前项目 Markdown（排除 `.upgrade/`、archive、运行时产物和缓存）。
 - CI 中 mypy 与 docker-full integration 仍处观察期，当前为 non-blocking；不要在文档中写成已强制。
 - 离线开发优先使用 `make demo-api` + `make demo-ui`（Mock LLM + SQLite）。
 - Docker Lite 使用 `make lite-up`；完整栈使用 `make setup` + `make prod-up`。

@@ -45,12 +45,41 @@ bash scripts/gen_certs.sh
 
 ### gen_secrets.sh
 
-Generates random secret values for `.env` files (JWT secret, passwords, etc.).
+Populates the file-based `secrets/` directory used by `docker-compose.yml`, and keeps `.env` in
+sync where the application's config precedence requires it. Invoked by `make setup`.
 Run once per environment setup. Not part of CI.
 
 ```bash
 bash scripts/gen_secrets.sh
 ```
+
+What it does, precisely:
+
+1. Generates four random values (`openssl rand -hex 32`) into `secrets/`: `jwt_secret`,
+   `postgres_password`, `redis_password`, `grafana_password` — each `chmod 600`.
+2. Syncs **three** of them (`JWT_SECRET`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`) back into the
+   matching `CHANGE_ME` lines in `.env`. This is required because `.env` values shadow
+   `/run/secrets` in the settings precedence order. `grafana_password` is *not* synced — Grafana
+   reads it directly via `GF_SECURITY_ADMIN_PASSWORD__FILE`.
+3. Comments out the `CHANGE_ME` placeholder lines for `DEEPSEEK_API_KEY` / `TAVILY_API_KEY`,
+   which cannot be generated and must be filled in manually when `LLM_MODE=real`.
+
+It does **not** generate `DATA_ENCRYPTION_KEY`. Field-level encryption stays disabled (plaintext
+storage with a warning) until that key is provisioned by hand — see `.env.example`.
+
+### live_e2e_four_stage.py
+
+Drives the full Stage 1–4 workflow against a **already-running** backend over the authenticated
+API, using the `generic_rag_demo` mock scenario. Used for manual acceptance runs; not a CI step
+and not wired to any Makefile target.
+
+```bash
+# backend must already be listening on 127.0.0.1:8000 (e.g. `make demo-api`)
+uv run python scripts/live_e2e_four_stage.py
+```
+
+`BASE_URL` is hardcoded to `http://127.0.0.1:8000` — there is no CLI flag or environment
+override. Edit the constant if you need a different host or port.
 
 ## Archive
 

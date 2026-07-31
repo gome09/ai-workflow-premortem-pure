@@ -101,11 +101,11 @@ updates:
 | Fuzzing / Packaging / CII-Badge | ❌ | 不做 | 视精力（可选） |
 | Maintained / CI-Tests / Binary-Artifacts / Pinned-Dependencies(lock) | ✅ | 保持 | 保持 |
 
-管理机制：每完成一个阶段重跑一次 `scorecard` CLI，结果追加存档到 `.upgrade/reports/`，趋势必须向上——这是阶段 4 的验收口径（"分数相比基线有实质提升且可追踪"）。
+管理机制：`.github/workflows/scorecard.yml` 已入库（weekly cron + `workflow_dispatch` 手动触发，Scorecard CLI v5.5.0，`permissions: contents: read`）；此外每完成一个阶段重跑一次并把结果追加存档到 `.upgrade/reports/`，趋势必须向上——这是阶段 4 的验收口径（"分数相比基线有实质提升且可追踪"）。
 
 ## 7. 文档-代码一致性检查 CI
 
-动机：`.upgrade/decisions/RELEASE_CLEANUP.md` 记录过一轮"文档与代码不一致"的事后修复；已知 `docs/spec/stage3-risk-adaptive-gate.md` 中存在指向 `../archive/verification-reports/` 的悬空引用。需要把"事后修复"变成"CI 常态拦截"。
+动机：`.upgrade/decisions/RELEASE_CLEANUP.md` 记录过一轮"文档与代码不一致"的事后修复；立项当时 `docs/spec/stage3-risk-adaptive-gate.md` 中存在指向 `../archive/verification-reports/` 的悬空引用（该引用已补档修复，见 `.upgrade/decisions/doc-check-stage3-dangling-ref.md`）。需要把"事后修复"变成"CI 常态拦截"。
 
 目标形态：`scripts/doc_consistency_check.py` + CI 步骤，检查规则：
 1. **链接存在性**：扫描当前项目全部 Markdown（排除 `.upgrade/` 历史记录、archive 树、运行时产物和工具缓存）中的相对路径链接，校验目标文件存在（外部 URL 跳过）。

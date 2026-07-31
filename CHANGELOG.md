@@ -1,8 +1,19 @@
 # Changelog
 
-> **历史追溯说明**：v0.1–v0.7 阶段的详细提交历史因仓库整理未完整保留于本地 `main` 分支。
-> 远程 `origin`（github.com/gome09/ai-workflow-premortem-pure）保有 2026-05-31 起的完整提交历史（21 次提交），如需追溯请查阅远程分支。
-> 其中 v0.1（2026-05-01）/ v0.5（2026-05-20）的日期早于可见最早 commit（2026-05-31），为里程碑回溯记录，非逐次提交日志。
+> **历史追溯说明**：v0.1（2026-05-01）、v0.5（2026-05-20）、v1.0（2026-06-10）为里程碑回溯记录，非逐次提交日志——三者日期均早于本仓库可见的最早提交 `5ecffaf`（2026-06-13，`baseline: post first-round cleanup`），早期开发历史在仓库整理时未保留。
+> 远程 `origin`（github.com/gome09/ai-workflow-premortem-pure）与本地共享同一根提交，**不包含更早的历史**，无法用于追溯 v1.0 之前的开发过程。
+> 截至 2026-07-31，本地 `main` 领先 `origin/main` 6 次提交（尚未推送）。
+
+## 维护记录 (2026-07-31)
+
+- **文档—代码矛盾复核与结构性去重**（决策 `.upgrade/decisions/doc-code-reconciliation-20260731.md`）：4 个只读子代理分区审查 + 主代理逐条代码实证复核。
+  - **修正无效测试基线**：`623 passed, 8 skipped` 系用系统 Python（缺 `prometheus-fastapi-instrumentator`，触发 7 处 `importorskip`）而非 `uv run` 录制的降级结果。已更正为实测值，并在 `AGENTS.md` 增加"基线必须走 `uv run` / `make test`"的硬性约定。
+  - **两处规格与实现相反，按决策只改文档、代码缺口如实登记**：①`sensitive_personal` 声称"至少 HIGH"，实测因 low-scope 降档在升档之后执行仍可落 LOW；②`core/report_service.py` 声称的 Markdown 转义从未实现。两者均已在对应 spec 标注为已知缺口并录入 STATE.md Blockers。
+  - **新增未知 domain profile 告警**：`stages/prompts.py` 新增 `KNOWN_PROFILES`，`get_stage_prompts` / `get_json_prompts` 对未注册 profile 打 WARNING（行为不变，仍回落 default）。`docs/demo-scenarios.md` 补齐 4 处硬编码分发点说明——此前文档称新增 profile 文件即可生效，实际会静默失效。新增 `tests/test_unknown_domain_profile_warning.py` 10 条。
+  - **结构性去重**：`CLAUDE.md` 移除与 `AGENTS.md` 重复的 5 组可漂移事实（只保留目录结构表 / Ruff-pytest 细则 / spec 状态清单）；`docs/local_setup.md` 移除约 52% 与 `docs/startup.md` 的逐字重复；docs/lite-mode.md 的独有内容（适用边界 + 代码对应关系表）并入 `docs/startup.md` 后删除该文件，索引同步。
+  - **删除失效内容**：examples/sample_report.json 与 examples/stage_gate_scenarios.json（schema 停在 `0.8.0-alpha.11`，全仓零引用、无测试消费）；`docs/local_setup.md` 的 `FIRST_ADMIN_*` 悬空行；`storage/README.md` 无法证实的 "removed in v1.0" 段。
+  - **其他事实修正**：CHANGELOG 头部提交历史（远端不含 2026-05-31 起的历史，全部 ref 最早为 `5ecffaf` 2026-06-13）、`README.en.md` 的 ISO/IEC 42001 误归入 taxonomy engine、README 技术栈漏 SQLite、Audit/Review Workbench 命名冲突、LOW 档门禁描述、`gen_secrets` 同步范围、`make demo-api` 无条件覆盖 `.env` 的警告、issue 模板 `LLM_MODE=deepseek` 非法值、governance-platform 的 V005 与 `llm_judge_suggestion` 持久化描述、stage3 关键词档位错放、iso42001 证据路径、`scripts/README.md` 漏登 `live_e2e_four_stage.py`。
+  - **测试验证**：660 passed, 1 skipped；doc-check 50 份 0 违规（因删除 lite-mode.md 由 51 降为 50）；version 1.3.0；ruff clean；mypy 155 源文件 0 issue。
 
 ## 维护记录 (2026-07-20)
 - **本地 CI 复现 + 远端 GitHub CI 三 job 全绿**（计划 `.upgrade/plans/2026-07-18-local-then-remote-ci-execution.md`，报告 `.upgrade/reports/ci-run-20260718.md`）：

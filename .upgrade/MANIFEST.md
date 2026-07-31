@@ -64,6 +64,7 @@ Before cleanup, classify each file as one of:
 | `.upgrade/decisions/doc-code-reconciliation-20260725.md` | active | permanent | 2026-07-25 文档与业务代码一致性审查、清理边界及删除决策 |
 | `.upgrade/decisions/agent-guidance-sync-20260725.md` | active | permanent | 2026-07-25 AGENTS.md / CLAUDE.md 当前事实、优先级与安全边界同步决策 |
 | `.upgrade/decisions/ignore-boundary-hardening-20260725.md` | active | permanent | 2026-07-25 Git 跟踪与 Docker build context 的隐私、密钥及运行时产物隔离决策 |
+| `.upgrade/decisions/doc-code-reconciliation-20260731.md` | active | permanent | 2026-07-31 文档—代码矛盾复核：4 条高危处置（测试基线解释器错误 / sensitive_personal 非地板值 / 报告转义未实现 / domain profile 非零改动扩展点）、CLAUDE.md 与 local_setup.md 结构性去重、lite-mode.md 与 2 个 examples JSON 删除 |
 | `.upgrade/archive/release_manifest_v1.0.md` | archived | archive | v1.0 生产文件范围清单（已被 v1.3.0 取代），moved from project root 2026-07-13，2026-07-17 Mode 3 归档 |
 | `.upgrade/archive/scorecard-baseline-20260713.md` | archived | archive | Phase 4 T4.3 Scorecard 基线报告（2026-07-13 快照，数据已被趋势报告吸收），2026-07-17 Mode 3 归档 |
 | `.upgrade/reports/scorecard-trend-20260714.md` | active | keep-until-superseded | Phase 4 T4.3 Scorecard 趋势报告（基线对照 + 18 项预期变化） |

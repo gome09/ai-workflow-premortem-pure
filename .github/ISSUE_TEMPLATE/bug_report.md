@@ -20,9 +20,9 @@ labels: bug
 <!-- 实际发生了什么 -->
 
 ## 环境
-- 版本：<!-- 如 v1.2.0，见 core/version.py -->
+- 版本：<!-- 如 v1.3.0，见 core/version.py -->
 - 部署模式：<!-- docker-compose / lite / 本地 uv -->
-- LLM_MODE：<!-- mock / deepseek -->
+- LLM_MODE：<!-- real / mock -->
 - 操作系统：
 
 ## 补充信息

@@ -48,10 +48,9 @@
 
 根据项目风险等级（LOW / MEDIUM / HIGH / CRITICAL），动态调整每个阶段的通过条件：
 
-- **LOW**（个人/学习类）：通过基础安全检查即可推进
-- **MEDIUM**（团队协作）：需 Eval 覆盖高风险节点
-- **HIGH**（金融/法律/儿童）：需红队测试 + 回归评估 + 追踪记录
-- **CRITICAL**（医疗/药物/诊断）：需全部门禁 + 专家评审，强制阻断
+- **LOW**（个人/学习类）/ **MEDIUM**（团队协作）：需 Eval 覆盖 + 失败 Eval 处理。两档的 Stage 3 门禁标志当前完全相同（见 `core/gates/risk_profile.py:build_stage3_gate_profile`），仅归因说明不同
+- **HIGH**（金融/法律/儿童/心理健康/军事）：在上述基础上追加红队覆盖 + 回归评估 + 追踪补齐
+- **CRITICAL**（医疗/药物/诊断）：在 HIGH 基础上追加专家评审，强制阻断
 
 高风险项目的 Stage 3 安全阻断**不是产品缺陷，是设计意图**——系统拒绝让高风险 AI 项目在未完成充分评估的情况下推进。
 
@@ -69,7 +68,7 @@
 | Eval 评估体系 | EvalCase 覆盖率门禁 + EvalRun 评分 + 人工评审 + 回归对比 |
 | Red Team | 对抗测试用例生成、管理与转化 |
 | 报告导出 | JSON / Markdown ReportArtifact，含 readiness 与 governance 摘要 |
-| 审计追踪 | 完整审计事件记录 + Streamlit Audit Workbench 可视化 |
+| 审计追踪 | 完整审计事件记录 + Streamlit Review Workbench 的审计历史视图 |
 
 ---
 
@@ -81,7 +80,7 @@
 | 前端 | Streamlit Review Workbench |
 | 工作流引擎 | LangGraph |
 | LLM | DeepSeek V4 Pro / V4 Flash（兼容 OpenAI Chat Completions 接口） |
-| 数据库 | PostgreSQL（Alembic 迁移管理） |
+| 数据库 | PostgreSQL（生产，Alembic 迁移管理）/ SQLite（演示与轻量模式，`STORAGE_BACKEND=sqlite`） |
 | 缓存 | Redis |
 | 容器化 | Docker Compose |
 | 认证 | JWT Bearer + RBAC |
@@ -97,7 +96,7 @@
 
 ```bash
 uv sync --all-extras
-make demo-api    # 后端，自动将 .env.demo 复制为 .env
+make demo-api    # 后端，将 .env.demo 复制为 .env
 ```
 
 可选前端：
@@ -105,6 +104,8 @@ make demo-api    # 后端，自动将 .env.demo 复制为 .env
 ```bash
 make demo-ui     # 前端，另开终端
 ```
+
+> ⚠️ `make demo-api` / `make demo-ui` 每次都会**无条件覆盖**现有 `.env`（`cp -f`），与条件复制的 `make lite-up` / `make prod-up` 不同。如果你已经跑过 `make setup` 生成生产配置，再跑演示模式会丢失 `.env` 中由 `gen_secrets.sh` 同步的 JWT / PostgreSQL / Redis 密钥（`secrets/` 下的文件不受影响）。请先备份 `.env`。
 
 不使用 make 时的等价命令：`cp .env.demo .env && uv run uvicorn api.main:app --reload --port 8000`（前端 `uv run streamlit run frontend/app.py --server.port 8501`）。
 
@@ -124,7 +125,9 @@ make lite-up
 #### Docker Full（PostgreSQL + Redis + 真实 LLM）
 
 ```bash
-# 生成 .env 与 secrets/（jwt/postgres/redis/grafana 密钥自动随机化并同步 .env），签发 TLS 证书
+# 生成 .env 与 secrets/，签发 TLS 证书
+# jwt/postgres/redis/grafana 四个密钥随机化写入 secrets/；其中前三个同步回 .env
+# （grafana 走 GF_SECURITY_ADMIN_PASSWORD__FILE 直读挂载，不入 .env）
 make setup
 # LLM_MODE=real 时编辑 secrets/deepseek_api_key、secrets/tavily_api_key 填入真实 API Key
 make prod-up   # 启动前自动检查 secrets/ 与证书是否就绪

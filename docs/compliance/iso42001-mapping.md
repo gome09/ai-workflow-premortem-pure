@@ -72,7 +72,7 @@
 
 | 条款 | 要求摘要 | 平台能力 | 证据 | 状态 |
 |------|----------|----------|------|------|
-| 10.1 总则 | 持续改进 | 规则 changelog + 标准动态跟踪 | manifest.changelog + `.upgrade/logs/standard-tracking-*.md` | ✅ |
+| 10.1 总则 | 持续改进 | 规则 changelog + 标准动态跟踪 | manifest.changelog + `.upgrade/reports/standard-tracking-2026-07-14.md` | ✅ |
 | 10.2 不符合和纠正措施 | 处理不符合 | 安全发现 + 人工动作 + 审计事件 | `core/safety_service.py` + AuditEvent | ✅ |
 | 10.3 持续改进 | 持续改进 AI 管理体系 | 规则版本迭代 + 门禁通过率趋势分析 | `/governance/gate-trends` pass_rate 趋势 | ✅ |
 

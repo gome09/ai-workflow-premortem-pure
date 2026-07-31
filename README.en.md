@@ -31,9 +31,11 @@ A guided four-stage analysis pipeline with risk-adaptive gates and mandatory hum
 
 ```bash
 uv sync --all-extras
-make demo-api   # backend on :8000 (auto-provisions .env from .env.demo: mock LLM + SQLite)
+make demo-api   # backend on :8000 (copies .env.demo to .env: mock LLM + SQLite)
 make demo-ui    # Streamlit frontend on :8501
 ```
+
+> ⚠️ Both targets **overwrite** an existing `.env` unconditionally (`cp -f`), unlike `make lite-up` / `make prod-up` which only copy when `.env` is absent. Back up `.env` first if you have already run `make setup`.
 
 Or zero-dependency: open `ai_workflow_premortem_demo.html` directly in a browser.
 
@@ -43,7 +45,9 @@ FastAPI · LangGraph · Streamlit · PostgreSQL/SQLite · Redis · JWT/RBAC · D
 
 ## Compliance mapping
 
-The risk taxonomy engine maps findings to NIST AI RMF / NIST AI 600-1, OWASP LLM Top 10 (2025) & Agentic Top 10 (ASI, 2026), TC260 agent-deployment guidance, and ISO/IEC 42001 clauses. See [docs/](docs/README.md) (Chinese).
+The risk taxonomy engine (`tools/taxonomies/`) maps findings to NIST AI RMF / NIST AI 600-1, OWASP LLM Top 10 (2025) & Agentic Top 10 (ASI, 2026), and TC260 agent-deployment guidance.
+
+ISO/IEC 42001 is **not** part of the taxonomy engine — it is a manually maintained clause-mapping document ([docs/compliance/iso42001-mapping.md](docs/compliance/iso42001-mapping.md)), not an automated finding mapping. See [docs/](docs/README.md) (Chinese).
 
 ## Documentation
 

@@ -13,15 +13,17 @@
 | 前端验证 | ✅ Streamlit 工作台正常渲染，JWT 自动登录，无控制台错误，无失败网络请求 |
 | 后端监控 | ✅ 全部 HTTP 200 OK，无 WARNING / ERROR / Exception |
 
-## 当前代码基线复核（2026-07-25）
+## 当前代码基线复核（2026-07-31）
 
-本节记录当前工作区的文档-代码一致性复核结果；下文 `650 passed, 1 skipped` 等数据仍作为 2026-07-17/18 的历史验收证据保留。
+本节记录当前工作区的文档-代码一致性复核结果。下文各节的验收数据按其标注日期理解，作为历史证据保留。
+
+> 2026-07-25 一轮曾把 `623 passed, 8 skipped` 记为当前基线，该数字系用系统 Python 而非项目 `.venv` 运行所致（缺 `prometheus-fastapi-instrumentator` 触发 7 处 `importorskip`），已于 2026-07-31 更正。录制基线请统一使用 `uv run pytest` / `make test`。
 
 | 验证项 | 当前结果 |
 |------|------|
 | 版本一致性 | ✅ `core/version.py` = `pyproject.toml` = 1.3.0 |
-| 全量测试 | ✅ `623 passed, 8 skipped`（`python -m pytest tests/ -q`） |
-| 文档一致性检查 | ✅ 扫描 51 个当前项目 Markdown 文件，0 处违规 |
+| 全量测试 | ✅ `660 passed, 1 skipped`（`uv run pytest tests/ -q`，2026-07-31 复核） |
+| 文档一致性检查 | ✅ 扫描 50 个当前项目 Markdown 文件，0 处违规 |
 | 数据库迁移链 | ✅ Alembic V001 → V005 |
 | ProjectContext 迁移链 | ✅ 0.6.0-alpha.8 → 0.7.0 → 0.8.0 → 0.9.0 |
 

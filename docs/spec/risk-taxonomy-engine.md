@@ -66,7 +66,7 @@ stages/base.py:scan_stage_io / core/session_service.py:scan_user_materials 等
 
 判定点选在**输出消费边界**而非生成时：
 - `scan_text` 对 AI 输出增加规则组 `UNSAFE_OUTPUT_PATTERNS`：`<script`、`javascript:` 伪协议链接、`on\w+=` 内联事件、SQL DML/DDL 语句特征、shell 命令注入特征（`; rm `、`$(`）。命中产出 `improper_output_handling`（severity=medium，供人工判断是否属演示性内容）。
-- `core/report_service.py` 的 Markdown 导出对上述模式做转义处理（防止报告被下游渲染器执行），此项独立于 finding 机制，属硬化措施。
+- **未实现（已知缺口，截至 2026-07-31）**：`core/report_service.py` 的 Markdown 导出**不做**转义或净化处理，`build_markdown_report` 直接以 f-string 拼接 finding description 等 LLM 生成内容。因此导出的 Markdown/JSON 报告若被下游渲染器（浏览器、Wiki、支持 HTML 的 Markdown 引擎）直接渲染，仍可能执行其中的 `<script>` 或伪协议链接。当前唯一的防线是上述 `improper_output_handling` finding 提示人工判断，属检测而非阻断。消费报告的一方需自行做输出净化。
 
 ### 3.4 LLM10：Unbounded Consumption 接入
 
@@ -133,7 +133,7 @@ NIST_GAI_ACTION_DESCRIPTIONS = { "MS-2.7-008": {"zh": "...", "source": "NIST AI 
 
 ## 7. 领域扩展标签接入生产链路
 
-`refs_for_risk_type_extended` / `controls_for_risk_type_extended`（`mapper.py:139-163`）当前仅测试可达。目标形态：
+`refs_for_risk_type_extended` / `controls_for_risk_type_extended`（`tools/taxonomies/mapper.py`）当前仅测试可达。目标形态：
 - `apply_taxonomy_to_safety_finding(finding, domain=None)` 增加可选 domain 参数；`stages/base.py` / `safety_classifier.py` 调用侧从 `ctx` 取当前 domain profile 名称传入；domain 命中 `medical_ai` / `university_ai` 时叠加领域标签。
 - 行为变化仅为 taxonomy_refs 增量，无破坏性。
 

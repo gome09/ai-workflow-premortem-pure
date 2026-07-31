@@ -1,8 +1,8 @@
 # Startup Guide
 
-> **Last updated:** 2026-07-27
+> **Last updated:** 2026-07-31
 
-本文只保留当前仓库内可直接验证的启动方式与文件名。
+本文只保留当前仓库内可直接验证的启动方式与文件名，是**启动与部署步骤的单一权威来源**。环境模板说明、环境变量清单与仓库边界见 [local_setup.md](local_setup.md)。
 
 ---
 
@@ -11,16 +11,21 @@
 适用于本地演示，不依赖 PostgreSQL、Redis 或真实 API Key。
 
 ```bash
+uv sync --all-extras
+make demo-api                 # 后端
+make demo-ui                  # 前端，另开终端
+```
+
+等价的手动命令：
+
+```bash
 cp .env.demo .env
 uv sync --all-extras
 uv run uvicorn api.main:app --reload --port 8000
-```
-
-可选前端：
-
-```bash
 uv run streamlit run frontend/app.py --server.port 8501
 ```
+
+> ⚠️ `make demo-api` / `make demo-ui` 使用 `cp -f`，每次都会**无条件覆盖**现有 `.env`；`make lite-up` / `make prod-up` 则是仅在 `.env` 不存在时才复制。跑过 `make setup` 之后再跑演示模式，会丢失 `.env` 里由 `gen_secrets.sh` 同步的 JWT / PostgreSQL / Redis 值（`secrets/` 下的文件不受影响）。
 
 说明：
 - `.env.demo` 已启用 `LLM_MODE=mock`
@@ -113,9 +118,15 @@ curl -k -X POST https://localhost/api/auth/login \
 
 ---
 
-## 轻量 Docker 模式
+## 轻量 Docker 模式（Lite / SQLite）
 
-若只想用 SQLite，可使用仓库现有的 `docker-compose.lite.yml`：
+Lite mode 指 `STORAGE_BACKEND=sqlite`，无需 PostgreSQL、Redis 或 TLS 证书。
+
+```bash
+make lite-up          # 若 .env 不存在，自动从 .env.demo 复制
+```
+
+等价的手动命令：
 
 ```bash
 cp .env.demo .env
@@ -123,6 +134,29 @@ docker compose -f docker-compose.lite.yml up --build
 ```
 
 该 compose 文件会默认以 `mock + sqlite + generic_rag_demo` 启动，并将前端 API 地址指向容器内 `http://api:8000`。
+
+如需在 SQLite 上使用真实 API Key，从 `.env.example` 派生并手工加入：
+
+```bash
+STORAGE_BACKEND=sqlite
+UVICORN_WORKERS=1
+```
+
+### 适用边界
+
+适合：本地演示、答辩或功能展示、无 PostgreSQL / Redis 的轻量开发。
+
+不适合：多进程高并发、生产部署、需要独立 Redis 缓存一致性的场景。
+
+### 代码对应关系
+
+| 文件 | 用途 |
+|------|------|
+| `storage/backends/sqlite_store.py` | SQLite 会话存储 |
+| `storage/backends/memory_cache.py` | 进程内缓存 |
+| `storage/session_store.py` | 后端工厂 |
+| `storage/cache.py` | 缓存工厂 |
+| `docker-compose.lite.yml` | 轻量 Docker 入口 |
 
 ---
 

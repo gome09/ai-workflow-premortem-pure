@@ -28,9 +28,3 @@ via DDL — no Alembic needed.
 |--------|---------|------------|
 | `storage/cache.py` → `ContextCache` | Redis | Postgres mode |
 | `storage/cache.py` → `MemoryCache` (from `storage/backends/memory_cache.py`) | In-process dict | SQLite / lite mode |
-
-## Note on removed code
-
-The `storage/migrations/` package that previously contained hand-written SQL migrations
-(`run_storage_migrations()`) was removed in v1.0. Those SQL statements overlapped with Alembic
-migrations and were never called by any application code.

@@ -4,9 +4,8 @@
 
 | 文档 | 说明 |
 |------|------|
-| [startup.md](startup.md) | 启动指南 |
-| [local_setup.md](local_setup.md) | 本地开发环境配置 |
-| [lite-mode.md](lite-mode.md) | SQLite 轻量模式 |
+| [startup.md](startup.md) | 启动与部署指南（四种启动方式的单一权威来源，含 SQLite 轻量模式） |
+| [local_setup.md](local_setup.md) | 环境模板、密钥职责划分、环境变量清单与仓库边界 |
 | [demo-scenarios.md](demo-scenarios.md) | 内置场景机制说明 |
 | [acceptance_report.md](acceptance_report.md) | 四阶段全流程 E2E 测试验收报告 |
 | [../README.en.md](../README.en.md) | English project overview |

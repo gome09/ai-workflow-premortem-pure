@@ -51,7 +51,7 @@ Implemented risk-adaptive Stage 3 gate that classifies projects into risk tiers 
 | **MEDIUM** | 团队管理、项目协作 (no explicit low-risk markers) | eval coverage + failed eval |
 | **LOW** | 个人、学习、读书、笔记、本地、非生产, personal, learning | 与 MEDIUM 相同：eval coverage + failed eval |
 
-> 两处易错点：①「心理健康」与「军事」属 **HIGH** 而非 CRITICAL（分别对应 `_HIGH_KEYWORDS` 的 `mental health domain` 与 `nuclear/military domain`）；②**LOW 档并非只有安全底线**——`build_stage3_gate_profile` 中 LOW 与 MEDIUM 的 `require_*` 标志逐字段相同，两档都强制 `require_eval_coverage` 与 `require_failed_eval_resolution`，仅 rationale 文案不同。
+> 两处易错点：①「心理健康」与「军事」属 **HIGH** 而非 CRITICAL（分别对应 `_HIGH_KEYWORDS` 的 `mental health domain` 与 `nuclear/military domain`）；②**LOW 档并非只有安全底线**——`build_stage3_gate_profile` 中 LOW 与 MEDIUM 的 `require_*` 标志逐字段相同，两档都强制 `require_eval_coverage` 与 `require_failed_eval_resolution`，仅 rationale 文案不同。注意：**字段值相同 ≠ 最终阻断行为等价**——规则实现（如 `stage3_eval_failure.py`）消费 `require_*` 标志后，内部还会按 risk tier 做细分阈值判断（例：LOW 只要求 critical nodes 覆盖，MEDIUM 要求 high+critical 节点覆盖），详见下方 Gate Behavior Matrix。
 
 ---
 

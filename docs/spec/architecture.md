@@ -135,6 +135,9 @@ Stage rerun, revise, rollback, and sync-review-actions are explicit stage operat
 - `FailureMode.evidence_ids` preserves structured evidence references.
 - User materials are represented as `EvidenceSource(source_type="user_material")`.
 - Eval coverage and high-risk eval review are part of the Stage 3 gate.
+- `core/gates/rules/manifest.py` is the authoritative source for gate rule metadata (owner / version / changelog / safety_bottom_line).
+- `gate_evaluation_records` table (alembic V005) is the baseline data source for governance pass-rate trends.
+- `core/eval_llm_judge.py` is the authoritative implementation of LLM Judge (suggestion only, never overrides final judgment directly).
 
 
 ## Doc/Test/Core Alignment Contract
@@ -142,3 +145,5 @@ Stage rerun, revise, rollback, and sync-review-actions are explicit stage operat
 Stage readiness, resolution, and advancement-decision contracts are enforced through the service layer (`core/stage_readiness_service.py`, `core/stage_resolution_service.py`, `core/stage_advancement_decision.py`) and validated by dedicated tests in `tests/`.
 
 Runtime validation requires the full dependency/service environment: FastAPI startup, Streamlit startup, Docker compose, PostgreSQL, Redis, Tavily, real LLM calls, and end-to-end workflow replay.
+
+Governance bypass-write contract: writing `gate_evaluation_records` to the database is a side-path operation. If the write fails, the main gate evaluation path is not blocked and only a warning log is emitted. This means the governance trend data may be incomplete when storage errors occur.

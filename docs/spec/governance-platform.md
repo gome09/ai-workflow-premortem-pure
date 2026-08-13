@@ -42,11 +42,24 @@ RULE_MANIFEST = {
     "redteam_coverage": RuleMeta(
         rule_id="redteam_coverage",
         version="1.1.0",            # 语义化：判定逻辑变更 minor+，阈值调整 patch+
-        owner="project-owner",
+        owner="security",
         since_app_version="1.0.2",
-        rationale="高/关键风险项目必须有红队用例覆盖才能通过 Stage 3",
-        standard_refs=["OWASP_LLM_2025:LLM01", "NIST_AI_RMF:MEASURE"],  # 与 taxonomy 体系互通
-        changelog=[("1.1.0", "2026-07-13", "联通人工动作状态（v1.0.2 修复）")],
+        rationale="高/关键风险项目必须有红队用例覆盖才能通过 Stage 3。",
+        standard_refs=["OWASP_LLM_2025:LLM01", "NIST_AI_RMF:MEASURE", "OWASP_ASI_2026:ASI01"],  # 与 taxonomy 体系互通
+        changelog=[
+            ("1.0.0", "2026-07-13", "初始版本"),
+            ("1.1.0", "2026-07-13", "风险自适应：低/中风险仅在安全发现缺口时阻断"),
+        ],
+    ),
+    "expert_review": RuleMeta(
+        rule_id="expert_review",
+        version="1.0.0",
+        owner="compliance",
+        since_app_version="1.1.0",
+        rationale="CRITICAL 风险项目必须经专家复核批准，避免高风险自动放行。",
+        standard_refs=["NIST_AI_RMF:GOVERN", "ISO_42001:CLAUSE_8", "TC260_AGENT:HUMAN_OVERSIGHT"],
+        changelog=[("1.0.0", "2026-07-14", "初始版本——补历史欠账")],
+        safety_bottom_line=True,
     ),
     ...
 }
@@ -122,7 +135,7 @@ Streamlit 新增"治理总览"页：三张卡片（项目数/风险分布/积压
 | 高风险项目是否经过专家复核 | expert_review 动作记录 + 审计事件 |
 | 自动化判分是否可信、如何校准 | human_calibrations 一致率指标 |
 
-完整的 42001 条款映射表在阶段 3 收尾时另行整理（放 `docs/compliance/`），不在本规格展开。
+完整的 42001 条款映射表见 [../compliance/iso42001-mapping.md](../compliance/iso42001-mapping.md)（T3.7 产物，25 条款映射 + 缺口清单）。
 
 ## 7. 兼容性与验证
 

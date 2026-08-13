@@ -49,7 +49,7 @@
 
 - 会话创建时只按是否为内置场景设置 `public_demo` / `business_internal`；加入材料时扫描身份证号、手机号、邮箱、银行卡号四类模式，命中后可升级为 `sensitive_personal`。当前不识别姓名、学号或“心理健康”等语义类别，部署方必须人工覆写这类敏感场景。
 - 人工覆写走新增端点 `PATCH /sessions/{id}/data-classification`（editor/admin），**只允许升级或同级修改，降级必须 admin** 且写 `AuditEvent`。
-- 分级**向上联动 AI 风险分级**：`sensitive_personal` 会话在 `core/gates/risk_profile.py:classify_project_risk` 中作为升档信号，把 MEDIUM 升为 HIGH、把 HIGH 升为 CRITICAL。数据分级与 AI 风险分级仍是两个独立维度（一个关于"处理的数据"，一个关于"被评估的 AI 系统"），仅单向联动。
+- 分级**向上联动 AI 风险分级** ⚠️（非强制下限，见下文已知缺口）：`sensitive_personal` 会话在 `core/gates/risk_profile.py:classify_project_risk` 中作为升档信号，把 MEDIUM 升为 HIGH、把 HIGH 升为 CRITICAL。数据分级与 AI 风险分级仍是两个独立维度（一个关于"处理的数据"，一个关于"被评估的 AI 系统"），仅单向联动。
 
   > ⚠️ **已知缺口（截至 2026-07-31 未修复）**：该升档**不是地板值**。`classify_project_risk` 在升档步骤之后还会执行 low-scope 降档（HIGH→MEDIUM、MEDIUM→LOW），以及"无 high/critical 领域关键词且命中 low-scope 时直接置 LOW"的覆盖分支。因此一个被标记为 `sensitive_personal` 但文本命中个人/学习类关键词的会话，最终仍可能落到 **LOW**。可复现示例：
   >

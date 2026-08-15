@@ -29,8 +29,10 @@ env/
 .coverage
 .coverage.*
 coverage.xml
+coverage/
 htmlcov/
 junit*.xml
+pytestdebug.log
 test-results/
 .hypothesis/
 .tox/

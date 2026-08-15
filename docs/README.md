@@ -7,7 +7,7 @@
 | [startup.md](startup.md) | 启动与部署指南（四种启动方式的单一权威来源，含 SQLite 轻量模式） |
 | [local_setup.md](local_setup.md) | 环境模板、密钥职责划分、环境变量清单与仓库边界 |
 | [demo-scenarios.md](demo-scenarios.md) | 内置场景机制说明 |
-| [acceptance_report.md](acceptance_report.md) | 四阶段全流程 E2E 测试验收报告 |
+| [acceptance_report.md](acceptance_report.md) | 当前 v1.3.0 代码基线与回归验收摘要 |
 | [../README.en.md](../README.en.md) | English project overview |
 
 ## spec/ — 系统设计与规格文档
@@ -58,3 +58,4 @@
 | 文档 | 说明 |
 |------|------|
 | [archive/verification-reports/risk_adaptive_gate_final_validation.md](archive/verification-reports/risk_adaptive_gate_final_validation.md) | 风险自适应门禁最终验证报告存档（stage3 spec 引用补档，见 Phase 4 T4.1） |
+| [archive/verification-reports/acceptance-history-v1.2.1.md](archive/verification-reports/acceptance-history-v1.2.1.md) | v1.2.1 四阶段 E2E 验收快照与历史缺陷修复详录 |

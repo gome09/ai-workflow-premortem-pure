@@ -90,63 +90,26 @@
 
 ## 快速开始
 
-### 离线演示模式（无需 API Key）
-
-无需 PostgreSQL / Redis / API Key，也不依赖外网（`.env.demo` 已内置 `LLM_MODE=mock` / `STORAGE_BACKEND=sqlite` / `DEFAULT_SCENARIO_ID=generic_rag_demo`）：
+推荐先使用离线 Mock + SQLite 演示模式，无需 PostgreSQL、Redis、API Key 或外网：
 
 ```bash
 uv sync --all-extras
-make demo-api    # 后端，将 .env.demo 复制为 .env
+make demo-api    # 后端；会将 .env.demo 无条件复制为 .env
+# 另开终端
+make demo-ui
 ```
 
-可选前端：
+> ⚠️ `make demo-api` / `make demo-ui` 会覆盖现有 `.env`。如果此前运行过 `make setup`，请先备份 `.env`；`secrets/` 下的文件不受影响。
 
-```bash
-make demo-ui     # 前端，另开终端
-```
+浏览器访问 `http://localhost:8501`，选择内置场景并新建会话即可体验四阶段流程。完整启动、环境变量和部署说明统一见 [`docs/startup.md`](docs/startup.md)。
 
-> ⚠️ `make demo-api` / `make demo-ui` 每次都会**无条件覆盖**现有 `.env`（`cp -f`），与条件复制的 `make lite-up` / `make prod-up` 不同。如果你已经跑过 `make setup` 生成生产配置，再跑演示模式会丢失 `.env` 中由 `gen_secrets.sh` 同步的 JWT / PostgreSQL / Redis 密钥（`secrets/` 下的文件不受影响）。请先备份 `.env`。
-
-不使用 make 时的等价命令：`cp .env.demo .env && uv run uvicorn api.main:app --reload --port 8000`（前端 `uv run streamlit run frontend/app.py --server.port 8501`）。
-
-### Docker 部署（可选）
-
-> Docker 部署为可选模式，答辩现场推荐使用上方的离线演示模式。
-
-#### Docker Lite（SQLite + Mock，无需 PostgreSQL / Redis）
-
-```bash
-# 自动将 .env.demo 复制为 .env（如尚未存在）
-make lite-up
-```
-
-轻量模式使用 `.env.demo` 配置，无需 API Key，适合快速演示。
-
-#### Docker Full（PostgreSQL + Redis + 真实 LLM）
-
-```bash
-# 生成 .env 与 secrets/，签发 TLS 证书
-# jwt/postgres/redis/grafana 四个密钥随机化写入 secrets/；其中前三个同步回 .env
-# （grafana 走 GF_SECURITY_ADMIN_PASSWORD__FILE 直读挂载，不入 .env）
-make setup
-# LLM_MODE=real 时编辑 secrets/deepseek_api_key、secrets/tavily_api_key 填入真实 API Key
-make prod-up   # 启动前自动检查 secrets/ 与证书是否就绪
-curl -k https://localhost/api/health/live
-```
-
-> `secrets/` 目录不进入版本控制，由 `make setup` 从 `secrets.example/` 模板生成，请在其中填入真实 API Key。
+Docker 入口：`make lite-up` 启动 SQLite + Mock 轻量模式；`make setup` 后执行 `make prod-up` 启动 PostgreSQL + Redis 生产栈。请按启动指南完成 secrets、证书和生产健康检查配置。
 
 ---
 
 ## 答辩演示模式
 
 > 推荐使用 **离线 Mock + SQLite** 模式进行答辩演示，零外部依赖，确定性输出。
-
-### 启动方式
-
-启动命令与环境说明统一见上方[离线演示模式](#离线演示模式无需-api-key)，答辩时同样运行 `make demo-api`，并在另一终端运行 `make demo-ui`。
-
-打开浏览器访问 `http://localhost:8501`，在左侧选择内置场景（如 `generic_rag_demo`），点击「新建会话」即可演示完整四阶段流程。
 
 ### 特点
 

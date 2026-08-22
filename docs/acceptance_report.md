@@ -1,6 +1,6 @@
 # AI Workflow Pre-mortem 当前验收报告
 
-> 本文件记录当前 v1.3.0 代码基线与回归摘要。v1.2.1 四阶段 E2E 快照、历史缺陷详录和原始统计已归档至 [`acceptance-history-v1.2.1.md`](archive/verification-reports/acceptance-history-v1.2.1.md)；2026-07-18 四种启动方式的完整历史报告见 [`startup-methods-e2e-20260718.md`](../.upgrade/reports/startup-methods-e2e-20260718.md)。
+> 本文件记录当前 v1.3.0 代码基线与回归摘要。v1.2.1 四阶段 E2E 快照、历史缺陷详录和原始统计已归档至 [`acceptance-history-v1.2.1.md`](archive/verification-reports/acceptance-history-v1.2.1.md)；2026-07-18 四种启动方式的完整历史报告见 [`startup-methods-e2e-20260718.md`](../.upgrade/archive/reports/startup-methods-e2e-20260718.md)。
 
 ## 当前代码基线复核（2026-07-31）
 
@@ -30,7 +30,7 @@ v1.3.0（formal-project-uplift Wave A–E）在 v1.2.1 基础上的变更不改�
 ## 历史报告入口
 
 - [v1.2.1 验收与缺陷修复历史归档](archive/verification-reports/acceptance-history-v1.2.1.md)
-- [2026-07-18 四种启动方式完整 E2E 报告](../.upgrade/reports/startup-methods-e2e-20260718.md)
+- [2026-07-18 四种启动方式完整 E2E 报告](../.upgrade/archive/reports/startup-methods-e2e-20260718.md)
 
 ---
 

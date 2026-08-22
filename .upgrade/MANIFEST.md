@@ -6,11 +6,11 @@ Defines file lifecycle rules for `.upgrade/`. Update this file whenever files ar
 
 - `.upgrade/STATE.md` — current upgrade state
 - `.upgrade/MANIFEST.md` — this file
-- `.upgrade/plans/*.md` — phase/wave planning documents（本工作区以 `plans/` 承担标准结构中 `stages/` 的角色）
-- `.upgrade/reports/FINAL_REPORT.md` — final upgrade report（尚未产出：主计划 Task 19 待仓库公开后闭环，届时补齐）
+- `.upgrade/archive/plans/*.md` — phase/wave planning documents（已归档，本工作区以 `plans/` 承担标准结构中 `stages/` 的角色）
+- `.upgrade/reports/FINAL_REPORT.md` — final upgrade report（尚未产出，届时补齐）
 - `.upgrade/decisions/*.md` — all decision records
-- `.upgrade/reviews/*.md` — all review records（目录尚未创建：截至 2026-07-20 无独立评审记录，评审结论均内嵌于 plans/ 与 reports/；首次产出独立评审文件时创建该目录）
-- `.upgrade/research/**` — 调研原始数据快照（非标准目录，扩展项：承载对标调研的一次性采集数据，供 `docs/plan/ecosystem-positioning.md` 等溯源引用；标准结构无对应目录）
+- `.upgrade/reviews/*.md` — all review records（目录尚未创建；首次产出独立评审文件时创建该目录）
+- `.upgrade/archive/reports/*.md` — 阶段性报告（已归档）
 
 ## Keep Until Phase Complete (Discard After)
 
@@ -54,7 +54,7 @@ Before cleanup, classify each file as one of:
 
 | File | Status | Lifecycle | Notes |
 |---|---|---|---|
-| `.upgrade/STATE.md` | active | permanent | 当前升级状态（Phase 0-4 全部完成；formal-project-uplift Wave A–E 全部完成，v1.3.0 已发布待公开） |
+| `.upgrade/STATE.md` | active | permanent | 当前升级状态（Phase 0-4 全部完成；formal-project-uplift Wave A–E 全部完成，v1.3.0 已发布，仓库已公开） |
 | `.upgrade/MANIFEST.md` | active | permanent | 本文件 |
 | `.upgrade/decisions/RELEASE_CLEANUP.md` | active | permanent | v1.0 发布前组件清理决策记录（移除/归档了哪些组件及原因），moved from project root 2026-07-13 |
 | `.upgrade/decisions/branch-protection.md` | active | permanent | Phase 4 T4.2 main 分支保护策略决策（GitHub 后台手动操作步骤） |
@@ -67,22 +67,22 @@ Before cleanup, classify each file as one of:
 | `.upgrade/decisions/doc-code-reconciliation-20260731.md` | active | permanent | 2026-07-31 文档—代码矛盾复核：4 条高危处置（测试基线解释器错误 / sensitive_personal 非地板值 / 报告转义未实现 / domain profile 非零改动扩展点）、CLAUDE.md 与 local_setup.md 结构性去重、lite-mode.md 与 2 个 examples JSON 删除 |
 | `.upgrade/archive/release_manifest_v1.0.md` | archived | archive | v1.0 生产文件范围清单（已被 v1.3.0 取代），moved from project root 2026-07-13，2026-07-17 Mode 3 归档 |
 | `.upgrade/archive/scorecard-baseline-20260713.md` | archived | archive | Phase 4 T4.3 Scorecard 基线报告（2026-07-13 快照，数据已被趋势报告吸收），2026-07-17 Mode 3 归档 |
-| `.upgrade/reports/scorecard-trend-20260714.md` | active | keep-until-superseded | Phase 4 T4.3 Scorecard 趋势报告（基线对照 + 18 项预期变化） |
-| `.upgrade/reports/nist-ai-600-1-action-summary.md` | active | keep-until-superseded | Phase 2 T2.2 NIST AI 600-1 动作项映射摘要（4 项标存疑） |
-| `.upgrade/reports/tc260-agent-deployment-summary.md` | active | keep-until-superseded | Phase 2 T2.4 TC260 智能体部署使用安全指引映射摘要 |
-| `.upgrade/reports/mypy-baseline-20260717.md` | active | keep-until-superseded | Wave B mypy 基线报告（宽松档 108 → 0 清零记录；raw 干跑输出已于 2026-07-17 清理，可由 `uv run mypy` 再生） |
-| `.upgrade/reports/standard-tracking-2026-07-14.md` | active | keep-until-superseded | 外部标准动态跟踪记录（未成年人指南 2026-08-16 截止 / TC260 / NIST / OWASP ASI），STATE.md Required Context File；2026-07-17 Mode 3 自 gitignored 的 `logs/` 移入 reports/ 纳入版本控制 |
-| `.upgrade/research/benchmarking-20260716/` | active | keep-until-superseded | 对标调研原始数据快照（deepeval / guardrails-ai / inspect_ai / NeMo-Guardrails 的 GitHub repo/releases API 采集 + README 快照；tags 快照仅 deepeval 与 inspect_ai 两家，采集日 2026-07-16），供开源门面对齐与竞品定位分析引用；2026-07-17 Mode 3 删除冗余截断副本 `readme_deepeval.md`（为 `readme_deepeval_full.md` 的前缀截断） |
-| `.upgrade/plans/2026-07-17-formal-project-uplift.md` | active | permanent | 正式项目升级主计划（Wave A–E，Task 0–19，目标 v1.3.0） |
-| `.upgrade/plans/2026-07-17-wave-a-implementation.md` | active | permanent | Wave A 具体实施计划（探索核实修正版：A5/A6 顺序对调、MANIFEST 表格格式、README 锚点） |
-| `.upgrade/plans/2026-07-17-wave-b-mypy-implementation.md` | active | permanent | Wave B mypy 渐进式类型检查实施计划（B1–B6 分片，inspect_ai 模式宽松档 + core.gates/graph 近 strict） |
-| `.upgrade/plans/2026-07-17-wave-c-llm-judge-implementation.md` | active | permanent | Wave C T3.6 LLM Judge 实施计划（C1–C4，含 18 条探索基线与两处对父计划的记录性偏差决策） |
-| `.upgrade/plans/2026-07-17-wave-d-compliance-refresh-implementation.md` | active | permanent | Wave D 合规映射复核落账实施计划（D1–D3，含 17 条探索基线与三处对父计划的记录性偏差决策：ISO 附录编号 §6 / TC260 [信源说明] 措辞修正 / §10.7 插入尾注前） |
-| `.upgrade/reports/pre-publication-checklist-20260717.md` | active | keep-until-superseded | Wave E 公开前安全扫描报告（三项检查通过 + 已知良性命中判定留档 + 公开后 10 步人工动作清单 + CI 门槛转正评估结论） |
-| `.upgrade/plans/2026-07-17-wave-e-publication-ci-implementation.md` | active | permanent | Wave E 公开前检查与 CI/发布收尾实施计划（E1–E4 + 附录 E5，含 20 条探索基线与六处对父计划的记录性偏差决策） |
-| `.upgrade/plans/2026-07-18-local-then-remote-ci-execution.md` | active | permanent | 本地→远端 CI 执行计划（Phase A 本机复现 ci.yml 三 job + Phase B gh CLI 分诊远端基线失败并修复） |
-| `.upgrade/reports/startup-methods-e2e-20260718.md` | active | keep-until-superseded | 四种启动方式全流程 E2E 测试报告（离线演示/Docker Lite/混合开发临时端口/生产栈，全部 PASS；6 缺陷修复明细 + 遗留观察项：死代码 panels 与无 UI 入口端点） |
-| `.upgrade/reports/ci-run-20260718.md` | active | keep-until-superseded | 本地+远端 CI 验证运行报告（本地复现三 job 全过 + 远端 run 29621280076 失败分诊、5b4003f 修复 doc-check/secrets 权限、最终 run 三 job 全 success） |
+| `.upgrade/archive/reports/scorecard-trend-20260714.md` | archived | archive | Phase 4 T4.3 Scorecard 趋势报告（基线对照 + 18 项预期变化）（2026-08-22 归档） |
+| `.upgrade/archive/reports/nist-ai-600-1-action-summary.md` | archived | archive | Phase 2 T2.2 NIST AI 600-1 动作项映射摘要（4 项标存疑）（2026-08-22 归档） |
+| `.upgrade/archive/reports/tc260-agent-deployment-summary.md` | archived | archive | Phase 2 T2.4 TC260 智能体部署使用安全指引映射摘要（2026-08-22 归档） |
+| `.upgrade/archive/reports/mypy-baseline-20260717.md` | archived | archive | Wave B mypy 基线报告（宽松档 108 → 0 清零记录）（2026-08-22 归档） |
+| `.upgrade/archive/reports/standard-tracking-2026-07-14.md` | archived | archive | 外部标准动态跟踪记录（未成年人指南 2026-08-16 截止 / TC260 / NIST / OWASP ASI）；2026-07-17 Mode 3 自 `logs/` 移入（2026-08-22 归档） |
+| ~~`.upgrade/research/benchmarking-20260716/`~~ | ~~deleted~~ | ~~delete~~ | ~~对标调研原始数据快照（2026-08-22 已删除）~~ |
+| `.upgrade/archive/plans/2026-07-17-formal-project-uplift.md` | archived | archive | 正式项目升级主计划（Wave A–E，Task 0–19，目标 v1.3.0）（2026-08-22 归档） |
+| `.upgrade/archive/plans/2026-07-17-wave-a-implementation.md` | archived | archive | Wave A 具体实施计划（2026-08-22 归档） |
+| `.upgrade/archive/plans/2026-07-17-wave-b-mypy-implementation.md` | archived | archive | Wave B mypy 渐进式类型检查实施计划（2026-08-22 归档） |
+| `.upgrade/archive/plans/2026-07-17-wave-c-llm-judge-implementation.md` | archived | archive | Wave C T3.6 LLM Judge 实施计划（2026-08-22 归档） |
+| `.upgrade/archive/plans/2026-07-17-wave-d-compliance-refresh-implementation.md` | archived | archive | Wave D 合规映射复核落账实施计划（2026-08-22 归档） |
+| `.upgrade/archive/reports/pre-publication-checklist-20260717.md` | archived | archive | Wave E 公开前安全扫描报告（2026-08-22 归档） |
+| `.upgrade/archive/plans/2026-07-17-wave-e-publication-ci-implementation.md` | archived | archive | Wave E 公开前检查与 CI/发布收尾实施计划（2026-08-22 归档） |
+| `.upgrade/archive/plans/2026-07-18-local-then-remote-ci-execution.md` | archived | archive | 本地→远端 CI 执行计划（2026-08-22 归档） |
+| `.upgrade/archive/reports/startup-methods-e2e-20260718.md` | archived | archive | 四种启动方式全流程 E2E 测试报告（2026-08-22 归档） |
+| `.upgrade/archive/reports/ci-run-20260718.md` | archived | archive | 本地+远端 CI 验证运行报告（2026-08-22 归档） |
 | `.upgrade/archive/show.md` | archived | archive | v1.0 时期项目展示文档（毕设介绍），内容已被 README.md (v1.3.0) 取代且无任何文件引用，moved from project root 2026-07-17 |
 
 ## Moved from Project
@@ -92,7 +92,7 @@ Before cleanup, classify each file as one of:
 | Original Path | New Path | Reason | Risk | Follow-up Needed |
 |---|---|---|---|---|
 | `RELEASE_CLEANUP.md` | `.upgrade/decisions/RELEASE_CLEANUP.md` | 记录 v1.0 发布前组件移除/归档决策及理由，属于升级/清理过程记录，非当前产品文档 | medium (referenced only by `docs/plan/improvement-roadmap.md` prose mention, no machine refs) | 如后续文档引用该路径需更新链接 |
-| `docs/improvement-roadmap.md` | `docs/plan/improvement-roadmap.md` | docs/ 拆分 plan/spec 子目录，路线图归入 plan/ | low (internal docs reorg, references updated in docs/README.md/CLAUDE.md/.upgrade/) | 无 |
+| `docs/improvement-roadmap.md` | `docs/archive/plan/improvement-roadmap.md` | docs/ 拆分 plan/spec 子目录，路线图已归入 plan/ 并归档 | low | 无 |
 | `docs/architecture.md` | `docs/spec/architecture.md` | docs/ 拆分 plan/spec 子目录，架构设计文档归入 spec/ | low | 无 |
 | `docs/security-model.md` | `docs/spec/security-model.md` | docs/ 拆分 plan/spec 子目录，安全模型文档归入 spec/ | low | 无 |
 | `docs/stage3-risk-adaptive-gate.md` | `docs/spec/stage3-risk-adaptive-gate.md` | docs/ 拆分 plan/spec 子目录，门禁设计文档归入 spec/ | low | ~~悬空引用~~ 已由 stage3 补档决策修复（`docs/archive/verification-reports/risk_adaptive_gate_final_validation.md` 现已存在，见 `.upgrade/decisions/doc-check-stage3-dangling-ref.md`） |

@@ -29,29 +29,29 @@
 |------|------|
 | [compliance/pia-platform.md](compliance/pia-platform.md) | 平台自身 PIA（PIPL 55/56 条评估，含材料→DeepSeek 数据流披露） |
 | [compliance/pia-template.md](compliance/pia-template.md) | PIA 模板（用户填写用） |
-| [compliance/pia-university-mental-health.md](compliance/pia-university-mental-health.md) | university_mental_health 场景实测 PIA 存档 |
+| [archive/pia-university-mental-health.md](archive/pia-university-mental-health.md) | university_mental_health 场景实测 PIA 存档（已归档） |
 | [compliance/incident-response.md](compliance/incident-response.md) | 数据泄露应急响应 checklist（T1.9 产物） |
 | [compliance/backup.md](compliance/backup.md) | 生产部署备份指引（T1.6 产物） |
 | [compliance/iso42001-mapping.md](compliance/iso42001-mapping.md) | ISO/IEC 42001:2023 条款映射表（25 条款映射 + 缺口清单，T3.7 产物） |
 
-## plan/ — 历史计划、设计基线与路线图快照
+## archive/plan/ — 历史计划、设计基线与路线图快照（已归档）
 
 `phase-*` 与 `phase-*-design` 记录当时的实施决策、版本和代码位置，不代表当前待办或当前业务事实。当前行为优先查阅 `spec/`、启动指南、代码、迁移与测试；路线图/生态定位中的外部对标也按文内日期理解。
 
 | 文档 | 说明 |
 |------|------|
-| [plan/improvement-roadmap.md](plan/improvement-roadmap.md) | 分阶段改进路线图：合规映射（中国监管+国际标准）、企业内部工具标准、开源社区工程健康度对照；第 10 节为 2026-07-13 外部标准复核增补 |
-| [plan/phase-0-repo-governance.md](plan/phase-0-repo-governance.md) | 阶段 0 实施计划：仓库治理最小闭环（LICENSE / SECURITY / CI 权限 / Dependabot / Scorecard 基线） |
-| [plan/phase-0-design.md](plan/phase-0-design.md) | 阶段 0 详细设计方案（实施计划的探索核实与任务拆解） |
-| [plan/phase-1-security-compliance.md](plan/phase-1-security-compliance.md) | 阶段 1 实施计划：安全与合规硬缺口修复（数据分级 / 加密 / PIA / AI 标识 / SAST） |
-| [plan/phase-1-design.md](plan/phase-1-design.md) | 阶段 1 详细设计方案 |
-| [plan/phase-2-risk-taxonomy.md](plan/phase-2-risk-taxonomy.md) | 阶段 2 实施计划：AI 风险分类体系补强（LLM05/07/10 / ASI 2026 / NIST 动作项 / TC260 映射） |
-| [plan/phase-2-design.md](plan/phase-2-design.md) | 阶段 2 详细设计方案 |
-| [plan/phase-3-governance-platform.md](plan/phase-3-governance-platform.md) | 阶段 3 实施计划：组织级治理平台（规则治理 / 聚合视图 / 业务指标 / LLM Judge） |
-| [plan/phase-3-design.md](plan/phase-3-design.md) | 阶段 3 详细设计方案 |
-| [plan/phase-4-community.md](plan/phase-4-community.md) | 阶段 4 实施计划：开源社区打磨（文档一致性 CI / 分支保护 / Scorecard 爬升） |
-| [plan/phase-4-design.md](plan/phase-4-design.md) | 阶段 4 详细设计方案 |
-| [plan/ecosystem-positioning.md](plan/ecosystem-positioning.md) | 生态定位与竞品分析（2026-07 对标快照：赛道地图 / SynthBoard 差异化 / 门面对标结论） |
+| [archive/plan/improvement-roadmap.md](archive/plan/improvement-roadmap.md) | 分阶段改进路线图：合规映射（中国监管+国际标准）、企业内部工具标准、开源社区工程健康度对照；第 10 节为 2026-07-13 外部标准复核增补 |
+| [archive/plan/phase-0-repo-governance.md](archive/plan/phase-0-repo-governance.md) | 阶段 0 实施计划：仓库治理最小闭环（LICENSE / SECURITY / CI 权限 / Dependabot / Scorecard 基线） |
+| [archive/plan/phase-0-design.md](archive/plan/phase-0-design.md) | 阶段 0 详细设计方案（实施计划的探索核实与任务拆解） |
+| [archive/plan/phase-1-security-compliance.md](archive/plan/phase-1-security-compliance.md) | 阶段 1 实施计划：安全与合规硬缺口修复（数据分级 / 加密 / PIA / AI 标识 / SAST） |
+| [archive/plan/phase-1-design.md](archive/plan/phase-1-design.md) | 阶段 1 详细设计方案 |
+| [archive/plan/phase-2-risk-taxonomy.md](archive/plan/phase-2-risk-taxonomy.md) | 阶段 2 实施计划：AI 风险分类体系补强（LLM05/07/10 / ASI 2026 / NIST 动作项 / TC260 映射） |
+| [archive/plan/phase-2-design.md](archive/plan/phase-2-design.md) | 阶段 2 详细设计方案 |
+| [archive/plan/phase-3-governance-platform.md](archive/plan/phase-3-governance-platform.md) | 阶段 3 实施计划：组织级治理平台（规则治理 / 聚合视图 / 业务指标 / LLM Judge） |
+| [archive/plan/phase-3-design.md](archive/plan/phase-3-design.md) | 阶段 3 详细设计方案 |
+| [archive/plan/phase-4-community.md](archive/plan/phase-4-community.md) | 阶段 4 实施计划：开源社区打磨（文档一致性 CI / 分支保护 / Scorecard 爬升） |
+| [archive/plan/phase-4-design.md](archive/plan/phase-4-design.md) | 阶段 4 详细设计方案 |
+| [archive/plan/ecosystem-positioning.md](archive/plan/ecosystem-positioning.md) | 生态定位与竞品分析（2026-07 对标快照：赛道地图 / SynthBoard 差异化 / 门面对标结论） |
 
 ## archive/ — 历史存档
 

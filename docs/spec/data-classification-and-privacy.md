@@ -1,6 +1,6 @@
 # 数据分类分级与隐私保护设计规格
 
-> Status: Implemented（自 v1.0.3 起落地 T1.1–T1.9：数据分级 / 字段加密 / PII 掩码 / AI 生成标识 / PIA，沿用至今。落地任务见 [../plan/phase-1-security-compliance.md](../plan/phase-1-security-compliance.md)）
+> Status: Implemented（自 v1.0.3 起落地 T1.1–T1.9：数据分级 / 字段加密 / PII 掩码 / AI 生成标识 / PIA，沿用至今。落地任务见 [../archive/plan/phase-1-security-compliance.md](../archive/plan/phase-1-security-compliance.md)）
 > Last updated: 2026-07-27
 > 合规依据：PIPL 第 28/51/55/56/57 条、DSL 第 21 条、《人工智能生成合成内容标识办法》（2025-09-01 施行）、EU AI Act Art.50 透明度义务（2026-08-02 生效）、GB/T 22239-2019 日志留存要求
 
@@ -108,7 +108,7 @@
 产品定位（路线图第 8.4 节的两层结构，均需要）：
 
 1. **平台自身的 PIA**（工具提供方责任）：对"本平台处理用户上传材料"这一活动做一次评估，覆盖 PIPL 56 条三要素（目的合法性/对个人权益的影响与风险/保护措施与风险适配性），重点评估"材料流向外部 LLM API"数据流。产出 `docs/compliance/pia-platform.md`，留存 3 年，随重大架构变更复评。
-2. **内置 PIA 模板供用户使用**（平台功能）：`docs/compliance/pia-template.md` 模板 + 对 `university_mental_health` 场景实际填写一份评估存档（`docs/compliance/pia-university-mental-health.md`），作为高敏场景的示范样本。首期是文档交付；"PIA 表单化进平台（表单/审批/到期提醒）"列为阶段 3 治理平台候选功能，不在阶段 1 承诺。
+2. **内置 PIA 模板供用户使用**（平台功能）：`docs/compliance/pia-template.md` 模板 + 对 `university_mental_health` 场景实际填写一份评估存档（`docs/archive/pia-university-mental-health.md`，已归档），作为高敏场景的示范样本。首期是文档交付；"PIA 表单化进平台（表单/审批/到期提醒）"列为阶段 3 治理平台候选功能，不在阶段 1 承诺。
 
 ## 8. 数据流转全景（设计后目标态）
 

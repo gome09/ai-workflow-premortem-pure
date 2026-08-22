@@ -9,7 +9,7 @@
 - 项目：AI Workflow Premortem，AI 工作流预验尸与人机监督平台；源于本科毕业设计，当前按长期维护的开源项目演进。
 - 当前应用版本：`1.3.0`；版本元数据必须同时保持 `core/version.py` 与 `pyproject.toml` 一致。
 - 当前数据库迁移头：Alembic `V005`；当前 `ProjectContext` schema：`0.9.0`。
-- Phase 0–4 代码侧已完成；`docs/plan/phase-*.md` 与 `phase-*-design.md` 是历史实施/设计基线，不得把其中旧版本、旧行号或未勾选项当作当前事实。
+- Phase 0–4 代码侧已完成；`docs/archive/plan/phase-*.md` 与 `phase-*-design.md` 是历史实施/设计基线（已归档），不得把其中旧版本、旧行号或未勾选项当作当前事实。
 - formal-project-uplift Wave A–E 已完成；剩余工作主要是仓库公开后的远端治理动作，如 CodeQL 转正、main 分支保护和发布设置。权威状态见 `.upgrade/STATE.md`。
 - 最近一次本地全量测试基线：`660 passed, 1 skipped`（2026-07-31，`make test` 即 `uv run pytest tests/`）。测试数量会随测试集合变化，不应硬编码为永久断言。
 - 录制测试基线必须走 `uv run`（项目 `.venv`）。用系统 Python 直接跑 `python -m pytest` 会因缺少 `prometheus-fastapi-instrumentator` 等主依赖触发 7 处 `importorskip` 跳过，得到 `623 passed, 8 skipped` 的降级结果——该数字不是有效基线。
@@ -22,7 +22,7 @@
 2. `core/version.py` / `pyproject.toml`、Alembic 迁移文件、`core/migrations/registry.py`。
 3. 当前规格文档 `docs/spec/`、运行指南 `docs/startup.md` / `docs/local_setup.md`。
 4. `.upgrade/STATE.md` 与 `.upgrade/decisions/` 中的最新决策。
-5. `docs/plan/` 历史计划、CHANGELOG 历史条目和旧验收快照。
+5. `docs/archive/plan/` 历史计划（已归档）、CHANGELOG 历史条目和旧验收快照。
 
 禁止为了让代码“符合旧文档”而回退真实业务行为；应先验证代码，再更新失效文档。
 
@@ -74,7 +74,7 @@ make version-check
 ## 文档与升级记录
 
 - `docs/spec/` 描述当前实现；历史基线必须显式标注，不得与当前事实混写。
-- `docs/plan/` 是历史计划/设计记录，原则上保留用于追溯；除非明确要求，不批量删除或重写历史内容。
+- `docs/archive/plan/` 是历史计划/设计记录（已归档），保留用于追溯；除非明确要求，不批量删除或重写历史内容。
 - 修改文档索引结构时同步 `docs/README.md`。
 - 所有升级维护操作必须遵守下方受控块，并在任务完成后更新 `.upgrade/STATE.md`。
 

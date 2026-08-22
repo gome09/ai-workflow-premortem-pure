@@ -1,6 +1,6 @@
 # 风险分类体系升级设计规格
 
-> Status: Implemented（v1.1.0 落地 T2.1–T2.6；LLM08 依赖 RAG 组件，明确缓办。落地任务见 [../plan/phase-2-risk-taxonomy.md](../plan/phase-2-risk-taxonomy.md)）
+> Status: Implemented（v1.1.0 落地 T2.1–T2.6；LLM08 依赖 RAG 组件，明确缓办。落地任务见 [../archive/plan/phase-2-risk-taxonomy.md](../archive/plan/phase-2-risk-taxonomy.md)）
 > Last updated: 2026-07-18
 > 对标依据：OWASP LLM Top 10 2025 (v2.0)、OWASP Top 10 for Agentic Applications 2026 (ASI)、NIST-AI-600-1 Generative AI Profile、TC260《智能体部署使用安全指引》（2026-07 发布）
 >

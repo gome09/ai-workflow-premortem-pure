@@ -92,4 +92,4 @@
 - [incident-response.md](incident-response.md) — 数据泄露应急响应
 - [backup.md](backup.md) — 备份指引
 - [pia-template.md](pia-template.md) — 用户使用 PIA 模板
-- [pia-university-mental-health.md](pia-university-mental-health.md) — 高敏场景实测评估
+- [pia-university-mental-health.md](../archive/pia-university-mental-health.md) — 高敏场景实测评估（已归档）

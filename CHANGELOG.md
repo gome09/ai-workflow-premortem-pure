@@ -16,7 +16,7 @@
   - **测试验证**：660 passed, 1 skipped；doc-check 50 份 0 违规（因删除 lite-mode.md 由 51 降为 50）；version 1.3.0；ruff clean；mypy 155 源文件 0 issue。
 
 ## 维护记录 (2026-07-20)
-- **本地 CI 复现 + 远端 GitHub CI 三 job 全绿**（计划 `.upgrade/plans/2026-07-18-local-then-remote-ci-execution.md`，报告 `.upgrade/reports/ci-run-20260718.md`）：
+- **本地 CI 复现 + 远端 GitHub CI 三 job 全绿**（计划 `.upgrade/archive/plans/2026-07-18-local-then-remote-ci-execution.md`，报告 `.upgrade/archive/reports/ci-run-20260718.md`）：
   - **Phase A 本机复现**：按 ci.yml 逐步复现 lint/typecheck/doc-check/version-check/pip-audit/test-cov（650 passed, 1 skipped，覆盖率 69%）+ docker lite 冒烟 + docker full 7 容器 TLS 断言，全部通过
   - **Phase B 远端分诊修复（commit 5b4003f）**：①`scripts/doc_consistency_check.py` 规则 3 跳过 `..` 结尾省略号占位路径——Windows 忽略路径尾点号使本地 `exists()` 误判通过、Linux 报 9 处违规的平台差异；②ci.yml docker-full job 生成 secrets 后 `chmod 644`——runner 属主 600 权限致容器内非 root 用户读不到（仅限 CI 一次性随机值）。修复后 run 29647651072 三 job 全 success，`docker-full-integration` 观察期首次转绿
 - **README 目录树补 `docker-compose.override.yml`**（Docker 开发覆盖配置，此前树中缺项）
@@ -25,7 +25,7 @@
 
 ## 维护记录 (2026-07-18)
 - **四种启动方式全流程 E2E 测试 + 6 缺陷修复**：
-  - **测试范围**：离线演示（uv+mock+SQLite）/ Docker Lite（2 容器）/ 混合开发（容器 DB 临时端口 15432/16379 + 本机应用）/ 生产栈（7 容器 + nginx TLS + Prometheus/Grafana），全部冷启动实测 PASS。方法：API 冒烟 + Playwright 浏览器驱动真实 UI 交互（方式1 双路径走满四阶段至 complete，四阶段 gate-report 全 passed）+ 后台日志监控；Docker 构建 `--no-cache` 防旧镜像污染。完整报告：`.upgrade/reports/startup-methods-e2e-20260718.md`
+  - **测试范围**：离线演示（uv+mock+SQLite）/ Docker Lite（2 容器）/ 混合开发（容器 DB 临时端口 15432/16379 + 本机应用）/ 生产栈（7 容器 + nginx TLS + Prometheus/Grafana），全部冷启动实测 PASS。方法：API 冒烟 + Playwright 浏览器驱动真实 UI 交互（方式1 双路径走满四阶段至 complete，四阶段 gate-report 全 passed）+ 后台日志监控；Docker 构建 `--no-cache` 防旧镜像污染。完整报告：`.upgrade/archive/reports/startup-methods-e2e-20260718.md`
   - **阻塞类修复**：①`frontend/app.py` ensure_auth 改"先登录后注册"（demo 账号已存在时原先注册触发 5/hour 限流 429 → 前端全站 401）；②`scripts/gen_secrets.sh` 生成密钥时 `tr -d '\r\n'`（Windows Git Bash 下 openssl 输出 CRLF，secret 文件残留 `\r` 使 redis `--requirepass $(cat …)` 与 .env 同步值不一致 → 生产栈 redis 认证失败）；③`storage/backends/postgres.py` alembic 迁移加 `pg_advisory_lock` 串行化（`UVICORN_WORKERS=2` 空库冷启动并发 `alembic upgrade head` 竞态 UniqueViolation 致 worker 崩溃）
   - **前后端语义一致性修复**：④侧栏新增「会话工作台 / 治理总览」页面导航（`nav_page` 此前无任何赋值点，治理总览页与 `/governance/*` 三端点在 UI 不可达）；治理总览页补 `reports_exported` 指标、`state_distribution` 柱图、gate-trends 周明细；⑤`/health` 补 `interrupt_adapter_status` 字段（前端读取但后端从未返回，恒显"未知"→ 现按执行模式显示"未启用/正常"）；⑥前端补展示后端已返回字段：EvalCase `pass_criteria`、EvalRun `judge_reason`/`violated_criteria`、实验 `human_disagreement_rate`、审计事件 `before/after_snapshot` 并排快照视图
   - **遗留观察项（未修）**：`frontend/components/` 下 8 个英文版 panel + `frontend/api_client.py` + `frontend/state.py` 为死代码（真实 UI 内联于 app.py）；traces / eval-judgments / human-calibrations / experiment-comparison 等端点无 UI 入口
@@ -44,10 +44,10 @@
   - **mypy 渐进式类型检查（Wave B）**：inspect_ai 模式——全局宽松基线 108→0 + core.gates/graph 近 strict 13→0，`make typecheck` target + CI non-blocking 接入；修复一处真实 bug（不存在的 note= 关键字，latent TypeError）
   - **T3.6 LLM Judge（Wave C）**：`EVAL_LLM_JUDGE` / `EVAL_LLM_JUDGE_AUTOFINAL` 两 flag 默认 off；LLM 仅建议判分不终裁，HIGH/CRITICAL 会话永远待人工；`core/eval_llm_judge.py` + mock fixture + eval_runner 风险分层门控；spec governance-platform §5 翻转 Implemented
   - **合规映射 2026-07-17 复核落账（Wave D）**：ISO/IEC 42005:2025（AI 系统影响评估）对标说明入 iso42001-mapping.md 第 6 节；roadmap §10.7 复核增补（EU AI Act Omnibus 公报编号待回填 / TC260 二手来源限定 / NIST [存疑] 维持 / 两个国内新法规锚点）；三个 taxonomy docstring 盖二次复核戳
-  - **公开前检查与 CI 增强（Wave E）**：全历史敏感信息扫描通过（仅演示凭据/模板占位良性命中，报告 `.upgrade/reports/pre-publication-checklist-20260717.md`）；CI 覆盖率产出（pytest-cov + `make test-cov` + job summary）；doc-check 转强制（mypy 维持 non-blocking 待远端首轮观察）；生态定位与竞品分析文档 `docs/plan/ecosystem-positioning.md`
+  - **公开前检查与 CI 增强（Wave E）**：全历史敏感信息扫描通过（仅演示凭据/模板占位良性命中，报告 `.upgrade/archive/reports/pre-publication-checklist-20260717.md`）；CI 覆盖率产出（pytest-cov + `make test-cov` + job summary）；doc-check 转强制（mypy 维持 non-blocking 待远端首轮观察）；生态定位与竞品分析文档 `docs/archive/plan/ecosystem-positioning.md`
 - **新增测试**：tests/test_llm_judge_v130.py 8 条（Wave C）
 - **测试验证**：650 passed, 1 skipped（全量，mock+SQLite）；lint/format/typecheck/doc-check/version-check 全绿；e2e-mock 63 passed
-- **实施计划**：`.upgrade/plans/2026-07-17-formal-project-uplift.md`（父计划）+ Wave A–E 五份实施方案
+- **实施计划**：`.upgrade/archive/plans/2026-07-17-formal-project-uplift.md`（父计划）+ Wave A–E 五份实施方案
 
 ## 维护记录 (2026-07-16)
 - **纳入零依赖单文件 Demo**：新增 `ai_workflow_premortem_demo.html`（165KB 自包含离线可交互 Demo，数据取自真实四阶段实跑快照，`LLM_MODE=mock` / `STORAGE_BACKEND=sqlite` / `WORKFLOW_EXECUTION_MODE=single_step`），与既有 `trae_ai_risk_premortem_submission.html` 并列纳入版本控制；README「答辩演示模式」新增「零依赖单文件 Demo」小节登记两份 HTML
@@ -64,11 +64,11 @@
   - **T4.1 文档-代码一致性检查 CI 化**：新建 `scripts/doc_consistency_check.py`（三类规则：Markdown 相对链接存在性 / `make <target>` 存在性 / 反引号仓库路径存在性）；新增 `make doc-check` target；ci.yml lint job 追加 doc-check 步骤（初期 `continue-on-error: true` 观察期）；修复 stage3 文档悬空引用（补档 `docs/archive/verification-reports/risk_adaptive_gate_final_validation.md`，决策记录见 `.upgrade/decisions/doc-check-stage3-dangling-ref.md`）
   - **T4.5 社区响应约定**：新建 `.github/ISSUE_TEMPLATE/bug_report.md` + `feature_request.md`；新建 `.github/PULL_REQUEST_TEMPLATE.md`（含改动类型 + 提交前检查清单）；CONTRIBUTING.md 追加"分支保护"与"社区响应约定"段落（7 天响应承诺，不过度承诺）
   - **T4.2 分支保护与评审流程**：新建 `.upgrade/decisions/branch-protection.md`（main 分支保护策略决策 + 维护者手动操作步骤 + 预期 Scorecard 影响）；分支保护为 GitHub 后台配置，需维护者手动开启
-  - **T4.3 Scorecard 持续爬升机制**：机制已就位（`.github/workflows/scorecard.yml` weekly cron）；新建 `.upgrade/reports/scorecard-trend-20260714.md` 趋势报告（基线对照 + 18 项预期变化 + 待操作项）
+  - **T4.3 Scorecard 持续爬升机制**：机制已就位（`.github/workflows/scorecard.yml` weekly cron）；新建 `.upgrade/archive/reports/scorecard-trend-20260714.md` 趋势报告（基线对照 + 18 项预期变化 + 待操作项）
   - **T4.4 锦上添花项**：明确不承诺（Signed Releases / CII Badge / Packaging）——无外部用户信号前不投入
 - **新增测试**：无（本阶段为工程健康度/文档/CI 任务，无新业务逻辑）
 - **测试验证**：642 passed + 1 skipped（unit，回归确认无破坏）；lint + format clean；doc-check 运行正常（26 处存量违规，均为既有问题与设计文档代码示例误报，CI non-blocking）
-- **详细设计方案**：[docs/plan/phase-4-design.md](docs/plan/phase-4-design.md)
+- **详细设计方案**：[docs/archive/plan/phase-4-design.md](docs/archive/plan/phase-4-design.md)
 
 ## v1.2.0 (2026-07-14)
 - **Phase 3 组织级治理平台（T3.1–T3.5, T3.7；T3.6 可选未启用）**：
@@ -83,16 +83,16 @@
 - **新增测试**：`test_rule_manifest_v110.py`(44)、`test_gate_evaluation_records_v110.py`(20)、`test_expert_review_gate_v110.py`(11)、`test_governance_api_v110.py`(24)、`test_metrics_v110.py`(16)
 - **数据库迁移**：alembic V005（`gate_evaluation_records` 表 + 2 索引）
 - **测试验证**：642 passed + 1 skipped（unit）；63 passed（e2e-mock）；lint + format clean
-- **详细设计方案**：[docs/plan/phase-3-design.md](docs/plan/phase-3-design.md)
+- **详细设计方案**：[docs/archive/plan/phase-3-design.md](docs/archive/plan/phase-3-design.md)
 
 ## v1.1.0 (2026-07-14)
 - **Phase 2 AI 风险分类体系补强（T2.1–T2.6）**：
   - **T2.1 OWASP LLM Top 10 2025 补齐 + Context schema v0.9.0**：risk_type Literal 7→10（新增 `improper_output_handling`(LLM05) / `system_prompt_leakage`(LLM07) / `unbounded_consumption`(LLM10)）；`prompt_injection_scanner.py` 重写为 `classify_injection()`（injection/leakage 分流）；`safety_classifier.py` 新增 LLM05 输出净化检测 + LLM10 资源消耗监控；`execution_service.py` 包裹 LLM 调用计数与 token 估算；Context schema v0.8.0→v0.9.0 迁移（`core/migrations/v080_to_v090.py`）；slowapi 429 审计事件接入
-  - **T2.2 NIST AI 600-1 Generative AI Profile**：新建 `tools/taxonomies/nist_ai_600_1.py`，10 个 risk_type 全覆盖动作项映射（4 项标 [存疑] 待人工核对），含 `.upgrade/reports/nist-ai-600-1-action-summary.md`
+  - **T2.2 NIST AI 600-1 Generative AI Profile**：新建 `tools/taxonomies/nist_ai_600_1.py`，10 个 risk_type 全覆盖动作项映射（4 项标 [存疑] 待人工核对），含 `.upgrade/archive/reports/nist-ai-600-1-action-summary.md`
   - **T2.3 OWASP Agentic Security Initiative Top 10 2026**：新建 `tools/taxonomies/owasp_agentic_2026.py`，8 个 attack_type + 5 个 risk_type 映射；ASI07 经核实为 Insecure Inter-Agent Communication（非 Resource Abuse），已删除错误映射
-  - **T2.4 TC260《智能体部署使用安全指引》**：新建 `tools/taxonomies/tc260_agent_deployment.py`，五阶段（评估/准备/部署/使用/停用）+ 6 control + 6 risk_type；停用阶段=None 标产品缺口；含 `.upgrade/reports/tc260-agent-deployment-summary.md`
+  - **T2.4 TC260《智能体部署使用安全指引》**：新建 `tools/taxonomies/tc260_agent_deployment.py`，五阶段（评估/准备/部署/使用/停用）+ 6 control + 6 risk_type；停用阶段=None 标产品缺口；含 `.upgrade/archive/reports/tc260-agent-deployment-summary.md`
   - **T2.5 领域扩展标签接入生产链路**：`apply_taxonomy_to_safety_finding` 新增 `domain` 参数，命中 `university_ai`/`medical_ai` 时叠加领域专属标签（PIPL/HIPAA 等）；`safety_classifier._finding` + `safety_classifier.add_findings_dedup` + `safety_service.resolve_safety_finding` 透传 `domain=current_domain_profile(ctx)`
-  - **T2.6 标准动态跟踪记录**：新建 `.upgrade/reports/standard-tracking-2026-07-14.md`（初始位于 logs，2026-07-17 移入 reports 纳入版本控制），记录 7 项已落地标准基线 + 6 项跟踪项（未成年人指南/TC260 分行业/NIST AI RMF 修订/OWASP ASI 正式版/PIPL 实施细则/GENAI 立法）
+  - **T2.6 标准动态跟踪记录**：新建 `.upgrade/archive/reports/standard-tracking-2026-07-14.md`（初始位于 logs，2026-07-17 移入 reports 纳入版本控制），记录 7 项已落地标准基线 + 6 项跟踪项（未成年人指南/TC260 分行业/NIST AI RMF 修订/OWASP ASI 正式版/PIPL 实施细则/GENAI 立法）
   - **mapper.py 三表聚合接入**：`refs_for_risk_type` 追加 NIST_GAI + ASI + TC260 三表；`refs_for_attack_type` 追加 ASI
 - **新增测试**：`test_owasp_llm_completion.py`(19)、`test_context_migrations_v090.py`(6)、`test_taxonomy_nist_ai_600_1.py`(6)、`test_taxonomy_owasp_agentic_2026.py`(12)、`test_taxonomy_tc260_agent_deployment.py`(10)、`test_taxonomy_mapper_aggregation.py`(17)、`test_domain_labels_production.py`(20)
 - **Context schema 升级**：v0.8.0 → v0.9.0（`ProjectContext` 新增 `llm_call_count`/`llm_token_estimate` 字段）

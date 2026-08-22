@@ -1,6 +1,6 @@
 # 组织级治理平台设计规格
 
-> Status: Implemented（v1.2.0 落地 T3.1–T3.5、v1.2.0 落地 T3.7、v1.3.0 落地 T3.6（flag 默认关）。落地任务见 [../plan/phase-3-governance-platform.md](../plan/phase-3-governance-platform.md)）
+> Status: Implemented（v1.2.0 落地 T3.1–T3.5、v1.2.0 落地 T3.7、v1.3.0 落地 T3.6（flag 默认关）。落地任务见 [../archive/plan/phase-3-governance-platform.md](../archive/plan/phase-3-governance-platform.md)）
 > Last updated: 2026-07-27
 > 对标依据：ISO/IEC 42001:2023（AI 管理体系）——从"单次评估工具"升级为"可审计的组织级 AI 治理台账"
 

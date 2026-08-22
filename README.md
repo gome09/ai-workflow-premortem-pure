@@ -152,7 +152,7 @@ uv run pytest tests/ -q
 
 ## 文档
 
-启动、架构、API、安全、合规和历史计划索引见 [docs/README.md](docs/README.md)。当前实现以 `docs/spec/`、启动指南和业务代码为准；`docs/plan/` 保留为历史设计/实施基线。
+启动、架构、API、安全、合规和历史计划索引见 [docs/README.md](docs/README.md)。当前实现以 `docs/spec/`、启动指南和业务代码为准；`docs/archive/plan/` 保留为历史设计/实施基线（已归档）。
 
 ---
 

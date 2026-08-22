@@ -134,12 +134,14 @@ def render_governance_overview(api_base: str, token: str) -> None:
         trends = []
 
     if trends:
-        weeks = [t.get("week", "") for t in trends]
-        pass_rates = [t.get("pass_rate", 0) for t in trends]
+        weeks = [t.get("week", "") if isinstance(t, dict) else str(t) for t in trends]
+        pass_rates = [t.get("pass_rate", 0) if isinstance(t, dict) else 0 for t in trends]
         _line_chart_altair(weeks, pass_rates, "门禁通过率趋势（8 周）", "周", "通过率")
 
         with st.expander("每周明细（评估次数 / Top 阻断规则）"):
             for t in trends:
+                if not isinstance(t, dict):
+                    continue
                 top_rules = (
                     ", ".join(
                         f"{r.get('rule_id')}×{r.get('count')}"

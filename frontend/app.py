@@ -871,437 +871,469 @@ with st.sidebar:
     st.session_state.nav_page = nav_choice if nav_choice == "治理总览" else None
     st.divider()
 
-    # ── 会话管理 ──────────────────────────────────────────────────────────────
-    st.subheader("📋 会话管理")
+    if nav_choice != "治理总览":
+        # ── 会话管理 ──────────────────────────────────────────────────────────────
+        st.subheader("📋 会话管理")
 
-    col_new, col_refresh = st.columns(2)
+        col_new, col_refresh = st.columns(2)
 
-    with col_new:
-        scenarios = list_builtin_scenarios()
-        scenario_options = {"[通用模式]": None}
-        for item in scenarios:
-            scenario_options[f"{item.get('name')} · {item.get('scenario_id')}"] = item.get(
-                "scenario_id"
+        with col_new:
+            scenarios = list_builtin_scenarios()
+            scenario_options = {"[通用模式]": None}
+            for item in scenarios:
+                scenario_options[f"{item.get('name')} · {item.get('scenario_id')}"] = item.get(
+                    "scenario_id"
+                )
+
+            selected_scenario_label = st.selectbox(
+                "内置场景",
+                options=list(scenario_options.keys()),
+                key="selected_scenario_label",
             )
+            selected_scenario_id = scenario_options[selected_scenario_label]
 
-        selected_scenario_label = st.selectbox(
-            "内置场景",
-            options=list(scenario_options.keys()),
-            key="selected_scenario_label",
-        )
-        selected_scenario_id = scenario_options[selected_scenario_label]
-
-        if selected_scenario_id:
-            scenario_detail = get_builtin_scenario(selected_scenario_id)
-            if scenario_detail:
-                st.caption(scenario_detail.get("description", ""))
-                st.caption(
-                    f"profile=`{scenario_detail.get('domain_profile')}` · mock=`{scenario_detail.get('mock_fixture')}`"
-                )
-                with st.expander("查看场景样例输入", expanded=False):
-                    st.code(scenario_detail.get("input_sample", ""), language="markdown")
-        else:
-            scenario_detail = None
-
-        if st.button("➕ 新建会话", use_container_width=True):
-            with st.spinner("创建中..."):
-                created = create_session(selected_scenario_id)
-            if created:
-                sid = created["session_id"]
-                st.session_state.session_id = sid
-                st.session_state.selected_scenario_id = created.get("selected_scenario_id")
-                st.session_state.messages = []
-                st.session_state.current_state = "init"
-                st.session_state.pending_flags = []
-                st.session_state.pending_actions = []
-                st.session_state.interrupt_records = []
-                st.session_state.stage_readiness = {}
-
-                bootstrap_input = (
-                    scenario_detail.get("input_sample")
-                    if scenario_detail
-                    and scenario_detail.get("default_config", {}).get("auto_bootstrap_input")
-                    else "你好，我想开始一个新的项目分析。"
-                )
-                with st.spinner("加载引导语..."):
-                    result = bootstrap_scenario_input(sid, bootstrap_input)
-                if result:
-                    st.session_state.messages.append(
-                        {
-                            "role": "user",
-                            "content": bootstrap_input,
-                            "metadata": {},
-                        }
+            if selected_scenario_id:
+                scenario_detail = get_builtin_scenario(selected_scenario_id)
+                if scenario_detail:
+                    st.caption(scenario_detail.get("description", ""))
+                    st.caption(
+                        f"profile=`{scenario_detail.get('domain_profile')}` · mock=`{scenario_detail.get('mock_fixture')}`"
                     )
-                    st.session_state.messages.append(
-                        {
-                            "role": "assistant",
-                            "content": result["ai_reply"],
-                            "metadata": {},
-                        }
+                    with st.expander("查看场景样例输入", expanded=False):
+                        st.code(scenario_detail.get("input_sample", ""), language="markdown")
+            else:
+                scenario_detail = None
+
+            if st.button("➕ 新建会话", use_container_width=True):
+                with st.spinner("创建中..."):
+                    created = create_session(selected_scenario_id)
+                if created:
+                    sid = created["session_id"]
+                    st.session_state.session_id = sid
+                    st.session_state.selected_scenario_id = created.get("selected_scenario_id")
+                    st.session_state.messages = []
+                    st.session_state.current_state = "init"
+                    st.session_state.pending_flags = []
+                    st.session_state.pending_actions = []
+                    st.session_state.interrupt_records = []
+                    st.session_state.stage_readiness = {}
+
+                    bootstrap_input = (
+                        scenario_detail.get("input_sample")
+                        if scenario_detail
+                        and scenario_detail.get("default_config", {}).get("auto_bootstrap_input")
+                        else "你好，我想开始一个新的项目分析。"
                     )
-                    st.session_state.current_state = result["current_state"]
+                    with st.spinner("加载引导语..."):
+                        result = bootstrap_scenario_input(sid, bootstrap_input)
+                    if result:
+                        st.session_state.messages.append(
+                            {
+                                "role": "user",
+                                "content": bootstrap_input,
+                                "metadata": {},
+                            }
+                        )
+                        st.session_state.messages.append(
+                            {
+                                "role": "assistant",
+                                "content": result["ai_reply"],
+                                "metadata": {},
+                            }
+                        )
+                        st.session_state.current_state = result["current_state"]
+                    st.rerun()
+
+        with col_refresh:
+            if st.button("🔄 刷新", use_container_width=True):
                 st.rerun()
 
-    with col_refresh:
-        if st.button("🔄 刷新", use_container_width=True):
-            st.rerun()
+        # ── 历史会话列表 ──────────────────────────────────────────────────────────
+        sessions = list_sessions()
+        if sessions:
+            st.caption(f"最近 {len(sessions)} 个会话")
+            for s in sessions[:10]:
+                icon, _ = STATE_LABELS.get(s["current_state"], ("⚪", ""))
+                raw_label = s.get("research_target") or "未命名"
+                domain = s.get("domain") or ""
 
-    # ── 历史会话列表 ──────────────────────────────────────────────────────────
-    sessions = list_sessions()
-    if sessions:
-        st.caption(f"最近 {len(sessions)} 个会话")
-        for s in sessions[:10]:
-            icon, _ = STATE_LABELS.get(s["current_state"], ("⚪", ""))
-            raw_label = s.get("research_target") or "未命名"
-            domain = s.get("domain") or ""
+                # 截断过长的标签
+                label_short = raw_label[:10] + "…" if len(raw_label) > 10 else raw_label
+                domain_short = f" · {domain[:6]}" if domain else ""
+                btn_label = f"{icon} {label_short}{domain_short}"
 
-            # 截断过长的标签
-            label_short = raw_label[:10] + "…" if len(raw_label) > 10 else raw_label
-            domain_short = f" · {domain[:6]}" if domain else ""
-            btn_label = f"{icon} {label_short}{domain_short}"
+                # 高亮当前会话
+                is_current = s["session_id"] == st.session_state.session_id
+                btn_type = "primary" if is_current else "secondary"
 
-            # 高亮当前会话
-            is_current = s["session_id"] == st.session_state.session_id
-            btn_type = "primary" if is_current else "secondary"
-
-            if st.button(
-                btn_label,
-                key=f"sess_{s['session_id']}",
-                use_container_width=True,
-                type=btn_type,
-            ):
-                if not is_current:
-                    st.session_state.session_id = s["session_id"]
-                    st.session_state.current_state = s["current_state"]
-
-                    ctx = get_session(s["session_id"])
-                    if ctx:
-                        st.session_state.selected_scenario_id = ctx.get("selected_scenario_id")
-                        st.session_state.messages = restore_messages_from_ctx(ctx)
-                        st.session_state.pending_flags = [
-                            f for f in ctx.get("flagged_items", []) if f["status"] == "pending"
-                        ]
-                        st.session_state.pending_actions = [
-                            a for a in ctx.get("pending_actions", []) if a["status"] == "pending"
-                        ]
-                        st.session_state.interrupt_records = list_interrupt_records(s["session_id"])
-                        st.session_state.stage_readiness = get_stage_readiness(s["session_id"])
-                    st.rerun()
-    else:
-        st.caption("暂无历史会话")
-
-    st.divider()
-
-    # ── 当前进度 ──────────────────────────────────────────────────────────────
-    if st.session_state.session_id:
-        st.subheader("📊 当前进度")
-        if st.session_state.selected_scenario_id:
-            st.caption(f"当前场景：`{st.session_state.selected_scenario_id}`")
-
-        state = st.session_state.current_state
-        icon, label = STATE_LABELS.get(state, ("⚪", "未知"))
-        progress = STAGE_PROGRESS.get(state, 0)
-        model = MODEL_LABELS.get(state, "")
-
-        st.markdown(f"**{icon} {label}**")
-        st.progress(progress / 100)
-        st.caption(f"进度 {progress}%　·　{model}")
-
-        # 四个阶段的状态指示
-        stage_cols = st.columns(4)
-        stage_defs = [
-            ("一", ["s1_running", "s1_review"]),
-            ("二", ["s2_running", "s2_review"]),
-            ("三", ["s3_running", "s3_review"]),
-            ("四", ["s4_running", "s4_review"]),
-        ]
-        for i, (name, stage_states) in enumerate(stage_defs):
-            with stage_cols[i]:
-                current_progress = STAGE_PROGRESS.get(state, 0)
-                stage_end_progress = STAGE_PROGRESS.get(stage_states[-1], 0)
-                if state in stage_states:
-                    st.markdown(f"**🔵{name}**")
-                elif current_progress > stage_end_progress:
-                    st.markdown(f"✅{name}")
-                else:
-                    st.markdown(f"⚪{name}")
-
-        # ── Stage Readiness / Gate Blockers ─────────────────────────────────────
-        readiness = st.session_state.stage_readiness or get_stage_readiness(
-            st.session_state.session_id
-        )
-        st.session_state.stage_readiness = readiness
-        stage_resolution = st.session_state.stage_resolution or get_stage_resolution(
-            st.session_state.session_id
-        )
-        st.session_state.stage_resolution = stage_resolution
-        state_stage_map = {
-            "s1_running": 1,
-            "s1_review": 1,
-            "s2_running": 2,
-            "s2_review": 2,
-            "s3_running": 3,
-            "s3_review": 3,
-            "s4_running": 4,
-            "s4_review": 4,
-            "complete": 4,
-        }
-        current_stage_id = state_stage_map.get(state)
-        if current_stage_id:
-            current_readiness = readiness.get(f"stage_{current_stage_id}", {})
-            advancement_decision = get_stage_advancement_decision(
-                st.session_state.session_id, current_stage_id
-            )
-            blockers = current_readiness.get("blockers", []) or []
-            can_continue = advancement_decision.get(
-                "can_advance", current_readiness.get("can_continue", False)
-            )
-            gate_label = (
-                "✅ 当前阶段可推进" if can_continue else f"🧭 阶段推进阻断器 ({len(blockers)})"
-            )
-            with st.expander(gate_label, expanded=bool(blockers)):
-                st.caption(
-                    f"阶段 {current_stage_id} · 输出版本 v{current_readiness.get('stage_output_version', 1)}"
-                )
-                if advancement_decision:
-                    hard_cnt = advancement_decision.get("hard_blockers_count", 0)
-                    exec_cnt = advancement_decision.get("executable_operations_count", 0)
-                    st.caption(
-                        f"当前状态：{lifecycle_zh(advancement_decision.get('stage_lifecycle'))} · "
-                        f"必须处理 {hard_cnt} 项 · 可执行操作 {exec_cnt} 项"
-                    )
-                if current_readiness.get("block_reason"):
-                    st.warning(current_readiness["block_reason"])
-                if blockers:
-                    for blocker in blockers[:8]:
-                        st.markdown(
-                            f"- [{severity_zh(blocker.get('severity'))} · "
-                            f"{blocker_type_zh(blocker.get('blocker_type'))}] "
-                            f"{blocker.get('message')}"
-                        )
-                        st.caption(f"建议操作：{resolution_zh(blocker.get('required_resolution'))}")
-
-                    stage_ops = advancement_decision.get("required_operations") or (
-                        stage_resolution.get("by_stage") or {}
-                    ).get(f"stage_{current_stage_id}", [])
-                    if stage_ops:
-                        st.markdown("**可执行解除操作：**")
-                        for op in stage_ops[:8]:
-                            label = (
-                                f"{resolution_zh(op.get('required_resolution'))} · "
-                                f"{blocker_type_zh(op.get('blocker_type'))} · "
-                                f"{hard_blocker_zh(op.get('hard_blocker'))}"
-                            )
-                            with st.expander(label, expanded=False):
-                                st.markdown(op.get("frontend_hint") or "")
-                                payload_hint = op.get("payload_hint") or {}
-                                if (
-                                    op.get("can_execute_via_api")
-                                    and op.get("api_path")
-                                    and op.get("required_resolution")
-                                    in {"rerun_stage", "revise_stage", "back_stage"}
-                                ):
-                                    stage_op = {
-                                        "rerun_stage": "rerun",
-                                        "revise_stage": "revise",
-                                        "back_stage": "rollback",
-                                    }[op.get("required_resolution")]
-                                    default_body = (
-                                        payload_hint if isinstance(payload_hint, dict) else {}
-                                    )
-                                    if st.button(
-                                        "执行该阶段操作",
-                                        key=f"stage_op_{op.get('operation_id')}",
-                                        use_container_width=True,
-                                    ):
-                                        result = prepare_stage_operation(
-                                            st.session_state.session_id,
-                                            int(op.get("stage_id")),
-                                            stage_op,
-                                            default_body,
-                                        )
-                                        if result:
-                                            st.success(
-                                                "阶段操作已记录；未运行 LLM / pytest / 接口 / 前端 / Docker。"
-                                            )
-                                            st.session_state.stage_readiness = {}
-                                            st.session_state.stage_resolution = {}
-                                            refresh_actions()
-                                            st.rerun()
-                                if not op.get("action_id") and op.get("required_resolution") in {
-                                    "resolve_action",
-                                    "edit_stage_output",
-                                    "approve_escalation",
-                                }:
-                                    if st.button(
-                                        "同步缺失审核动作",
-                                        key=f"sync_actions_{op.get('operation_id')}",
-                                        use_container_width=True,
-                                    ):
-                                        result = prepare_stage_operation(
-                                            st.session_state.session_id,
-                                            int(op.get("stage_id")),
-                                            "sync-review-actions",
-                                            {"reason": "frontend_sync_missing_action_binding"},
-                                        )
-                                        if result:
-                                            st.success(
-                                                "已同步审核动作；请刷新后在人工动作队列处理。"
-                                            )
-                                            st.session_state.stage_readiness = {}
-                                            st.session_state.stage_resolution = {}
-                                            refresh_actions()
-                                            st.rerun()
-
-                                # ── 技术详情（原始 ID / 枚举 / API 路径 / 参数）──
-                                with st.expander("🔧 技术详情", expanded=False):
-                                    if op.get("action_id"):
-                                        st.code(op.get("action_id"), language="text")
-                                    if op.get("api_path"):
-                                        st.caption(
-                                            f"API：{op.get('api_method')} {op.get('api_path')}"
-                                        )
-                                    elif op.get("api_hint"):
-                                        st.caption(op.get("api_hint"))
-                                    if payload_hint:
-                                        st.json(payload_hint)
-                    else:
-                        st.caption(
-                            "当前阻断项暂无可一键解除的操作，请按上面的「建议操作」逐项处理；"
-                            "已处理 / 已被替代的历史动作不会显示为可执行操作。"
-                        )
-
-                    # ── 阻断项技术详情（原始标识，供排查）────────────────────
-                    with st.expander("🔧 技术详情（阻断项原始信息）", expanded=False):
-                        if advancement_decision:
-                            st.caption(
-                                f"decision_reason=`{advancement_decision.get('decision_reason')}`"
-                                f"（{decision_reason_zh(advancement_decision.get('decision_reason'))}） · "
-                                f"lifecycle=`{advancement_decision.get('stage_lifecycle')}` · "
-                                f"hard={advancement_decision.get('hard_blockers_count', 0)} · "
-                                f"executable={advancement_decision.get('executable_operations_count', 0)}"
-                            )
-                        for blocker in blockers[:8]:
-                            bits = [f"blocker_id={blocker.get('blocker_id')}"]
-                            if blocker.get("action_id"):
-                                bits.append(f"action_id={blocker.get('action_id')}")
-                            bits.append(
-                                f"source={blocker.get('source_type') or '-'}:"
-                                f"{blocker.get('source_id') or '-'}"
-                            )
-                            bits.append(f"required_resolution={blocker.get('required_resolution')}")
-                            st.caption(" · ".join(bits))
-                else:
-                    st.success("当前阶段没有阻断项。")
-
-                operations = current_readiness.get("recommended_next_operations") or []
-                if operations:
-                    st.markdown("**下一步建议操作：**")
-                    for op in operations:
-                        st.caption(f"- {op}")
-
-                metadata = current_readiness.get("stage_metadata") or {}
-                if current_stage_id == 2 and metadata.get("stage_2_coverage_matrix"):
-                    st.caption("阶段二高风险覆盖矩阵已生成，可在报告 / 接口中查看。")
-                if current_stage_id == 3 and metadata.get("stage_3_coverage_warning", {}).get(
-                    "coverage_warning"
+                if st.button(
+                    btn_label,
+                    key=f"sess_{s['session_id']}",
+                    use_container_width=True,
+                    type=btn_type,
                 ):
-                    missing = metadata["stage_3_coverage_warning"].get(
-                        "missing_eval_coverage_node_ids", []
-                    )
-                    st.warning(
-                        "高风险节点缺少评测用例覆盖，需补充阶段三结构化输出或回退重跑："
-                        f"{', '.join(missing)}"
-                    )
-                if current_stage_id == 4 and metadata.get("final_governance_summary"):
-                    summary = metadata["final_governance_summary"]
-                    st.caption(
-                        "最终治理："
-                        f"待处理危急安全发现 {len(summary.get('open_critical_safety_findings', []))} 项，"
-                        f"待处理阻断动作 {len(summary.get('pending_blocking_action_ids', []))} 项"
-                    )
+                    if not is_current:
+                        st.session_state.session_id = s["session_id"]
+                        st.session_state.current_state = s["current_state"]
+
+                        ctx = get_session(s["session_id"])
+                        if ctx:
+                            st.session_state.selected_scenario_id = ctx.get("selected_scenario_id")
+                            st.session_state.messages = restore_messages_from_ctx(ctx)
+                            st.session_state.pending_flags = [
+                                f for f in ctx.get("flagged_items", []) if f["status"] == "pending"
+                            ]
+                            st.session_state.pending_actions = [
+                                a for a in ctx.get("pending_actions", []) if a["status"] == "pending"
+                            ]
+                            st.session_state.interrupt_records = list_interrupt_records(s["session_id"])
+                            st.session_state.stage_readiness = get_stage_readiness(s["session_id"])
+                        st.rerun()
+        else:
+            st.caption("暂无历史会话")
 
         st.divider()
 
-        # ── Human Oversight 动作队列 ───────────────────────────────────────────
-        refresh_actions()
-        actions = st.session_state.pending_actions
-        action_title = f"🚦 待处理人工动作 ({len(actions)})" if actions else "✅ 无待处理人工动作"
-        st.subheader(action_title)
+        # ── 当前进度 ──────────────────────────────────────────────────────────────
+        if st.session_state.session_id:
+            st.subheader("📊 当前进度")
+            if st.session_state.selected_scenario_id:
+                st.caption(f"当前场景：`{st.session_state.selected_scenario_id}`")
 
-        if actions:
-            st.caption("阻断型动作未处理前，后端会拒绝通过「确认」进入下一阶段。")
-            for action in actions:
-                risk = action.get("risk_level", "medium")
-                action_type = action.get("action_type", "")
-                title = action.get("title", "未命名动作")
-                action_id = action.get("action_id", "")
-                blocking = "阻断" if action.get("blocking", True) else "非阻断"
-                version = action.get("stage_output_version", 1)
-                with st.expander(
-                    f"[阶段{action.get('stage_id')} v{version}] "
-                    f"{severity_zh(risk)}/{resolution_zh(action_type)}/{blocking} · {title}",
-                    expanded=False,
-                ):
-                    st.code(action_id, language="text")
-                    st.caption(f"阶段输出版本：v{version}")
-                    st.markdown(f"**触发原因：** {action.get('trigger_reason') or '未提供'}")
-                    st.markdown(f"**说明：** {action.get('description') or ''}")
-                    payload_before = action.get("payload_before") or {}
-                    if payload_before:
-                        with st.expander("查看 AI 原始 payload", expanded=False):
-                            st.json(payload_before)
+            state = st.session_state.current_state
+            icon, label = STATE_LABELS.get(state, ("⚪", "未知"))
+            progress = STAGE_PROGRESS.get(state, 0)
+            model = MODEL_LABELS.get(state, "")
 
-                    note_key = f"action_note_{action_id}"
-                    note = st.text_input(
-                        "处理备注",
-                        key=note_key,
-                        placeholder="填写审批、核验或驳回理由...",
+            st.markdown(f"**{icon} {label}**")
+            st.progress(progress / 100)
+            st.caption(f"进度 {progress}%　·　{model}")
+
+            # 四个阶段的状态指示
+            stage_cols = st.columns(4)
+            stage_defs = [
+                ("一", ["s1_running", "s1_review"]),
+                ("二", ["s2_running", "s2_review"]),
+                ("三", ["s3_running", "s3_review"]),
+                ("四", ["s4_running", "s4_review"]),
+            ]
+            for i, (name, stage_states) in enumerate(stage_defs):
+                with stage_cols[i]:
+                    current_progress = STAGE_PROGRESS.get(state, 0)
+                    stage_end_progress = STAGE_PROGRESS.get(stage_states[-1], 0)
+                    if state in stage_states:
+                        st.markdown(f"**🔵{name}**")
+                    elif current_progress > stage_end_progress:
+                        st.markdown(f"✅{name}")
+                    else:
+                        st.markdown(f"⚪{name}")
+
+            # ── Stage Readiness / Gate Blockers ─────────────────────────────────────
+            readiness = st.session_state.stage_readiness or get_stage_readiness(
+                st.session_state.session_id
+            )
+            st.session_state.stage_readiness = readiness
+            stage_resolution = st.session_state.stage_resolution or get_stage_resolution(
+                st.session_state.session_id
+            )
+            st.session_state.stage_resolution = stage_resolution
+            state_stage_map = {
+                "s1_running": 1,
+                "s1_review": 1,
+                "s2_running": 2,
+                "s2_review": 2,
+                "s3_running": 3,
+                "s3_review": 3,
+                "s4_running": 4,
+                "s4_review": 4,
+                "complete": 4,
+            }
+            current_stage_id = state_stage_map.get(state)
+            if current_stage_id:
+                current_readiness = readiness.get(f"stage_{current_stage_id}", {})
+                advancement_decision = get_stage_advancement_decision(
+                    st.session_state.session_id, current_stage_id
+                )
+                blockers = current_readiness.get("blockers", []) or []
+                can_continue = advancement_decision.get(
+                    "can_advance", current_readiness.get("can_continue", False)
+                )
+                gate_label = (
+                    "✅ 当前阶段可推进" if can_continue else f"🧭 阶段推进阻断器 ({len(blockers)})"
+                )
+                with st.expander(gate_label, expanded=bool(blockers)):
+                    st.caption(
+                        f"阶段 {current_stage_id} · 输出版本 v{current_readiness.get('stage_output_version', 1)}"
                     )
-
-                    if action_type == "verify_evidence":
+                    if advancement_decision:
+                        hard_cnt = advancement_decision.get("hard_blockers_count", 0)
+                        exec_cnt = advancement_decision.get("executable_operations_count", 0)
                         st.caption(
-                            "⚠️ 「忽略并留痕」只会关闭这条动作并记录留痕，"
-                            "**不会**解除高风险证据门控；若要真正解除门控，"
-                            "请点击「已核验」，或按需通过「修改」编辑结构化输出补充/修正证据引用。"
+                            f"当前状态：{lifecycle_zh(advancement_decision.get('stage_lifecycle'))} · "
+                            f"必须处理 {hard_cnt} 项 · 可执行操作 {exec_cnt} 项"
                         )
-                        col_a, col_b = st.columns(2)
-                        with col_a:
-                            if st.button(
-                                "✅ 已核验",
-                                key=f"verify_action_{action_id}",
-                                use_container_width=True,
-                            ):
-                                if resolve_action(
-                                    st.session_state.session_id, action_id, "verify_evidence", note
-                                ):
-                                    refresh_flags()
-                                    refresh_actions()
-                                    st.rerun()
-                        with col_b:
-                            if st.button(
-                                "❌ 忽略并留痕",
-                                key=f"dismiss_action_{action_id}",
-                                use_container_width=True,
-                            ):
-                                if resolve_action(
-                                    st.session_state.session_id, action_id, "dismissed", note
-                                ):
-                                    refresh_flags()
-                                    refresh_actions()
-                                    st.warning(
-                                        "已忽略并留痕，但高风险证据门控可能仍未解除。"
-                                        "请查看左侧「阶段推进阻断器」确认是否仍被阻断。"
-                                    )
-                                    st.rerun()
+                    if current_readiness.get("block_reason"):
+                        st.warning(current_readiness["block_reason"])
+                    if blockers:
+                        for blocker in blockers[:8]:
+                            st.markdown(
+                                f"- [{severity_zh(blocker.get('severity'))} · "
+                                f"{blocker_type_zh(blocker.get('blocker_type'))}] "
+                                f"{blocker.get('message')}"
+                            )
+                            st.caption(f"建议操作：{resolution_zh(blocker.get('required_resolution'))}")
 
-                    elif action_type == "approve":
-                        col_a, col_b = st.columns(2)
-                        with col_a:
+                        stage_ops = advancement_decision.get("required_operations") or (
+                            stage_resolution.get("by_stage") or {}
+                        ).get(f"stage_{current_stage_id}", [])
+                        if stage_ops:
+                            st.markdown("**可执行解除操作：**")
+                            for op in stage_ops[:8]:
+                                label = (
+                                    f"{resolution_zh(op.get('required_resolution'))} · "
+                                    f"{blocker_type_zh(op.get('blocker_type'))} · "
+                                    f"{hard_blocker_zh(op.get('hard_blocker'))}"
+                                )
+                                with st.expander(label, expanded=False):
+                                    st.markdown(op.get("frontend_hint") or "")
+                                    payload_hint = op.get("payload_hint") or {}
+                                    if (
+                                        op.get("can_execute_via_api")
+                                        and op.get("api_path")
+                                        and op.get("required_resolution")
+                                        in {"rerun_stage", "revise_stage", "back_stage"}
+                                    ):
+                                        stage_op = {
+                                            "rerun_stage": "rerun",
+                                            "revise_stage": "revise",
+                                            "back_stage": "rollback",
+                                        }[op.get("required_resolution")]
+                                        default_body = (
+                                            payload_hint if isinstance(payload_hint, dict) else {}
+                                        )
+                                        if st.button(
+                                            "执行该阶段操作",
+                                            key=f"stage_op_{op.get('operation_id')}",
+                                            use_container_width=True,
+                                        ):
+                                            result = prepare_stage_operation(
+                                                st.session_state.session_id,
+                                                int(op.get("stage_id")),
+                                                stage_op,
+                                                default_body,
+                                            )
+                                            if result:
+                                                st.success(
+                                                    "阶段操作已记录；未运行 LLM / pytest / 接口 / 前端 / Docker。"
+                                                )
+                                                st.session_state.stage_readiness = {}
+                                                st.session_state.stage_resolution = {}
+                                                refresh_actions()
+                                                st.rerun()
+                                    if not op.get("action_id") and op.get("required_resolution") in {
+                                        "resolve_action",
+                                        "edit_stage_output",
+                                        "approve_escalation",
+                                    }:
+                                        if st.button(
+                                            "同步缺失审核动作",
+                                            key=f"sync_actions_{op.get('operation_id')}",
+                                            use_container_width=True,
+                                        ):
+                                            result = prepare_stage_operation(
+                                                st.session_state.session_id,
+                                                int(op.get("stage_id")),
+                                                "sync-review-actions",
+                                                {"reason": "frontend_sync_missing_action_binding"},
+                                            )
+                                            if result:
+                                                st.success(
+                                                    "已同步审核动作；请刷新后在人工动作队列处理。"
+                                                )
+                                                st.session_state.stage_readiness = {}
+                                                st.session_state.stage_resolution = {}
+                                                refresh_actions()
+                                                st.rerun()
+
+                                    # ── 技术详情（原始 ID / 枚举 / API 路径 / 参数）──
+                                    with st.expander("🔧 技术详情", expanded=False):
+                                        if op.get("action_id"):
+                                            st.code(op.get("action_id"), language="text")
+                                        if op.get("api_path"):
+                                            st.caption(
+                                                f"API：{op.get('api_method')} {op.get('api_path')}"
+                                            )
+                                        elif op.get("api_hint"):
+                                            st.caption(op.get("api_hint"))
+                                        if payload_hint:
+                                            st.json(payload_hint)
+                        else:
+                            st.caption(
+                                "当前阻断项暂无可一键解除的操作，请按上面的「建议操作」逐项处理；"
+                                "已处理 / 已被替代的历史动作不会显示为可执行操作。"
+                            )
+
+                        # ── 阻断项技术详情（原始标识，供排查）────────────────────
+                        with st.expander("🔧 技术详情（阻断项原始信息）", expanded=False):
+                            if advancement_decision:
+                                st.caption(
+                                    f"decision_reason=`{advancement_decision.get('decision_reason')}`"
+                                    f"（{decision_reason_zh(advancement_decision.get('decision_reason'))}） · "
+                                    f"lifecycle=`{advancement_decision.get('stage_lifecycle')}` · "
+                                    f"hard={advancement_decision.get('hard_blockers_count', 0)} · "
+                                    f"executable={advancement_decision.get('executable_operations_count', 0)}"
+                                )
+                            for blocker in blockers[:8]:
+                                bits = [f"blocker_id={blocker.get('blocker_id')}"]
+                                if blocker.get("action_id"):
+                                    bits.append(f"action_id={blocker.get('action_id')}")
+                                bits.append(
+                                    f"source={blocker.get('source_type') or '-'}:"
+                                    f"{blocker.get('source_id') or '-'}"
+                                )
+                                bits.append(f"required_resolution={blocker.get('required_resolution')}")
+                                st.caption(" · ".join(bits))
+                    else:
+                        st.success("当前阶段没有阻断项。")
+
+                    operations = current_readiness.get("recommended_next_operations") or []
+                    if operations:
+                        st.markdown("**下一步建议操作：**")
+                        for op in operations:
+                            st.caption(f"- {op}")
+
+                    metadata = current_readiness.get("stage_metadata") or {}
+                    if current_stage_id == 2 and metadata.get("stage_2_coverage_matrix"):
+                        st.caption("阶段二高风险覆盖矩阵已生成，可在报告 / 接口中查看。")
+                    if current_stage_id == 3 and metadata.get("stage_3_coverage_warning", {}).get(
+                        "coverage_warning"
+                    ):
+                        missing = metadata["stage_3_coverage_warning"].get(
+                            "missing_eval_coverage_node_ids", []
+                        )
+                        st.warning(
+                            "高风险节点缺少评测用例覆盖，需补充阶段三结构化输出或回退重跑："
+                            f"{', '.join(missing)}"
+                        )
+                    if current_stage_id == 4 and metadata.get("final_governance_summary"):
+                        summary = metadata["final_governance_summary"]
+                        st.caption(
+                            "最终治理："
+                            f"待处理危急安全发现 {len(summary.get('open_critical_safety_findings', []))} 项，"
+                            f"待处理阻断动作 {len(summary.get('pending_blocking_action_ids', []))} 项"
+                        )
+
+            st.divider()
+
+            # ── Human Oversight 动作队列 ───────────────────────────────────────────
+            refresh_actions()
+            actions = st.session_state.pending_actions
+            action_title = f"🚦 待处理人工动作 ({len(actions)})" if actions else "✅ 无待处理人工动作"
+            st.subheader(action_title)
+
+            if actions:
+                st.caption("阻断型动作未处理前，后端会拒绝通过「确认」进入下一阶段。")
+                for action in actions:
+                    risk = action.get("risk_level", "medium")
+                    action_type = action.get("action_type", "")
+                    title = action.get("title", "未命名动作")
+                    action_id = action.get("action_id", "")
+                    blocking = "阻断" if action.get("blocking", True) else "非阻断"
+                    version = action.get("stage_output_version", 1)
+                    with st.expander(
+                        f"[阶段{action.get('stage_id')} v{version}] "
+                        f"{severity_zh(risk)}/{resolution_zh(action_type)}/{blocking} · {title}",
+                        expanded=False,
+                    ):
+                        st.code(action_id, language="text")
+                        st.caption(f"阶段输出版本：v{version}")
+                        st.markdown(f"**触发原因：** {action.get('trigger_reason') or '未提供'}")
+                        st.markdown(f"**说明：** {action.get('description') or ''}")
+                        payload_before = action.get("payload_before") or {}
+                        if payload_before:
+                            with st.expander("查看 AI 原始 payload", expanded=False):
+                                st.json(payload_before)
+
+                        note_key = f"action_note_{action_id}"
+                        note = st.text_input(
+                            "处理备注",
+                            key=note_key,
+                            placeholder="填写审批、核验或驳回理由...",
+                        )
+
+                        if action_type == "verify_evidence":
+                            st.caption(
+                                "⚠️ 「忽略并留痕」只会关闭这条动作并记录留痕，"
+                                "**不会**解除高风险证据门控；若要真正解除门控，"
+                                "请点击「已核验」，或按需通过「修改」编辑结构化输出补充/修正证据引用。"
+                            )
+                            col_a, col_b = st.columns(2)
+                            with col_a:
+                                if st.button(
+                                    "✅ 已核验",
+                                    key=f"verify_action_{action_id}",
+                                    use_container_width=True,
+                                ):
+                                    if resolve_action(
+                                        st.session_state.session_id, action_id, "verify_evidence", note
+                                    ):
+                                        refresh_flags()
+                                        refresh_actions()
+                                        st.rerun()
+                            with col_b:
+                                if st.button(
+                                    "❌ 忽略并留痕",
+                                    key=f"dismiss_action_{action_id}",
+                                    use_container_width=True,
+                                ):
+                                    if resolve_action(
+                                        st.session_state.session_id, action_id, "dismissed", note
+                                    ):
+                                        refresh_flags()
+                                        refresh_actions()
+                                        st.warning(
+                                            "已忽略并留痕，但高风险证据门控可能仍未解除。"
+                                            "请查看左侧「阶段推进阻断器」确认是否仍被阻断。"
+                                        )
+                                        st.rerun()
+
+                        elif action_type == "approve":
+                            col_a, col_b = st.columns(2)
+                            with col_a:
+                                if st.button(
+                                    "✅ 批准继续",
+                                    key=f"approve_action_{action_id}",
+                                    use_container_width=True,
+                                ):
+                                    if resolve_action(
+                                        st.session_state.session_id, action_id, "approve", note
+                                    ):
+                                        refresh_flags()
+                                        refresh_actions()
+                                        st.rerun()
+                            with col_b:
+                                if st.button(
+                                    "❌ 驳回并要求修改",
+                                    key=f"reject_action_{action_id}",
+                                    use_container_width=True,
+                                ):
+                                    if resolve_action(
+                                        st.session_state.session_id, action_id, "reject", note
+                                    ):
+                                        refresh_flags()
+                                        refresh_actions()
+                                        st.warning(
+                                            "该关键动作已驳回。请使用聊天区输入「修改」或「回退」后再继续。"
+                                        )
+                                        st.rerun()
+
+                        elif action_type == "escalate":
+                            st.warning(
+                                "该动作属于 critical/escalate，必须明确批准或回退修改，不能忽略关闭。"
+                            )
                             if st.button(
-                                "✅ 批准继续",
-                                key=f"approve_action_{action_id}",
+                                "🧑‍⚖️ 升级风险已明确批准",
+                                key=f"escalate_approve_{action_id}",
                                 use_container_width=True,
                             ):
                                 if resolve_action(
@@ -1310,284 +1342,237 @@ with st.sidebar:
                                     refresh_flags()
                                     refresh_actions()
                                     st.rerun()
-                        with col_b:
-                            if st.button(
-                                "❌ 驳回并要求修改",
-                                key=f"reject_action_{action_id}",
-                                use_container_width=True,
-                            ):
-                                if resolve_action(
-                                    st.session_state.session_id, action_id, "reject", note
+
+                        elif action_type == "edit":
+                            edit_text = st.text_area(
+                                "人工修改后的摘要 / 处理方案（必填）",
+                                key=f"action_edit_{action_id}",
+                                height=100,
+                            )
+                            source_type = action.get("source_type")
+                            structured_required = source_type in STRUCTURED_EDIT_SOURCE_TYPES
+                            if structured_required:
+                                st.warning(
+                                    "该 edit 来源要求完整 structured_output；仅填写摘要/备注不能解除阶段推进 blocker。"
+                                )
+                            else:
+                                st.caption(
+                                    "普通 edit 只会作为人工处理记录；若要改变阶段结构化输出，请提交 structured_output。"
+                                )
+                            structured_text = st.text_area(
+                                "结构化 JSON（必填）"
+                                if structured_required
+                                else "结构化 JSON（可选；填写后会校验并反写 stage_X_output）",
+                                key=f"action_structured_{action_id}",
+                                height=120,
+                                placeholder='例如：{"failure_modes":[...],"direct_conclusion":"..."}',
+                            )
+                            col_a, col_b = st.columns(2)
+                            with col_a:
+                                if st.button(
+                                    "✏️ 编辑后通过",
+                                    key=f"edit_action_{action_id}",
+                                    use_container_width=True,
                                 ):
-                                    refresh_flags()
-                                    refresh_actions()
-                                    st.warning(
-                                        "该关键动作已驳回。请使用聊天区输入「修改」或「回退」后再继续。"
-                                    )
-                                    st.rerun()
-
-                    elif action_type == "escalate":
-                        st.warning(
-                            "该动作属于 critical/escalate，必须明确批准或回退修改，不能忽略关闭。"
-                        )
-                        if st.button(
-                            "🧑‍⚖️ 升级风险已明确批准",
-                            key=f"escalate_approve_{action_id}",
-                            use_container_width=True,
-                        ):
-                            if resolve_action(
-                                st.session_state.session_id, action_id, "approve", note
-                            ):
-                                refresh_flags()
-                                refresh_actions()
-                                st.rerun()
-
-                    elif action_type == "edit":
-                        edit_text = st.text_area(
-                            "人工修改后的摘要 / 处理方案（必填）",
-                            key=f"action_edit_{action_id}",
-                            height=100,
-                        )
-                        source_type = action.get("source_type")
-                        structured_required = source_type in STRUCTURED_EDIT_SOURCE_TYPES
-                        if structured_required:
-                            st.warning(
-                                "该 edit 来源要求完整 structured_output；仅填写摘要/备注不能解除阶段推进 blocker。"
-                            )
-                        else:
-                            st.caption(
-                                "普通 edit 只会作为人工处理记录；若要改变阶段结构化输出，请提交 structured_output。"
-                            )
-                        structured_text = st.text_area(
-                            "结构化 JSON（必填）"
-                            if structured_required
-                            else "结构化 JSON（可选；填写后会校验并反写 stage_X_output）",
-                            key=f"action_structured_{action_id}",
-                            height=120,
-                            placeholder='例如：{"failure_modes":[...],"direct_conclusion":"..."}',
-                        )
-                        col_a, col_b = st.columns(2)
-                        with col_a:
-                            if st.button(
-                                "✏️ 编辑后通过",
-                                key=f"edit_action_{action_id}",
-                                use_container_width=True,
-                            ):
-                                if structured_required and not structured_text.strip():
-                                    st.error(
-                                        "parser/policy/evidence/eval_coverage 类 edit 必须提交完整结构化 JSON。"
-                                    )
-                                elif not edit_text.strip() and not structured_text.strip():
-                                    st.error("edit 动作必须填写人工修改内容或结构化 JSON。")
-                                else:
-                                    payload_after = {
-                                        "edited_text": edit_text.strip(),
-                                        "reviewer_note": note,
-                                    }
-                                    if structured_text.strip():
-                                        try:
-                                            payload_after["structured_output"] = json.loads(
-                                                structured_text
-                                            )
-                                        except json.JSONDecodeError as exc:
-                                            st.error(f"结构化 JSON 解析失败：{exc}")
-                                            st.stop()
+                                    if structured_required and not structured_text.strip():
+                                        st.error(
+                                            "parser/policy/evidence/eval_coverage 类 edit 必须提交完整结构化 JSON。"
+                                        )
+                                    elif not edit_text.strip() and not structured_text.strip():
+                                        st.error("edit 动作必须填写人工修改内容或结构化 JSON。")
+                                    else:
+                                        payload_after = {
+                                            "edited_text": edit_text.strip(),
+                                            "reviewer_note": note,
+                                        }
+                                        if structured_text.strip():
+                                            try:
+                                                payload_after["structured_output"] = json.loads(
+                                                    structured_text
+                                                )
+                                            except json.JSONDecodeError as exc:
+                                                st.error(f"结构化 JSON 解析失败：{exc}")
+                                                st.stop()
+                                        if resolve_action(
+                                            st.session_state.session_id,
+                                            action_id,
+                                            "edit",
+                                            note,
+                                            payload_after=payload_after,
+                                        ):
+                                            refresh_flags()
+                                            refresh_actions()
+                                            st.rerun()
+                            with col_b:
+                                if st.button(
+                                    "❌ 驳回，需重跑",
+                                    key=f"edit_reject_{action_id}",
+                                    use_container_width=True,
+                                ):
                                     if resolve_action(
-                                        st.session_state.session_id,
-                                        action_id,
-                                        "edit",
-                                        note,
-                                        payload_after=payload_after,
+                                        st.session_state.session_id, action_id, "reject", note
                                     ):
                                         refresh_flags()
                                         refresh_actions()
+                                        st.warning(
+                                            "该编辑动作已驳回。请使用「修改」或「回退」重新生成。"
+                                        )
                                         st.rerun()
-                        with col_b:
+
+            st.divider()
+
+            # ── 【需核验】面板 ─────────────────────────────────────────────────────
+            pending = st.session_state.pending_flags
+            flag_title = f"⚠️ 待核验 ({len(pending)})" if pending else "✅ 无待核验项"
+            st.subheader(flag_title)
+
+            if pending:
+                for flag in pending:
+                    short_content = (
+                        flag["content"][:25] + "…" if len(flag["content"]) > 25 else flag["content"]
+                    )
+                    with st.expander(f"[阶段{flag['stage']}] {short_content}", expanded=False):
+                        st.markdown(f"**内容：** {flag['content']}")
+                        if flag.get("context"):
+                            st.caption(f"上下文：{flag['context'][:120]}")
+
+                        note_key = f"flag_note_{flag['item_id']}"
+                        note = st.text_input(
+                            "核验备注（可选）",
+                            key=note_key,
+                            placeholder="填写核验结论...",
+                        )
+
+                        btn_col1, btn_col2 = st.columns(2)
+                        with btn_col1:
                             if st.button(
-                                "❌ 驳回，需重跑",
-                                key=f"edit_reject_{action_id}",
+                                "✅ 已核验",
+                                key=f"verify_{flag['item_id']}",
                                 use_container_width=True,
                             ):
-                                if resolve_action(
-                                    st.session_state.session_id, action_id, "reject", note
+                                if resolve_flag(
+                                    st.session_state.session_id,
+                                    flag["item_id"],
+                                    "verified",
+                                    note,
                                 ):
-                                    refresh_flags()
-                                    refresh_actions()
-                                    st.warning(
-                                        "该编辑动作已驳回。请使用「修改」或「回退」重新生成。"
-                                    )
+                                    st.session_state.pending_flags = [
+                                        f
+                                        for f in st.session_state.pending_flags
+                                        if f["item_id"] != flag["item_id"]
+                                    ]
+                                    st.rerun()
+                        with btn_col2:
+                            if st.button(
+                                "❌ 忽略",
+                                key=f"dismiss_{flag['item_id']}",
+                                use_container_width=True,
+                            ):
+                                if resolve_flag(
+                                    st.session_state.session_id,
+                                    flag["item_id"],
+                                    "dismissed",
+                                    note,
+                                ):
+                                    st.session_state.pending_flags = [
+                                        f
+                                        for f in st.session_state.pending_flags
+                                        if f["item_id"] != flag["item_id"]
+                                    ]
                                     st.rerun()
 
-        st.divider()
+            st.divider()
 
-        # ── 【需核验】面板 ─────────────────────────────────────────────────────
-        pending = st.session_state.pending_flags
-        flag_title = f"⚠️ 待核验 ({len(pending)})" if pending else "✅ 无待核验项"
-        st.subheader(flag_title)
-
-        if pending:
-            for flag in pending:
-                short_content = (
-                    flag["content"][:25] + "…" if len(flag["content"]) > 25 else flag["content"]
-                )
-                with st.expander(f"[阶段{flag['stage']}] {short_content}", expanded=False):
-                    st.markdown(f"**内容：** {flag['content']}")
-                    if flag.get("context"):
-                        st.caption(f"上下文：{flag['context'][:120]}")
-
-                    note_key = f"flag_note_{flag['item_id']}"
-                    note = st.text_input(
-                        "核验备注（可选）",
-                        key=note_key,
-                        placeholder="填写核验结论...",
+            # ── Evidence / Safety 面板 ──────────────────────────────────────────────
+            with st.expander("📚 证据来源", expanded=False):
+                evidence_items = list_evidence(st.session_state.session_id)
+                if evidence_items:
+                    verified_total = sum(1 for e in evidence_items if e.get("verified"))
+                    st.caption(
+                        f"共 {len(evidence_items)} 条 · "
+                        f"已核验 {verified_total} 条 · "
+                        f"未核验 {len(evidence_items) - verified_total} 条"
                     )
-
-                    btn_col1, btn_col2 = st.columns(2)
-                    with btn_col1:
-                        if st.button(
-                            "✅ 已核验",
-                            key=f"verify_{flag['item_id']}",
-                            use_container_width=True,
-                        ):
-                            if resolve_flag(
-                                st.session_state.session_id,
-                                flag["item_id"],
-                                "verified",
-                                note,
-                            ):
-                                st.session_state.pending_flags = [
-                                    f
-                                    for f in st.session_state.pending_flags
-                                    if f["item_id"] != flag["item_id"]
-                                ]
-                                st.rerun()
-                    with btn_col2:
-                        if st.button(
-                            "❌ 忽略",
-                            key=f"dismiss_{flag['item_id']}",
-                            use_container_width=True,
-                        ):
-                            if resolve_flag(
-                                st.session_state.session_id,
-                                flag["item_id"],
-                                "dismissed",
-                                note,
-                            ):
-                                st.session_state.pending_flags = [
-                                    f
-                                    for f in st.session_state.pending_flags
-                                    if f["item_id"] != flag["item_id"]
-                                ]
-                                st.rerun()
-
-        st.divider()
-
-        # ── Evidence / Safety 面板 ──────────────────────────────────────────────
-        with st.expander("📚 证据来源", expanded=False):
-            evidence_items = list_evidence(st.session_state.session_id)
-            if evidence_items:
-                verified_total = sum(1 for e in evidence_items if e.get("verified"))
-                st.caption(
-                    f"共 {len(evidence_items)} 条 · "
-                    f"已核验 {verified_total} 条 · "
-                    f"未核验 {len(evidence_items) - verified_total} 条"
-                )
-                for ev in evidence_items:
-                    verified = ev.get("verified", False)
-                    score = ev.get("credibility_score", 0.0)
-                    status_icon = "✅" if verified else "⚪"
-                    status_text = "已核验" if verified else "未核验"
-                    st.markdown(
-                        f"{status_icon} **`{ev.get('evidence_id')}`** · "
-                        f"{ev.get('source_type')} · "
-                        f"可信度={score:.2f} · {status_text}"
-                    )
-                    st.caption(ev.get("title", ""))
-                    if ev.get("url"):
-                        st.caption(ev.get("url"))
-                    if ev.get("summary"):
-                        st.caption(ev["summary"][:200])
-                    claims = ev.get("claims") or []
-                    if claims:
-                        with st.expander(f"论据（{len(claims)}）", expanded=False):
-                            for claim in claims:
-                                st.markdown(f"- {claim}")
-                    if ev.get("used_by_failure_mode_ids"):
-                        st.caption(
-                            "关联失败模式：" + "、".join(ev.get("used_by_failure_mode_ids", []))
+                    for ev in evidence_items:
+                        verified = ev.get("verified", False)
+                        score = ev.get("credibility_score", 0.0)
+                        status_icon = "✅" if verified else "⚪"
+                        status_text = "已核验" if verified else "未核验"
+                        st.markdown(
+                            f"{status_icon} **`{ev.get('evidence_id')}`** · "
+                            f"{ev.get('source_type')} · "
+                            f"可信度={score:.2f} · {status_text}"
                         )
-                    if verified and ev.get("verification_note"):
-                        st.caption(f"核验备注：{ev['verification_note']}")
-                    if not verified and score < 0.4:
-                        st.warning("可信度较低——未核验的弱来源可能削弱后续分析的可靠性。")
-                    note_key = f"evidence_note_{ev.get('evidence_id')}"
-                    ev_note = st.text_input("核验备注", key=note_key)
-                    if not verified:
-                        if st.button(
-                            "✅ 核验证据",
-                            key=f"verify_ev_{ev.get('evidence_id')}",
-                            use_container_width=True,
-                        ):
-                            if verify_evidence(
-                                st.session_state.session_id, ev.get("evidence_id"), ev_note
-                            ):
-                                refresh_actions()
-                                st.success("证据已核验；若有关联的低可信证据动作，会自动关闭。")
-                                st.rerun()
-                    st.divider()
-            else:
-                st.caption("暂无证据来源。阶段一搜索完成后会自动生成。")
-
-        with st.expander("🛡️ 安全风险发现", expanded=False):
-            findings = list_safety_findings(st.session_state.session_id, status="open")
-            if findings:
-                high_crit_open = sum(
-                    1
-                    for f in findings
-                    if f.get("status") == "open" and f.get("severity") in {"high", "critical"}
-                )
-                st.caption(f"待处理 {len(findings)} 项 · 高危/危急未处理 {high_crit_open} 项")
-                for finding in findings:
-                    severity = finding.get("severity", "low")
-                    is_high_crit = severity in {"high", "critical"}
-                    severity_icon = {
-                        "critical": "🔴",
-                        "high": "🟠",
-                        "medium": "🟡",
-                        "low": "⚪",
-                    }.get(severity, "⚪")
-                    st.markdown(
-                        f"{severity_icon} **`{finding.get('finding_id')}`** · 阶段{finding.get('stage_id')} · "
-                        f"{severity_zh(severity)} / {risk_type_zh(finding.get('risk_type'))}"
-                    )
-                    st.caption(finding.get("description", ""))
-                    st.caption("建议处理：" + finding.get("recommended_action", ""))
-                    if is_high_crit:
-                        st.warning("高危 / 危急安全发现尚未处理——可能阻断阶段推进或需要人工复核。")
-                    finding_note = st.text_input(
-                        "处理备注", key=f"safety_note_{finding.get('finding_id')}"
-                    )
-                    requires_review = finding.get("requires_human_review")
-                    if requires_review and is_high_crit:
-                        st.caption('该高风险安全发现已派生阻断动作，请到"待处理人工动作"面板处理。')
-                        if st.button(
-                            "✅ 标记已处理",
-                            key=f"resolve_safety_{finding.get('finding_id')}",
-                            use_container_width=True,
-                        ):
-                            if resolve_safety_finding(
-                                st.session_state.session_id,
-                                finding.get("finding_id"),
-                                "resolved",
-                                finding_note,
-                            ):
-                                refresh_actions()
-                                st.rerun()
-                    else:
-                        col_resolve, col_dismiss = st.columns(2)
-                        with col_resolve:
+                        st.caption(ev.get("title", ""))
+                        if ev.get("url"):
+                            st.caption(ev.get("url"))
+                        if ev.get("summary"):
+                            st.caption(ev["summary"][:200])
+                        claims = ev.get("claims") or []
+                        if claims:
+                            with st.expander(f"论据（{len(claims)}）", expanded=False):
+                                for claim in claims:
+                                    st.markdown(f"- {claim}")
+                        if ev.get("used_by_failure_mode_ids"):
+                            st.caption(
+                                "关联失败模式：" + "、".join(ev.get("used_by_failure_mode_ids", []))
+                            )
+                        if verified and ev.get("verification_note"):
+                            st.caption(f"核验备注：{ev['verification_note']}")
+                        if not verified and score < 0.4:
+                            st.warning("可信度较低——未核验的弱来源可能削弱后续分析的可靠性。")
+                        note_key = f"evidence_note_{ev.get('evidence_id')}"
+                        ev_note = st.text_input("核验备注", key=note_key)
+                        if not verified:
                             if st.button(
-                                "✅ 已处理",
+                                "✅ 核验证据",
+                                key=f"verify_ev_{ev.get('evidence_id')}",
+                                use_container_width=True,
+                            ):
+                                if verify_evidence(
+                                    st.session_state.session_id, ev.get("evidence_id"), ev_note
+                                ):
+                                    refresh_actions()
+                                    st.success("证据已核验；若有关联的低可信证据动作，会自动关闭。")
+                                    st.rerun()
+                        st.divider()
+                else:
+                    st.caption("暂无证据来源。阶段一搜索完成后会自动生成。")
+
+            with st.expander("🛡️ 安全风险发现", expanded=False):
+                findings = list_safety_findings(st.session_state.session_id, status="open")
+                if findings:
+                    high_crit_open = sum(
+                        1
+                        for f in findings
+                        if f.get("status") == "open" and f.get("severity") in {"high", "critical"}
+                    )
+                    st.caption(f"待处理 {len(findings)} 项 · 高危/危急未处理 {high_crit_open} 项")
+                    for finding in findings:
+                        severity = finding.get("severity", "low")
+                        is_high_crit = severity in {"high", "critical"}
+                        severity_icon = {
+                            "critical": "🔴",
+                            "high": "🟠",
+                            "medium": "🟡",
+                            "low": "⚪",
+                        }.get(severity, "⚪")
+                        st.markdown(
+                            f"{severity_icon} **`{finding.get('finding_id')}`** · 阶段{finding.get('stage_id')} · "
+                            f"{severity_zh(severity)} / {risk_type_zh(finding.get('risk_type'))}"
+                        )
+                        st.caption(finding.get("description", ""))
+                        st.caption("建议处理：" + finding.get("recommended_action", ""))
+                        if is_high_crit:
+                            st.warning("高危 / 危急安全发现尚未处理——可能阻断阶段推进或需要人工复核。")
+                        finding_note = st.text_input(
+                            "处理备注", key=f"safety_note_{finding.get('finding_id')}"
+                        )
+                        requires_review = finding.get("requires_human_review")
+                        if requires_review and is_high_crit:
+                            st.caption('该高风险安全发现已派生阻断动作，请到"待处理人工动作"面板处理。')
+                            if st.button(
+                                "✅ 标记已处理",
                                 key=f"resolve_safety_{finding.get('finding_id')}",
                                 use_container_width=True,
                             ):
@@ -1599,478 +1584,494 @@ with st.sidebar:
                                 ):
                                     refresh_actions()
                                     st.rerun()
-                        with col_dismiss:
-                            if st.button(
-                                "📝 忽略留痕",
-                                key=f"dismiss_safety_{finding.get('finding_id')}",
-                                use_container_width=True,
-                            ):
-                                if resolve_safety_finding(
-                                    st.session_state.session_id,
-                                    finding.get("finding_id"),
-                                    "dismissed",
-                                    finding_note,
+                        else:
+                            col_resolve, col_dismiss = st.columns(2)
+                            with col_resolve:
+                                if st.button(
+                                    "✅ 已处理",
+                                    key=f"resolve_safety_{finding.get('finding_id')}",
+                                    use_container_width=True,
                                 ):
-                                    refresh_actions()
-                                    st.rerun()
-                    st.divider()
-            else:
-                st.caption("暂无未关闭安全发现。")
-
-        with st.expander("🧩 执行 / 中断调试", expanded=False):
-            records = st.session_state.interrupt_records or list_interrupt_records(
-                st.session_state.session_id
-            )
-            health = st.session_state.health or get_health()
-            st.caption(
-                "默认 single_step 保持稳定；"
-                "启用 WORKFLOW_EXECUTION_MODE=langgraph_interrupt 后使用 checkpoint-backed interrupt/resume；"
-                "action/interrupt 同步由执行协调层处理。"
-            )
-            if health:
-                st.caption(
-                    f"执行模式：`{health.get('workflow_execution_mode', 'unknown')}` · "
-                    f"中断适配器状态：`{health.get('interrupt_adapter_status', 'unknown')}`"
-                )
-            if records:
-                summary = {
-                    "total": len(records),
-                    "pending": len([r for r in records if r.get("status") == "pending"]),
-                    "resumed": len([r for r in records if r.get("status") == "resumed"]),
-                    "cancelled": len([r for r in records if r.get("status") == "cancelled"]),
-                    "resume_consumed": len(
-                        [
-                            r
-                            for r in records
-                            if r.get("status") == "resumed" and r.get("resume_consumed_at")
-                        ]
-                    ),
-                    "resume_pending": len(
-                        [
-                            r
-                            for r in records
-                            if r.get("status") == "resumed" and not r.get("resume_consumed_at")
-                        ]
-                    ),
-                }
-                st.json(summary)
-                for record in records:
-                    label = (
-                        f"{record.get('status')} · {record.get('interrupt_id')} "
-                        f"↔ {record.get('action_id')} · stage={record.get('stage_id')}"
-                    )
-                    with st.expander(label, expanded=False):
-                        if record.get("status") == "resumed" and not record.get(
-                            "resume_consumed_at"
-                        ):
-                            st.warning(
-                                "该 interrupt 已标记 resumed，但 Command(resume=...) 尚未消费。"
-                            )
-                        elif record.get("status") == "cancelled":
-                            st.info("该 interrupt 已取消，不会恢复执行。")
-                        elif record.get("resume_consumed_at"):
-                            st.success(f"恢复消费时间：{record.get('resume_consumed_at')}")
-                        st.json(record)
-            else:
-                st.caption(
-                    "暂无 interrupt records。阻断型 PendingHumanAction 出现后会自动创建映射记录。"
-                )
-
-        with st.expander("🛡️ 红队覆盖", expanded=False):
-            redteam_cases = list_redteam_cases(st.session_state.session_id)
-            redteam_coverage = get_redteam_coverage(st.session_state.session_id)
-            render_redteam_panel(cases=redteam_cases, coverage=redteam_coverage)
-
-            col_generate, col_dataset = st.columns(2)
-            with col_generate:
-                if st.button("🧪 生成红队用例草稿", use_container_width=True):
-                    created = generate_redteam_cases(st.session_state.session_id)
-                    st.success(f"已生成 {len(created)} 条红队用例草稿。")
-                    refresh_actions()
-                    st.rerun()
-            with col_dataset:
-                if st.button("📦 创建红队数据集", use_container_width=True):
-                    dataset = create_redteam_dataset(st.session_state.session_id)
-                    if dataset:
-                        st.success(f"数据集已创建：{dataset.get('dataset_id')}")
-                        refresh_actions()
-                        st.rerun()
-
-            for case in redteam_cases:
-                case_id = case.get("redteam_case_id")
-                if not case_id:
-                    continue
-                cols = st.columns(3)
-                with cols[0]:
-                    if case.get("status") == "draft" and st.button(
-                        f"✅ 批准 {case_id}",
-                        key=f"approve_redteam_{case_id}",
-                        use_container_width=True,
-                    ):
-                        approve_redteam_case(
-                            st.session_state.session_id, case_id, "已在复核工作台批准"
-                        )
-                        refresh_actions()
-                        st.rerun()
-                with cols[1]:
-                    if case.get("status") == "draft" and st.button(
-                        f"📝 驳回 {case_id}",
-                        key=f"reject_redteam_{case_id}",
-                        use_container_width=True,
-                    ):
-                        reject_redteam_case(
-                            st.session_state.session_id, case_id, "已在复核工作台驳回"
-                        )
-                        refresh_actions()
-                        st.rerun()
-                with cols[2]:
-                    if case.get("status") == "approved" and st.button(
-                        f"🔗 同步 {case_id}",
-                        key=f"sync_redteam_{case_id}",
-                        use_container_width=True,
-                    ):
-                        eval_case = sync_redteam_case_to_eval(st.session_state.session_id, case_id)
-                        if eval_case:
-                            st.success(f"已同步为评测用例：{eval_case.get('eval_id')}")
-                        refresh_actions()
-                        st.rerun()
-
-        with st.expander("🧪 评测用例 / 数据集 / 实验", expanded=False):
-            eval_cases = list_eval_cases(st.session_state.session_id)
-            eval_runs = list_eval_runs(st.session_state.session_id)
-            eval_datasets = list_eval_datasets(st.session_state.session_id)
-            eval_experiments = list_eval_experiments(st.session_state.session_id)
-
-            st.caption(
-                "评测数据集 / 评测实验 / 回归门控 / 追踪回填门控均已在数据层面可用；"
-                "运行时校验仍按指令延后执行。"
-            )
-            metric_cols = st.columns(4)
-            metric_cols[0].metric("评测用例", len(eval_cases))
-            metric_cols[1].metric("数据集", len(eval_datasets))
-            metric_cols[2].metric("实验", len(eval_experiments))
-            metric_cols[3].metric("评测运行", len(eval_runs))
-
-            with st.expander(
-                "数据集 / 实验基础配置", expanded=bool(eval_datasets or eval_experiments)
-            ):
-                dataset_name = st.text_input(
-                    "数据集名称",
-                    value="阶段三生成数据集",
-                    key="eval_dataset_name",
-                )
-                if st.button("📦 从阶段三创建数据集", use_container_width=True):
-                    dataset = create_eval_dataset_from_stage3(
-                        st.session_state.session_id,
-                        dataset_name,
-                        "由当前阶段三评测用例创建。",
-                    )
-                    if dataset:
-                        st.success(f"数据集已创建：{dataset.get('dataset_id')}")
-                        st.rerun()
-
-                if eval_datasets:
-                    dataset_options = {
-                        f"{dataset.get('dataset_id')} · {dataset.get('name')}": dataset
-                        for dataset in eval_datasets
-                    }
-                    selected_dataset_label = st.selectbox(
-                        "选择数据集",
-                        options=list(dataset_options.keys()),
-                        key="selected_eval_dataset",
-                    )
-                    selected_dataset = dataset_options[selected_dataset_label]
-                    st.caption(
-                        f"用例数={len(selected_dataset.get('case_ids') or [])} · "
-                        f"来源={selected_dataset.get('source')} · "
-                        f"基线={selected_dataset.get('baseline_experiment_id') or '-'}"
-                    )
-                    experiment_name = st.text_input(
-                        "实验名称",
-                        value=f"针对 {selected_dataset.get('name')} 的实验",
-                        key="eval_experiment_name",
-                    )
-                    experiment_run_mode = st.selectbox(
-                        "实验运行模式",
-                        ["manual", "dry_run", "llm_node"],
-                        index=1,
-                        key="eval_experiment_run_mode",
-                    )
-                    baseline_options = {"[无]": None}
-                    baseline_options.update(
-                        {
-                            f"{exp.get('experiment_id')} · {exp.get('name')}": exp.get(
-                                "experiment_id"
-                            )
-                            for exp in eval_experiments
-                            if exp.get("dataset_id") == selected_dataset.get("dataset_id")
-                        }
-                    )
-                    selected_baseline_label = st.selectbox(
-                        "基线实验",
-                        options=list(baseline_options.keys()),
-                        key="selected_eval_baseline",
-                    )
-                    if st.button("🧪 创建实验", use_container_width=True):
-                        experiment = create_eval_experiment(
-                            st.session_state.session_id,
-                            selected_dataset.get("dataset_id"),
-                            experiment_name,
-                            experiment_run_mode,
-                            baseline_options[selected_baseline_label],
-                        )
-                        if experiment:
-                            st.success(f"实验已创建：{experiment.get('experiment_id')}")
-                            st.rerun()
-
-                if eval_experiments:
-                    st.markdown("**实验列表**")
-                    for experiment in eval_experiments:
-                        metrics = experiment.get("aggregate_metrics") or {}
-                        comparison = experiment.get("comparison_summary") or {}
-                        st.markdown(
-                            f"- `{experiment.get('experiment_id')}` · {experiment.get('name')} · "
-                            f"{status_zh(experiment.get('status'))} · 模式={experiment.get('run_mode')} · "
-                            f"通过率={metrics.get('pass_rate', 0):.2f}"
-                        )
-                        disagreement_rate = metrics.get("human_disagreement_rate")
-                        if disagreement_rate is not None:
-                            st.caption(
-                                f"人工校准 {metrics.get('human_calibration_count', 0)} 次 · "
-                                f"与自动评审分歧率={disagreement_rate:.2f}"
-                            )
-                        if experiment.get("status") in {"created", "failed"}:
-                            if st.button(
-                                f"▶️ 运行 {experiment.get('experiment_id')}",
-                                key=f"run_experiment_{experiment.get('experiment_id')}",
-                                use_container_width=True,
-                            ):
-                                result = run_eval_experiment(
-                                    st.session_state.session_id,
-                                    experiment.get("experiment_id"),
-                                    dry_run_only=True,
-                                )
-                                if result:
-                                    refresh_actions()
-                                    st.success("实验已运行或已记录。")
-                                    st.rerun()
-                        if comparison:
-                            if comparison.get("regression_detected"):
-                                st.warning(
-                                    f"对比检测到回归：{comparison.get('regression_reasons')}"
-                                )
-                            else:
-                                st.success("对比结果：未检测到回归。")
-
-            run_mode = st.selectbox(
-                "评测用例运行模式", ["manual", "dry_run", "llm_node"], key="eval_run_mode"
-            )
-            if eval_cases:
-                col_run_all, col_refresh_runs = st.columns(2)
-                with col_run_all:
-                    if st.button("▶️ 运行全部评测用例", use_container_width=True):
-                        result = run_eval_cases(st.session_state.session_id, None, run_mode)
-                        if result:
-                            refresh_actions()
-                            st.success(f"已创建 {len(result.get('created_runs', []))} 次评测运行。")
-                            st.rerun()
-                with col_refresh_runs:
-                    st.caption(f"评测运行数：{len(eval_runs)}")
-
-                for case in eval_cases:
-                    st.markdown(
-                        f"**`{case.get('eval_id')}`** · 节点={case.get('target_node_id')} · "
-                        f"{case.get('scenario_type')} · 通过={case.get('passed')}"
-                    )
-                    st.caption("测试输入：" + (case.get("input_payload") or "")[:300])
-                    st.caption("预期行为：" + (case.get("expected_behavior") or "")[:300])
-                    pass_criteria = case.get("pass_criteria") or []
-                    if pass_criteria:
-                        st.caption("通过标准：" + "；".join(pass_criteria)[:300])
-                    if st.button(
-                        "▶️ 运行该用例",
-                        key=f"run_eval_{case.get('eval_id')}",
-                        use_container_width=True,
-                    ):
-                        result = run_single_eval_case(
-                            st.session_state.session_id, case.get("eval_id"), run_mode
-                        )
-                        if result:
-                            refresh_actions()
-                            st.rerun()
-                    case_runs = [
-                        run for run in eval_runs if run.get("eval_id") == case.get("eval_id")
-                    ]
-                    if case_runs:
-                        latest_run = case_runs[-1]
-                        st.caption(
-                            "最近一次运行："
-                            f"{latest_run.get('run_id')} · 状态={status_zh(latest_run.get('status'))} · "
-                            f"评审结果={latest_run.get('judge_result')}"
-                        )
-                        judge_reason = latest_run.get("judge_reason") or ""
-                        violated = latest_run.get("violated_criteria") or []
-                        if judge_reason:
-                            st.caption(f"评审理由：{judge_reason[:300]}")
-                        if violated:
-                            st.caption("未满足标准：" + "；".join(violated)[:300])
-                    score_key = f"eval_score_{case.get('eval_id')}"
-                    comment_key = f"eval_comment_{case.get('eval_id')}"
-                    pass_key = f"eval_passed_{case.get('eval_id')}"
-                    actual_key = f"eval_actual_{case.get('eval_id')}"
-                    actual_value = st.text_area(
-                        "实际输出",
-                        value=case.get("actual_output") or "",
-                        key=actual_key,
-                        height=90,
-                    )
-                    score_value = st.slider(
-                        "人工评分（1-5）", 1, 5, int(case.get("human_score") or 3), key=score_key
-                    )
-                    passed_value = st.selectbox(
-                        "人工结论", ["未定", "通过", "不通过"], key=pass_key
-                    )
-                    comment_value = st.text_input(
-                        "评分备注", value=case.get("human_comment") or "", key=comment_key
-                    )
-                    passed_bool = None if passed_value == "未定" else passed_value == "通过"
-                    if st.button(
-                        "💾 保存评分",
-                        key=f"score_eval_{case.get('eval_id')}",
-                        use_container_width=True,
-                    ):
-                        if score_eval_case(
-                            st.session_state.session_id,
-                            case.get("eval_id"),
-                            score_value,
-                            comment_value,
-                            passed_bool,
-                            actual_value,
-                        ):
-                            refresh_actions()
-                            st.rerun()
-                    st.divider()
-            else:
-                st.caption("暂无 EvalCase。阶段三压测完成后会自动生成。")
-
-        st.divider()
-
-        # ── 审计历史 ───────────────────────────────────────────────────────────
-        with st.expander("🧾 审计历史", expanded=False):
-            events = list_audit_events(st.session_state.session_id)
-            if events:
-                st.caption(f"共记录 {len(events)} 条审计事件（显示最近 30 条）")
-                for event in events[-30:]:
-                    event_type = event.get("event_type", "?")
-                    actor = event.get("actor", "system")
-                    created_at = event.get("created_at", "")
-                    target_type = event.get("target_type", "")
-                    target_id = event.get("target_id", "")
-                    metadata = event.get("metadata") or {}
-
-                    label = (
-                        f"{created_at[:19] if created_at else '?'}  ·  "
-                        f"{actor}  ·  "
-                        f"{event_type}  ·  "
-                        f"{target_type}/{target_id}"
-                    )
-                    with st.expander(label, expanded=False):
-                        st.caption(f"事件类型：**{event_type}**")
-                        st.caption(f"操作者：{actor}  ·  时间：{created_at}")
-                        st.caption(f"目标对象：{target_type}/{target_id}")
-                        if metadata:
-                            with st.expander("元数据", expanded=False):
-                                st.json(metadata)
-                        before_snapshot = event.get("before_snapshot")
-                        after_snapshot = event.get("after_snapshot")
-                        if before_snapshot or after_snapshot:
-                            with st.expander("变更前后快照", expanded=False):
-                                snap_before, snap_after = st.columns(2)
-                                with snap_before:
-                                    st.caption("变更前")
-                                    st.json(before_snapshot or {})
-                                with snap_after:
-                                    st.caption("变更后")
-                                    st.json(after_snapshot or {})
-            else:
-                st.caption("暂无审计事件。")
-
-        st.divider()
-
-        # ── 报告面板 ───────────────────────────────────────────────────────────
-        st.subheader("报告工作台")
-
-        # --- 导出实时快照 ---
-        with st.expander("导出实时快照", expanded=False):
-            col_json, col_md = st.columns(2)
-            with col_json:
-                if st.button("生成 JSON", use_container_width=True, key="export_json_btn"):
-                    with st.spinner("正在生成..."):
-                        report = export_report(st.session_state.session_id, format="json")
-                    if report:
-                        report_json = json.dumps(report, ensure_ascii=False, indent=2)
-                        sid_short = st.session_state.session_id[:8]
-                        st.download_button(
-                            label="下载 JSON",
-                            data=report_json,
-                            file_name=f"workflow_report_{sid_short}.json",
-                            mime="application/json",
-                            use_container_width=True,
-                        )
-                    else:
-                        st.error("生成 JSON 报告失败，请稍后重试。")
-            with col_md:
-                if st.button("生成 Markdown", use_container_width=True, key="export_md_btn"):
-                    with st.spinner("正在生成..."):
-                        report = export_report(st.session_state.session_id, format="markdown")
-                    if report and report.get("content"):
-                        sid_short = st.session_state.session_id[:8]
-                        st.download_button(
-                            label="下载 Markdown",
-                            data=report["content"],
-                            file_name=f"workflow_report_{sid_short}.md",
-                            mime="text/markdown",
-                            use_container_width=True,
-                        )
-                    else:
-                        st.error("生成 Markdown 报告失败，请稍后重试。")
-
-        # --- 版本化报告快照 ---
-        st.divider()
-        if st.button("创建报告快照", use_container_width=True, key="create_artifact_btn"):
-            artifact = create_report_artifact(st.session_state.session_id)
-            if artifact:
-                st.success(f"快照已创建：{artifact.get('report_id')}")
-            else:
-                st.error("创建报告快照失败，请稍后重试。")
-
-        artifacts = list_report_artifacts(st.session_state.session_id)
-        if artifacts:
-            report_options = {
-                f"{a.get('report_id', '?')[:12]}... (v{a.get('version', '?')}, {a.get('generated_at', '?')[:19]})": a
-                for a in reversed(artifacts[-20:])
-            }
-            selected_label = st.selectbox(
-                "选择要查看的报告快照",
-                options=["[无]"] + list(report_options.keys()),
-                key="selected_report_label",
-            )
-            if selected_label and selected_label != "[无]":
-                selected_artifact = report_options[selected_label]
-                report_id = selected_artifact.get("report_id", "")
-                # 从接口获取完整快照（含 content_json / content_markdown）
-                full_report = get_report_artifact(st.session_state.session_id, report_id)
-                if full_report:
-                    render_report_panel(full_report)
+                                    if resolve_safety_finding(
+                                        st.session_state.session_id,
+                                        finding.get("finding_id"),
+                                        "resolved",
+                                        finding_note,
+                                    ):
+                                        refresh_actions()
+                                        st.rerun()
+                            with col_dismiss:
+                                if st.button(
+                                    "📝 忽略留痕",
+                                    key=f"dismiss_safety_{finding.get('finding_id')}",
+                                    use_container_width=True,
+                                ):
+                                    if resolve_safety_finding(
+                                        st.session_state.session_id,
+                                        finding.get("finding_id"),
+                                        "dismissed",
+                                        finding_note,
+                                    ):
+                                        refresh_actions()
+                                        st.rerun()
+                        st.divider()
                 else:
-                    st.error(f"加载报告 {report_id} 失败，后端可能暂时不可用。")
+                    st.caption("暂无未关闭安全发现。")
+
+            with st.expander("🧩 执行 / 中断调试", expanded=False):
+                records = st.session_state.interrupt_records or list_interrupt_records(
+                    st.session_state.session_id
+                )
+                health = st.session_state.health or get_health()
+                st.caption(
+                    "默认 single_step 保持稳定；"
+                    "启用 WORKFLOW_EXECUTION_MODE=langgraph_interrupt 后使用 checkpoint-backed interrupt/resume；"
+                    "action/interrupt 同步由执行协调层处理。"
+                )
+                if health:
+                    st.caption(
+                        f"执行模式：`{health.get('workflow_execution_mode', 'unknown')}` · "
+                        f"中断适配器状态：`{health.get('interrupt_adapter_status', 'unknown')}`"
+                    )
+                if records:
+                    summary = {
+                        "total": len(records),
+                        "pending": len([r for r in records if r.get("status") == "pending"]),
+                        "resumed": len([r for r in records if r.get("status") == "resumed"]),
+                        "cancelled": len([r for r in records if r.get("status") == "cancelled"]),
+                        "resume_consumed": len(
+                            [
+                                r
+                                for r in records
+                                if r.get("status") == "resumed" and r.get("resume_consumed_at")
+                            ]
+                        ),
+                        "resume_pending": len(
+                            [
+                                r
+                                for r in records
+                                if r.get("status") == "resumed" and not r.get("resume_consumed_at")
+                            ]
+                        ),
+                    }
+                    st.json(summary)
+                    for record in records:
+                        label = (
+                            f"{record.get('status')} · {record.get('interrupt_id')} "
+                            f"↔ {record.get('action_id')} · stage={record.get('stage_id')}"
+                        )
+                        with st.expander(label, expanded=False):
+                            if record.get("status") == "resumed" and not record.get(
+                                "resume_consumed_at"
+                            ):
+                                st.warning(
+                                    "该 interrupt 已标记 resumed，但 Command(resume=...) 尚未消费。"
+                                )
+                            elif record.get("status") == "cancelled":
+                                st.info("该 interrupt 已取消，不会恢复执行。")
+                            elif record.get("resume_consumed_at"):
+                                st.success(f"恢复消费时间：{record.get('resume_consumed_at')}")
+                            st.json(record)
+                else:
+                    st.caption(
+                        "暂无 interrupt records。阻断型 PendingHumanAction 出现后会自动创建映射记录。"
+                    )
+
+            with st.expander("🛡️ 红队覆盖", expanded=False):
+                redteam_cases = list_redteam_cases(st.session_state.session_id)
+                redteam_coverage = get_redteam_coverage(st.session_state.session_id)
+                render_redteam_panel(cases=redteam_cases, coverage=redteam_coverage)
+
+                col_generate, col_dataset = st.columns(2)
+                with col_generate:
+                    if st.button("🧪 生成红队用例草稿", use_container_width=True):
+                        created = generate_redteam_cases(st.session_state.session_id)
+                        st.success(f"已生成 {len(created)} 条红队用例草稿。")
+                        refresh_actions()
+                        st.rerun()
+                with col_dataset:
+                    if st.button("📦 创建红队数据集", use_container_width=True):
+                        dataset = create_redteam_dataset(st.session_state.session_id)
+                        if dataset:
+                            st.success(f"数据集已创建：{dataset.get('dataset_id')}")
+                            refresh_actions()
+                            st.rerun()
+
+                for case in redteam_cases:
+                    case_id = case.get("redteam_case_id")
+                    if not case_id:
+                        continue
+                    cols = st.columns(3)
+                    with cols[0]:
+                        if case.get("status") == "draft" and st.button(
+                            f"✅ 批准 {case_id}",
+                            key=f"approve_redteam_{case_id}",
+                            use_container_width=True,
+                        ):
+                            approve_redteam_case(
+                                st.session_state.session_id, case_id, "已在复核工作台批准"
+                            )
+                            refresh_actions()
+                            st.rerun()
+                    with cols[1]:
+                        if case.get("status") == "draft" and st.button(
+                            f"📝 驳回 {case_id}",
+                            key=f"reject_redteam_{case_id}",
+                            use_container_width=True,
+                        ):
+                            reject_redteam_case(
+                                st.session_state.session_id, case_id, "已在复核工作台驳回"
+                            )
+                            refresh_actions()
+                            st.rerun()
+                    with cols[2]:
+                        if case.get("status") == "approved" and st.button(
+                            f"🔗 同步 {case_id}",
+                            key=f"sync_redteam_{case_id}",
+                            use_container_width=True,
+                        ):
+                            eval_case = sync_redteam_case_to_eval(st.session_state.session_id, case_id)
+                            if eval_case:
+                                st.success(f"已同步为评测用例：{eval_case.get('eval_id')}")
+                            refresh_actions()
+                            st.rerun()
+
+            with st.expander("🧪 评测用例 / 数据集 / 实验", expanded=False):
+                eval_cases = list_eval_cases(st.session_state.session_id)
+                eval_runs = list_eval_runs(st.session_state.session_id)
+                eval_datasets = list_eval_datasets(st.session_state.session_id)
+                eval_experiments = list_eval_experiments(st.session_state.session_id)
+
+                st.caption(
+                    "评测数据集 / 评测实验 / 回归门控 / 追踪回填门控均已在数据层面可用；"
+                    "运行时校验仍按指令延后执行。"
+                )
+                metric_cols = st.columns(4)
+                metric_cols[0].metric("评测用例", len(eval_cases))
+                metric_cols[1].metric("数据集", len(eval_datasets))
+                metric_cols[2].metric("实验", len(eval_experiments))
+                metric_cols[3].metric("评测运行", len(eval_runs))
+
+                with st.expander(
+                    "数据集 / 实验基础配置", expanded=bool(eval_datasets or eval_experiments)
+                ):
+                    dataset_name = st.text_input(
+                        "数据集名称",
+                        value="阶段三生成数据集",
+                        key="eval_dataset_name",
+                    )
+                    if st.button("📦 从阶段三创建数据集", use_container_width=True):
+                        dataset = create_eval_dataset_from_stage3(
+                            st.session_state.session_id,
+                            dataset_name,
+                            "由当前阶段三评测用例创建。",
+                        )
+                        if dataset:
+                            st.success(f"数据集已创建：{dataset.get('dataset_id')}")
+                            st.rerun()
+
+                    if eval_datasets:
+                        dataset_options = {
+                            f"{dataset.get('dataset_id')} · {dataset.get('name')}": dataset
+                            for dataset in eval_datasets
+                        }
+                        selected_dataset_label = st.selectbox(
+                            "选择数据集",
+                            options=list(dataset_options.keys()),
+                            key="selected_eval_dataset",
+                        )
+                        selected_dataset = dataset_options[selected_dataset_label]
+                        st.caption(
+                            f"用例数={len(selected_dataset.get('case_ids') or [])} · "
+                            f"来源={selected_dataset.get('source')} · "
+                            f"基线={selected_dataset.get('baseline_experiment_id') or '-'}"
+                        )
+                        experiment_name = st.text_input(
+                            "实验名称",
+                            value=f"针对 {selected_dataset.get('name')} 的实验",
+                            key="eval_experiment_name",
+                        )
+                        experiment_run_mode = st.selectbox(
+                            "实验运行模式",
+                            ["manual", "dry_run", "llm_node"],
+                            index=1,
+                            key="eval_experiment_run_mode",
+                        )
+                        baseline_options = {"[无]": None}
+                        baseline_options.update(
+                            {
+                                f"{exp.get('experiment_id')} · {exp.get('name')}": exp.get(
+                                    "experiment_id"
+                                )
+                                for exp in eval_experiments
+                                if exp.get("dataset_id") == selected_dataset.get("dataset_id")
+                            }
+                        )
+                        selected_baseline_label = st.selectbox(
+                            "基线实验",
+                            options=list(baseline_options.keys()),
+                            key="selected_eval_baseline",
+                        )
+                        if st.button("🧪 创建实验", use_container_width=True):
+                            experiment = create_eval_experiment(
+                                st.session_state.session_id,
+                                selected_dataset.get("dataset_id"),
+                                experiment_name,
+                                experiment_run_mode,
+                                baseline_options[selected_baseline_label],
+                            )
+                            if experiment:
+                                st.success(f"实验已创建：{experiment.get('experiment_id')}")
+                                st.rerun()
+
+                    if eval_experiments:
+                        st.markdown("**实验列表**")
+                        for experiment in eval_experiments:
+                            metrics = experiment.get("aggregate_metrics") or {}
+                            comparison = experiment.get("comparison_summary") or {}
+                            st.markdown(
+                                f"- `{experiment.get('experiment_id')}` · {experiment.get('name')} · "
+                                f"{status_zh(experiment.get('status'))} · 模式={experiment.get('run_mode')} · "
+                                f"通过率={metrics.get('pass_rate', 0):.2f}"
+                            )
+                            disagreement_rate = metrics.get("human_disagreement_rate")
+                            if disagreement_rate is not None:
+                                st.caption(
+                                    f"人工校准 {metrics.get('human_calibration_count', 0)} 次 · "
+                                    f"与自动评审分歧率={disagreement_rate:.2f}"
+                                )
+                            if experiment.get("status") in {"created", "failed"}:
+                                if st.button(
+                                    f"▶️ 运行 {experiment.get('experiment_id')}",
+                                    key=f"run_experiment_{experiment.get('experiment_id')}",
+                                    use_container_width=True,
+                                ):
+                                    result = run_eval_experiment(
+                                        st.session_state.session_id,
+                                        experiment.get("experiment_id"),
+                                        dry_run_only=True,
+                                    )
+                                    if result:
+                                        refresh_actions()
+                                        st.success("实验已运行或已记录。")
+                                        st.rerun()
+                            if comparison:
+                                if comparison.get("regression_detected"):
+                                    st.warning(
+                                        f"对比检测到回归：{comparison.get('regression_reasons')}"
+                                    )
+                                else:
+                                    st.success("对比结果：未检测到回归。")
+
+                run_mode = st.selectbox(
+                    "评测用例运行模式", ["manual", "dry_run", "llm_node"], key="eval_run_mode"
+                )
+                if eval_cases:
+                    col_run_all, col_refresh_runs = st.columns(2)
+                    with col_run_all:
+                        if st.button("▶️ 运行全部评测用例", use_container_width=True):
+                            result = run_eval_cases(st.session_state.session_id, None, run_mode)
+                            if result:
+                                refresh_actions()
+                                st.success(f"已创建 {len(result.get('created_runs', []))} 次评测运行。")
+                                st.rerun()
+                    with col_refresh_runs:
+                        st.caption(f"评测运行数：{len(eval_runs)}")
+
+                    for case in eval_cases:
+                        st.markdown(
+                            f"**`{case.get('eval_id')}`** · 节点={case.get('target_node_id')} · "
+                            f"{case.get('scenario_type')} · 通过={case.get('passed')}"
+                        )
+                        st.caption("测试输入：" + (case.get("input_payload") or "")[:300])
+                        st.caption("预期行为：" + (case.get("expected_behavior") or "")[:300])
+                        pass_criteria = case.get("pass_criteria") or []
+                        if pass_criteria:
+                            st.caption("通过标准：" + "；".join(pass_criteria)[:300])
+                        if st.button(
+                            "▶️ 运行该用例",
+                            key=f"run_eval_{case.get('eval_id')}",
+                            use_container_width=True,
+                        ):
+                            result = run_single_eval_case(
+                                st.session_state.session_id, case.get("eval_id"), run_mode
+                            )
+                            if result:
+                                refresh_actions()
+                                st.rerun()
+                        case_runs = [
+                            run for run in eval_runs if run.get("eval_id") == case.get("eval_id")
+                        ]
+                        if case_runs:
+                            latest_run = case_runs[-1]
+                            st.caption(
+                                "最近一次运行："
+                                f"{latest_run.get('run_id')} · 状态={status_zh(latest_run.get('status'))} · "
+                                f"评审结果={latest_run.get('judge_result')}"
+                            )
+                            judge_reason = latest_run.get("judge_reason") or ""
+                            violated = latest_run.get("violated_criteria") or []
+                            if judge_reason:
+                                st.caption(f"评审理由：{judge_reason[:300]}")
+                            if violated:
+                                st.caption("未满足标准：" + "；".join(violated)[:300])
+                        score_key = f"eval_score_{case.get('eval_id')}"
+                        comment_key = f"eval_comment_{case.get('eval_id')}"
+                        pass_key = f"eval_passed_{case.get('eval_id')}"
+                        actual_key = f"eval_actual_{case.get('eval_id')}"
+                        actual_value = st.text_area(
+                            "实际输出",
+                            value=case.get("actual_output") or "",
+                            key=actual_key,
+                            height=90,
+                        )
+                        score_value = st.slider(
+                            "人工评分（1-5）", 1, 5, int(case.get("human_score") or 3), key=score_key
+                        )
+                        passed_value = st.selectbox(
+                            "人工结论", ["未定", "通过", "不通过"], key=pass_key
+                        )
+                        comment_value = st.text_input(
+                            "评分备注", value=case.get("human_comment") or "", key=comment_key
+                        )
+                        passed_bool = None if passed_value == "未定" else passed_value == "通过"
+                        if st.button(
+                            "💾 保存评分",
+                            key=f"score_eval_{case.get('eval_id')}",
+                            use_container_width=True,
+                        ):
+                            if score_eval_case(
+                                st.session_state.session_id,
+                                case.get("eval_id"),
+                                score_value,
+                                comment_value,
+                                passed_bool,
+                                actual_value,
+                            ):
+                                refresh_actions()
+                                st.rerun()
+                        st.divider()
+                else:
+                    st.caption("暂无 EvalCase。阶段三压测完成后会自动生成。")
+
+            st.divider()
+
+            # ── 审计历史 ───────────────────────────────────────────────────────────
+            with st.expander("🧾 审计历史", expanded=False):
+                events = list_audit_events(st.session_state.session_id)
+                if events:
+                    st.caption(f"共记录 {len(events)} 条审计事件（显示最近 30 条）")
+                    for event in events[-30:]:
+                        event_type = event.get("event_type", "?")
+                        actor = event.get("actor", "system")
+                        created_at = event.get("created_at", "")
+                        target_type = event.get("target_type", "")
+                        target_id = event.get("target_id", "")
+                        metadata = event.get("metadata") or {}
+
+                        label = (
+                            f"{created_at[:19] if created_at else '?'}  ·  "
+                            f"{actor}  ·  "
+                            f"{event_type}  ·  "
+                            f"{target_type}/{target_id}"
+                        )
+                        with st.expander(label, expanded=False):
+                            st.caption(f"事件类型：**{event_type}**")
+                            st.caption(f"操作者：{actor}  ·  时间：{created_at}")
+                            st.caption(f"目标对象：{target_type}/{target_id}")
+                            if metadata:
+                                with st.expander("元数据", expanded=False):
+                                    st.json(metadata)
+                            before_snapshot = event.get("before_snapshot")
+                            after_snapshot = event.get("after_snapshot")
+                            if before_snapshot or after_snapshot:
+                                with st.expander("变更前后快照", expanded=False):
+                                    snap_before, snap_after = st.columns(2)
+                                    with snap_before:
+                                        st.caption("变更前")
+                                        st.json(before_snapshot or {})
+                                    with snap_after:
+                                        st.caption("变更后")
+                                        st.json(after_snapshot or {})
+                else:
+                    st.caption("暂无审计事件。")
+
+            st.divider()
+
+            # ── 报告面板 ───────────────────────────────────────────────────────────
+            st.subheader("报告工作台")
+
+            # --- 导出实时快照 ---
+            with st.expander("导出实时快照", expanded=False):
+                col_json, col_md = st.columns(2)
+                with col_json:
+                    if st.button("生成 JSON", use_container_width=True, key="export_json_btn"):
+                        with st.spinner("正在生成..."):
+                            report = export_report(st.session_state.session_id, format="json")
+                        if report:
+                            report_json = json.dumps(report, ensure_ascii=False, indent=2)
+                            sid_short = st.session_state.session_id[:8]
+                            st.download_button(
+                                label="下载 JSON",
+                                data=report_json,
+                                file_name=f"workflow_report_{sid_short}.json",
+                                mime="application/json",
+                                use_container_width=True,
+                            )
+                        else:
+                            st.error("生成 JSON 报告失败，请稍后重试。")
+                with col_md:
+                    if st.button("生成 Markdown", use_container_width=True, key="export_md_btn"):
+                        with st.spinner("正在生成..."):
+                            report = export_report(st.session_state.session_id, format="markdown")
+                        if report and report.get("content"):
+                            sid_short = st.session_state.session_id[:8]
+                            st.download_button(
+                                label="下载 Markdown",
+                                data=report["content"],
+                                file_name=f"workflow_report_{sid_short}.md",
+                                mime="text/markdown",
+                                use_container_width=True,
+                            )
+                        else:
+                            st.error("生成 Markdown 报告失败，请稍后重试。")
+
+            # --- 版本化报告快照 ---
+            st.divider()
+            if st.button("创建报告快照", use_container_width=True, key="create_artifact_btn"):
+                artifact = create_report_artifact(st.session_state.session_id)
+                if artifact:
+                    st.success(f"快照已创建：{artifact.get('report_id')}")
+                else:
+                    st.error("创建报告快照失败，请稍后重试。")
+
+            artifacts = list_report_artifacts(st.session_state.session_id)
+            if artifacts:
+                report_options = {
+                    f"{a.get('report_id', '?')[:12]}... (v{a.get('version', '?')}, {a.get('generated_at', '?')[:19]})": a
+                    for a in reversed(artifacts[-20:])
+                }
+                selected_label = st.selectbox(
+                    "选择要查看的报告快照",
+                    options=["[无]"] + list(report_options.keys()),
+                    key="selected_report_label",
+                )
+                if selected_label and selected_label != "[无]":
+                    selected_artifact = report_options[selected_label]
+                    report_id = selected_artifact.get("report_id", "")
+                    # 从接口获取完整快照（含 content_json / content_markdown）
+                    full_report = get_report_artifact(st.session_state.session_id, report_id)
+                    if full_report:
+                        render_report_panel(full_report)
+                    else:
+                        st.error(f"加载报告 {report_id} 失败，后端可能暂时不可用。")
+                else:
+                    st.caption("尚未选择报告，请在上方下拉框中选择一个查看。")
             else:
-                st.caption("尚未选择报告，请在上方下拉框中选择一个查看。")
-        else:
-            st.info("暂无报告快照。可在上方创建快照或导出实时报告。")
+                st.info("暂无报告快照。可在上方创建快照或导出实时报告。")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────────
 # 主区域
 # ─────────────────────────────────────────────────────────────────────────────
 

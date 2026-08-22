@@ -15,6 +15,14 @@ services:
       - "8000:8000"
     volumes:
       - ./data:/app/data
+      - ./api:/app/api
+      - ./core:/app/core
+      - ./graph:/app/graph
+      - ./stages:/app/stages
+      - ./storage:/app/storage
+      - ./frontend:/app/frontend
+      - ./config:/app/config
+      - ./scripts:/app/scripts
     restart: unless-stopped
 
   frontend:
@@ -28,6 +36,9 @@ services:
       - STORAGE_BACKEND=sqlite
     ports:
       - "8501:8501"
+    volumes:
+      - ./frontend:/app/frontend
+      - ./config:/app/config
     depends_on:
       - api
     restart: unless-stopped

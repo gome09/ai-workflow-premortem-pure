@@ -871,7 +871,14 @@ with st.sidebar:
     st.session_state.nav_page = nav_choice if nav_choice == "治理总览" else None
     st.divider()
 
-    if nav_choice != "治理总览":
+    if nav_choice == "治理总览":
+        # ── 治理总览模式：侧边栏只显示简要提示，强制清空工作台残留组件 ───────
+        st.info("📊 治理总览模式")
+        st.caption("请在主区域查看全局治理数据")
+        # 使用空容器强制覆盖 Streamlit 可能残留的旧 widget
+        _clear_sidebar = st.sidebar.container()
+        _clear_sidebar.empty()
+    else:
         # ── 会话管理 ──────────────────────────────────────────────────────────────
         st.subheader("📋 会话管理")
 
@@ -2078,6 +2085,8 @@ with st.sidebar:
 if st.session_state.get("nav_page") == "治理总览":
     token = st.session_state.get("access_token") or ""
     render_governance_overview(API_BASE, token)
+    # ── 强制覆盖 chat_input 残留：隐藏的输入框吃掉固定定位的幽灵组件 ─────────
+    st.chat_input(" ", key="governance_hidden_input", disabled=True)
 elif not st.session_state.session_id:
     # ── 欢迎页 ────────────────────────────────────────────────────────────────
     st.markdown("""

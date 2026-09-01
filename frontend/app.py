@@ -1,6 +1,7 @@
 # frontend/app.py
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -94,14 +95,28 @@ def _refresh_access_token() -> bool:
         return False
 
 
+def _role_from_token(token: str) -> str:
+    """从 JWT access token payload 解析角色（本地解码，无需网络请求）。"""
+    try:
+        payload_b64 = token.split(".")[1]
+        payload_b64 += "=" * (-len(payload_b64) % 4)  # 补齐 base64 padding
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+        return payload.get("role", "")
+    except Exception:
+        return ""
+
+
 def ensure_auth() -> None:
     if st.session_state.get("access_token"):
+        # 角色以当前 token 的 JWT payload 为准（login 响应体不含 role 字段）
+        st.session_state.user_role = _role_from_token(st.session_state.access_token)
         return
     # 演示账号通常已存在：先登录（不受注册限流影响），失败再注册
     tokens = _login_demo_user() or _register_demo_user()
     if tokens and tokens.get("access_token"):
         st.session_state.access_token = tokens["access_token"]
         st.session_state.refresh_token = tokens.get("refresh_token")
+        st.session_state.user_role = _role_from_token(tokens["access_token"])
 
 
 def _auth_headers() -> dict:
@@ -228,6 +243,83 @@ def api_get(path: str) -> dict | list | None:
     except Exception:
         st.error("❌ 发生未知错误，请稍后重试或联系管理员。")
         return None
+
+
+def api_delete(path: str) -> dict | None:
+    try:
+        r = requests.delete(f"{API_BASE}{path}", headers=_auth_headers(), timeout=30)
+        if r.status_code == 401 and _refresh_access_token():
+            r = requests.delete(f"{API_BASE}{path}", headers=_auth_headers(), timeout=30)
+        r.raise_for_status()
+        try:
+            return r.json()
+        except ValueError:
+            return {}
+    except requests.exceptions.Timeout:
+        st.error("⏱️ 请求超时。")
+        return None
+    except requests.exceptions.ConnectionError:
+        st.error(f"🔌 无法连接到后端服务，请确认 API 已启动（当前 API_BASE：{API_BASE}）。")
+        return None
+    except requests.exceptions.HTTPError as e:
+        detail = ""
+        try:
+            payload = e.response.json()
+            detail = payload.get("detail", "") if isinstance(payload, dict) else ""
+        except Exception:
+            detail = ""
+        st.error(f"❌ 删除失败（HTTP {e.response.status_code}）。")
+        if detail:
+            with st.expander("🔧 技术详情", expanded=False):
+                st.caption(str(detail))
+        return None
+    except Exception:
+        st.error("❌ 发生未知错误，请稍后重试或联系管理员。")
+        return None
+
+
+def _reset_session_state() -> None:
+    """删除当前会话后清空会话相关状态，回到「新建会话」初始界面。"""
+    st.session_state.session_id = None
+    st.session_state.current_state = "init"
+    st.session_state.messages = []
+    st.session_state.pending_flags = []
+    st.session_state.pending_actions = []
+    st.session_state.interrupt_records = []
+    st.session_state.stage_readiness = {}
+    st.session_state.stage_resolution = {}
+    st.session_state.stage_advancement_decision = None
+    st.session_state.stage_advancement_decisions = {}
+    st.session_state.next_required_operation = None
+    st.session_state.selected_scenario_id = None
+
+
+@st.dialog("确认删除会话")
+def confirm_delete_session(
+    session_id: str, label: str, current_state: str, is_current: bool
+) -> None:
+    state_icon, state_label = STATE_LABELS.get(current_state, ("⚪", "未知"))
+    st.markdown(f"即将删除会话：**{label}**")
+    st.caption(f"状态：{state_icon} {state_label}　·　`{session_id}`")
+    st.warning(
+        "删除后该会话的四阶段输出、证据、评测与红队数据将被级联清除，"
+        "审计事件将归档保留。此操作不可撤销。"
+    )
+    if is_current:
+        st.info("这是当前正在使用的会话，删除后将回到「新建会话」初始状态。")
+
+    col_confirm, col_cancel = st.columns(2)
+    with col_confirm:
+        if st.button("🗑️ 确认删除", type="primary", use_container_width=True):
+            result = api_delete(f"/sessions/{session_id}")
+            if result is not None:
+                if is_current:
+                    _reset_session_state()
+                st.toast(f"会话已删除：{label[:20]}")
+                st.rerun()
+    with col_cancel:
+        if st.button("取消", use_container_width=True):
+            st.rerun()
 
 
 def get_health() -> dict:
@@ -976,6 +1068,7 @@ with st.sidebar:
 
         # ── 历史会话列表 ──────────────────────────────────────────────────────────
         sessions = list_sessions()
+        is_admin = st.session_state.get("user_role") == "admin"
         if sessions:
             st.caption(f"最近 {len(sessions)} 个会话")
             for s in sessions[:10]:
@@ -992,29 +1085,51 @@ with st.sidebar:
                 is_current = s["session_id"] == st.session_state.session_id
                 btn_type = "primary" if is_current else "secondary"
 
-                if st.button(
-                    btn_label,
-                    key=f"sess_{s['session_id']}",
-                    use_container_width=True,
-                    type=btn_type,
-                ):
-                    if not is_current:
-                        st.session_state.session_id = s["session_id"]
-                        st.session_state.current_state = s["current_state"]
+                if is_admin:
+                    sess_col, del_col = st.columns([4, 1])
+                else:
+                    sess_col = st.columns([1])[0]
+                    del_col = None
 
-                        ctx = get_session(s["session_id"])
-                        if ctx:
-                            st.session_state.selected_scenario_id = ctx.get("selected_scenario_id")
-                            st.session_state.messages = restore_messages_from_ctx(ctx)
-                            st.session_state.pending_flags = [
-                                f for f in ctx.get("flagged_items", []) if f["status"] == "pending"
-                            ]
-                            st.session_state.pending_actions = [
-                                a for a in ctx.get("pending_actions", []) if a["status"] == "pending"
-                            ]
-                            st.session_state.interrupt_records = list_interrupt_records(s["session_id"])
-                            st.session_state.stage_readiness = get_stage_readiness(s["session_id"])
-                        st.rerun()
+                with sess_col:
+                    if st.button(
+                        btn_label,
+                        key=f"sess_{s['session_id']}",
+                        use_container_width=True,
+                        type=btn_type,
+                    ):
+                        if not is_current:
+                            st.session_state.session_id = s["session_id"]
+                            st.session_state.current_state = s["current_state"]
+
+                            ctx = get_session(s["session_id"])
+                            if ctx:
+                                st.session_state.selected_scenario_id = ctx.get("selected_scenario_id")
+                                st.session_state.messages = restore_messages_from_ctx(ctx)
+                                st.session_state.pending_flags = [
+                                    f for f in ctx.get("flagged_items", []) if f["status"] == "pending"
+                                ]
+                                st.session_state.pending_actions = [
+                                    a for a in ctx.get("pending_actions", []) if a["status"] == "pending"
+                                ]
+                                st.session_state.interrupt_records = list_interrupt_records(s["session_id"])
+                                st.session_state.stage_readiness = get_stage_readiness(s["session_id"])
+                            st.rerun()
+
+                if del_col is not None:
+                    with del_col:
+                        if st.button(
+                            "🗑️",
+                            key=f"del_{s['session_id']}",
+                            use_container_width=True,
+                            help=f"删除会话：{raw_label}",
+                        ):
+                            confirm_delete_session(
+                                s["session_id"],
+                                raw_label,
+                                s.get("current_state", ""),
+                                is_current,
+                            )
         else:
             st.caption("暂无历史会话")
 

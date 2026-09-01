@@ -1,5 +1,33 @@
 from __future__ import annotations
 
+# 会话状态英文枚举 → 中文展示
+SESSION_STATE_LABELS = {
+    "init": "初始化",
+    "s1_running": "阶段1执行中",
+    "s1_review": "阶段1审核",
+    "s2_running": "阶段2执行中",
+    "s2_review": "阶段2审核",
+    "s3_running": "阶段3执行中",
+    "s3_review": "阶段3审核",
+    "s4_running": "阶段4执行中",
+    "s4_review": "阶段4审核",
+    "iterating": "迭代中",
+    "complete": "已完成",
+}
+
+# 风险等级英文枚举 → 中文展示
+RISK_TIER_LABELS = {
+    "low": "低",
+    "medium": "中",
+    "high": "高",
+    "critical": "极高",
+}
+
+
+def _translate_labels(data: dict, label_map: dict) -> dict:
+    """将分布数据的键替换为中文标签；未知键保持原值。"""
+    return {label_map.get(k, k): v for k, v in data.items()}
+
 
 def render_governance_overview(api_base: str, token: str) -> None:
     """治理总览页：指标卡片 + 状态/风险分布 + 通过率趋势 + 积压动作表。"""
@@ -118,12 +146,14 @@ def render_governance_overview(api_base: str, token: str) -> None:
     with dist_col1:
         st.subheader("会话状态分布")
         state_dist = overview.get("state_distribution", {})
-        _bar_chart_altair(state_dist, "会话状态分布", "数量")
+        _bar_chart_altair(
+            _translate_labels(state_dist, SESSION_STATE_LABELS), "会话状态分布", "数量"
+        )
 
     with dist_col2:
         st.subheader("风险等级分布")
         risk_dist = overview.get("risk_tier_distribution", {})
-        _bar_chart_altair(risk_dist, "风险等级分布", "数量")
+        _bar_chart_altair(_translate_labels(risk_dist, RISK_TIER_LABELS), "风险等级分布", "数量")
 
     st.subheader("门禁通过率趋势（8 周）")
     try:

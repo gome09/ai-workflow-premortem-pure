@@ -2,7 +2,16 @@
 
 > **历史追溯说明**：v0.1（2026-05-01）、v0.5（2026-05-20）、v1.0（2026-06-10）为里程碑回溯记录，非逐次提交日志——三者日期均早于本仓库可见的最早提交 `5ecffaf`（2026-06-13，`baseline: post first-round cleanup`），早期开发历史在仓库整理时未保留。
 > 远程 `origin`（github.com/gome09/ai-workflow-premortem-pure）与本地共享同一根提交，**不包含更早的历史**，无法用于追溯 v1.0 之前的开发过程。
-> 截至 2026-07-31，本地 `main` 领先 `origin/main` 6 次提交（尚未推送）。
+> 截至 2026-09-01，本地 `main` 领先 `origin/main` 5 次提交（尚未推送）。
+
+## 维护记录 (2026-09-01)
+
+- **侧栏会话删除功能**（前端 `frontend/app.py`）：历史会话列表每行新增删除入口——新增 `api_delete` helper（与 `api_post`/`api_get` 同模式：401 → refresh token 重试、分级错误提示）；`@st.dialog` 二次确认弹窗（显示会话全名/状态/ID、级联删除与审计归档警示、当前会话专门提示）；删除当前会话后经 `_reset_session_state` 清空 11 个会话状态键回到初始界面。删除按钮仅对 `user_role == "admin"` 渲染（角色从 JWT payload 本地解码获取——login 响应体不含 role 字段，此前首次实现因误读响应体导致按钮不渲染）。后端复用既有 `DELETE /sessions/{id}` 链路（审计归档 + session_purged + 级联删除），零后端改动。浏览器实测三条路径通过：删非当前会话、删当前会话回初始、删除后新建会话。
+- **治理总览图表横坐标中文化**（`frontend/components/governance_overview.py`）：会话状态分布 11 个 `SessionState` 枚举与风险等级分布 4 个 tier 映射为中文展示标签，后端 API 返回值不变，未知键回退原值。
+- **新增前端契约测试** `tests/test_frontend_session_delete.py`（6 条）：AST 源码契约（api_delete 的 401 重试结构、删除按钮 admin 门控、确认弹窗要素）+ 函数抽取执行（`_role_from_token` JWT 解析与畸形 token 回退、`_reset_session_state` 状态清理）。
+- **死代码清理**：删除 `frontend/components/` 下 9 个未接线 panel（action_queue / audit_timeline / eval_experiment_panel / eval_panel / evidence_panel / gate_diagnosis / gate_panel / safety_panel / trace_panel）与 frontend/api_client.py、frontend/state.py（共 1157 行；2026-07-18 启动方式 E2E 报告第 5 节遗留观察项）。app.py 实际 UI 内联，仅 import 4 个组件（governance_overview / redteam_panel / report_panel / stage_message），删除前经全仓引用核实为零。`components/__init__.py` 同步清空 re-export。
+- **测试验证**：666 passed, 1 skipped（全量，mock+SQLite，较 660 基线新增 6 条契约测试）；ruff clean；`git diff --check` 通过。
+- **文档整理**：`.upgrade/STATE.md` 压缩 2026-07-14–07-27 历史条目为摘要（详情在 CHANGELOG 与归档报告），登记本轮变更。
 
 ## 维护记录 (2026-07-31)
 
@@ -28,7 +37,7 @@
   - **测试范围**：离线演示（uv+mock+SQLite）/ Docker Lite（2 容器）/ 混合开发（容器 DB 临时端口 15432/16379 + 本机应用）/ 生产栈（7 容器 + nginx TLS + Prometheus/Grafana），全部冷启动实测 PASS。方法：API 冒烟 + Playwright 浏览器驱动真实 UI 交互（方式1 双路径走满四阶段至 complete，四阶段 gate-report 全 passed）+ 后台日志监控；Docker 构建 `--no-cache` 防旧镜像污染。完整报告：`.upgrade/archive/reports/startup-methods-e2e-20260718.md`
   - **阻塞类修复**：①`frontend/app.py` ensure_auth 改"先登录后注册"（demo 账号已存在时原先注册触发 5/hour 限流 429 → 前端全站 401）；②`scripts/gen_secrets.sh` 生成密钥时 `tr -d '\r\n'`（Windows Git Bash 下 openssl 输出 CRLF，secret 文件残留 `\r` 使 redis `--requirepass $(cat …)` 与 .env 同步值不一致 → 生产栈 redis 认证失败）；③`storage/backends/postgres.py` alembic 迁移加 `pg_advisory_lock` 串行化（`UVICORN_WORKERS=2` 空库冷启动并发 `alembic upgrade head` 竞态 UniqueViolation 致 worker 崩溃）
   - **前后端语义一致性修复**：④侧栏新增「会话工作台 / 治理总览」页面导航（`nav_page` 此前无任何赋值点，治理总览页与 `/governance/*` 三端点在 UI 不可达）；治理总览页补 `reports_exported` 指标、`state_distribution` 柱图、gate-trends 周明细；⑤`/health` 补 `interrupt_adapter_status` 字段（前端读取但后端从未返回，恒显"未知"→ 现按执行模式显示"未启用/正常"）；⑥前端补展示后端已返回字段：EvalCase `pass_criteria`、EvalRun `judge_reason`/`violated_criteria`、实验 `human_disagreement_rate`、审计事件 `before/after_snapshot` 并排快照视图
-  - **遗留观察项（未修）**：`frontend/components/` 下 8 个英文版 panel + `frontend/api_client.py` + `frontend/state.py` 为死代码（真实 UI 内联于 app.py）；traces / eval-judgments / human-calibrations / experiment-comparison 等端点无 UI 入口
+  - **遗留观察项（未修）**：`frontend/components/` 下 8 个英文版 panel + frontend/api_client.py + frontend/state.py 为死代码（真实 UI 内联于 app.py）；traces / eval-judgments / human-calibrations / experiment-comparison 等端点无 UI 入口（注：上述死代码已于 2026-09-01 清理删除）
   - **测试验证**：650 passed, 1 skipped（全量回归）；ruff lint/format clean；修复后浏览器复测全过
 - **生产启动链路加固（启动审计遗留项 7–9）**：
   - **`make setup` 密钥自动随机化**：`scripts/gen_secrets.sh` 接入 setup 流程——`jwt_secret` / `postgres_password` / `redis_password` / `grafana_password` 以 `openssl rand -hex 32` 随机生成（替换此前直接复制 `secrets.example/` 示例明文的行为），并同步 `.env` 中对应 `CHANGE_ME` 占位行为相同值（`.env` 会遮蔽容器内 `/run/secrets`，两处不一致会导致 postgres/redis 认证失败）；`DEEPSEEK_API_KEY` / `TAVILY_API_KEY` 占位行注释化，使 Docker secrets 生效。幂等：已定制的值不覆盖

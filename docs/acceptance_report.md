@@ -2,7 +2,7 @@
 
 > 本文件记录当前 v1.3.0 代码基线与回归摘要。v1.2.1 四阶段 E2E 快照、历史缺陷详录和原始统计已归档至 [`acceptance-history-v1.2.1.md`](archive/verification-reports/acceptance-history-v1.2.1.md)；2026-07-18 四种启动方式的完整历史报告见 [`startup-methods-e2e-20260718.md`](../.upgrade/archive/reports/startup-methods-e2e-20260718.md)。
 
-## 当前代码基线复核（2026-07-31）
+## 当前代码基线复核（2026-09-01）
 
 本节记录当前工作区的文档—代码一致性复核结果。
 
@@ -11,8 +11,8 @@
 | 验证项 | 当前结果 |
 |------|------|
 | 版本一致性 | ✅ `core/version.py` = `pyproject.toml` = 1.3.0 |
-| 全量测试 | ✅ `660 passed, 1 skipped`（`uv run pytest tests/ -q`，2026-07-31 复核） |
-| 文档一致性检查 | ✅ 扫描 50 个当前项目 Markdown 文件，0 处违规 |
+| 全量测试 | ✅ `666 passed, 1 skipped`（项目 `.venv` pytest，2026-09-01 复核；较 660 基线新增 6 条前端会话删除契约测试） |
+| 文档一致性检查 | ✅ 扫描 50 个当前项目 Markdown 文件，0 处违规（2026-07-31） |
 | 数据库迁移链 | ✅ Alembic V001 → V005 |
 | ProjectContext 迁移链 | ✅ 0.6.0-alpha.8 → 0.7.0 → 0.8.0 → 0.9.0 |
 

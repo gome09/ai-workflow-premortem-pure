@@ -2,9 +2,16 @@
 
 > **历史追溯说明**：v0.1（2026-05-01）、v0.5（2026-05-20）、v1.0（2026-06-10）为里程碑回溯记录，非逐次提交日志——三者日期均早于本仓库可见的最早提交 `5ecffaf`（2026-06-13，`baseline: post first-round cleanup`），早期开发历史在仓库整理时未保留。
 > 远程 `origin`（github.com/gome09/ai-workflow-premortem-pure）与本地共享同一根提交，**不包含更早的历史**，无法用于追溯 v1.0 之前的开发过程。
-> 截至 2026-09-01，本地 `main` 领先 `origin/main` 5 次提交（尚未推送）。
+> 截至 2026-09-01，本地 `main` 领先 `origin/main` 8 次提交（尚未推送）。
 
-## 维护记录 (2026-09-01)
+## 维护记录 (2026-09-01)（第二批：三个已知代码缺口修复）
+
+- **修复① sensitive_personal 风险地板值**（`core/gates/risk_profile.py`，提交 a9f18a2）：`classify_project_risk` 引入 `_TIER_ORDER` 与 `tier_floor`——`data_classification == sensitive_personal` 升档为地板值 HIGH，low-scope 降档（第 4 步）与"无领域关键词直接置 LOW"覆盖分支（第 5 步）均尊重 floor。修复前敏感个人数据 + 个人/学习类关键词的会话可落 LOW（2026-07-31 登记、按用户决策暂缓的缺口，本轮修复）。新增 `tests/test_sensitive_personal_floor.py` 6 条回归测试；spec `data-classification-and-privacy.md` §3.2 缺口标注更新为已修复。
+- **修复② 报告 Markdown 导出净化**（`core/report_service.py`，提交 57de39f）：`build_markdown_report` 出口新增 `_sanitize_markdown`——fenced code block 之外转义 `&` `<` `>`，所有区域中和 `javascript:`/`vbscript:`/`data:` 伪协议链接，报告头部 AIGC 标识注释原样保留（先摘出后还原），fenced JSON 块保留原样以维持可复制性。修复前 100+ 处 f-string 直接拼接 LLM 生成内容无任何转义（2026-07-31 登记缺口）。新增 `tests/test_report_markdown_sanitization.py` 8 条测试；spec `risk-taxonomy-engine.md` §3.3 与 `security-model.md` Current Limits 同步（JSON 导出仍为消费端责任）。
+- **修复③ premortem_pending_actions 指标语义**（`api/metrics.py` + 两存储后端，提交 8023d7c）：a) 语义修正——该 Gauge 此前被喂会话风险档位分布（`risk_tier_distribution`），现改为真实 pending 人工动作按 risk_level 计数；b) 数据修正——此前 `governance_overview(tenant_id="")` 恒返回零值模板，新增 `governance_metrics_all_tenants()`（SQLite/PostgreSQL 双后端，跨租户聚合，Prometheus 进程级全局指标视角）。改写 `test_metrics_v110.py` 中固化错误语义的 mock 测试，新增 SQLite 后端跨租户聚合测试；spec `governance-platform.md` §4.3 同步（仍无周期性调度，仅启动时刷新）。
+- **测试验证**：全量 **681 passed, 1 skipped**（三批新增 15 条：6 + 8 + 1，其中 1 条为改写）；ruff clean；doc-check 0 违规；version-check OK。
+
+## 维护记录 (2026-09-01)（第一批：会话删除功能）
 
 - **侧栏会话删除功能**（前端 `frontend/app.py`）：历史会话列表每行新增删除入口——新增 `api_delete` helper（与 `api_post`/`api_get` 同模式：401 → refresh token 重试、分级错误提示）；`@st.dialog` 二次确认弹窗（显示会话全名/状态/ID、级联删除与审计归档警示、当前会话专门提示）；删除当前会话后经 `_reset_session_state` 清空 11 个会话状态键回到初始界面。删除按钮仅对 `user_role == "admin"` 渲染（角色从 JWT payload 本地解码获取——login 响应体不含 role 字段，此前首次实现因误读响应体导致按钮不渲染）。后端复用既有 `DELETE /sessions/{id}` 链路（审计归档 + session_purged + 级联删除），零后端改动。浏览器实测三条路径通过：删非当前会话、删当前会话回初始、删除后新建会话。
 - **治理总览图表横坐标中文化**（`frontend/components/governance_overview.py`）：会话状态分布 11 个 `SessionState` 枚举与风险等级分布 4 个 tier 映射为中文展示标签，后端 API 返回值不变，未知键回退原值。

@@ -11,7 +11,7 @@
 - 当前数据库迁移头：Alembic `V005`；当前 `ProjectContext` schema：`0.9.0`。
 - Phase 0–4 代码侧已完成；`docs/archive/plan/phase-*.md` 与 `phase-*-design.md` 是历史实施/设计基线（已归档），不得把其中旧版本、旧行号或未勾选项当作当前事实。
 - formal-project-uplift Wave A–E 已完成；剩余工作主要是仓库公开后的远端治理动作，如 CodeQL 转正、main 分支保护和发布设置。权威状态见 `.upgrade/STATE.md`。
-- 最近一次本地全量测试基线：`666 passed, 1 skipped`（2026-09-01，项目 `.venv` pytest，与 `make test` 即 `uv run pytest tests/` 等价）。测试数量会随测试集合变化，不应硬编码为永久断言。
+- 最近一次本地全量测试基线：`681 passed, 1 skipped`（2026-09-01，项目 `.venv` pytest，与 `make test` 即 `uv run pytest tests/` 等价）。测试数量会随测试集合变化，不应硬编码为永久断言。
 - 录制测试基线必须走 `uv run`（项目 `.venv`）。用系统 Python 直接跑 `python -m pytest` 会因缺少 `prometheus-fastapi-instrumentator` 等主依赖触发 7 处 `importorskip` 跳过，得到 `623 passed, 8 skipped` 的降级结果——该数字不是有效基线。
 
 ## 事实来源优先级

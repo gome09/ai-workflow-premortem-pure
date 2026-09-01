@@ -10,7 +10,8 @@ Phase 0–4 代码侧已完成；formal-project-uplift Wave A–E（Task 0–18�
 
 ## Last Completed
 
-- **会话删除功能 + 死代码清理 + 文档压缩 (2026-09-01)** — 前端侧栏会话列表新增删除入口（`api_delete` helper + `@st.dialog` 二次确认 + admin 角色门控，角色经 JWT payload 本地解码；删除当前会话后 `_reset_session_state` 清空 11 个状态键回初始），后端复用既有 `DELETE /sessions/{id}` 链路零改动；治理总览图表横坐标中文化（11 个 SessionState + 4 个 risk tier 展示映射）。删除 2026-07-18 遗留的 11 个死代码文件（9 个未接线 panel + api_client.py + state.py，1157 行）。新增 `tests/test_frontend_session_delete.py` 6 条契约测试。浏览器实测三条删除路径通过。验证：666 passed / 1 skipped、ruff clean。提交：6d45f95 / 2d66d76 + 文档收尾 commit。
+- **三个已知代码缺口修复 (2026-09-01 第二批)** — ①`core/gates/risk_profile.py`：sensitive_personal 升档改为 tier floor（HIGH），low-scope 降档与 LOW 覆盖分支尊重 floor（提交 a9f18a2，6 条回归测试）；②`core/report_service.py`：报告 Markdown 导出新增 `_sanitize_markdown` 出口净化（HTML 转义 + 伪协议中和 + AIGC 注释保留 + fenced 块保真，提交 57de39f，8 条测试）；③`api/metrics.py` + 双存储后端：`premortem_pending_actions` 语义修正为真实 pending 动作按 risk_level 计数，新增 `governance_metrics_all_tenants()` 跨租户聚合替代恒零的空租户查询（提交 8023d7c，改写固化错误语义的测试 + 新增后端聚合测试）。三个缺口的 spec 标注均已更新（data-classification-and-privacy §3.2 / risk-taxonomy-engine §3.3 / security-model / governance-platform §4.3），Blockers 条目移除。全量 681 passed / 1 skipped、ruff clean、doc-check 0 违规。
+- **会话删除功能 + 死代码清理 + 文档压缩 (2026-09-01 第一批)** — 前端侧栏会话列表新增删除入口（`api_delete` helper + `@st.dialog` 二次确认 + admin 角色门控，角色经 JWT payload 本地解码；删除当前会话后 `_reset_session_state` 清空 11 个状态键回初始），后端复用既有 `DELETE /sessions/{id}` 链路零改动；治理总览图表横坐标中文化（11 个 SessionState + 4 个 risk tier 展示映射）。删除 2026-07-18 遗留的 11 个死代码文件（9 个未接线 panel + api_client.py + state.py，1157 行）。新增 `tests/test_frontend_session_delete.py` 6 条契约测试。浏览器实测三条删除路径通过。验证：666→672→680→681 passed / 1 skipped（分批递增）、ruff clean。提交：6d45f95 / 2d66d76 / 3e478f9。
 - **缓存、临时产物与验收文档整理 (2026-08-15)** — 按用户确认删除 7 个未跟踪的一次性 demo 日志和历史 trace；将 v1.2.1 验收快照归档至 `docs/archive/verification-reports/acceptance-history-v1.2.1.md`，`docs/acceptance_report.md` 收缩为 v1.3.0 当前基线与回归摘要；README 启动说明压缩为入口与关键警告。验证以文档检查、版本检查和 `git diff --check` 为准。
 - **文档—代码矛盾复核与结构性去重 (2026-07-31)** — 4 个只读子代理分区审查 + 主代理逐条代码实证复核。修正无效测试基线（`623/8` 系系统 Python 降级结果，更正并在 AGENTS.md 加"基线必须走 uv run"硬约定）；`sensitive_personal` 可落 LOW 与报告 Markdown 转义缺失两处按用户决策只改文档、缺口录入 Blockers；新增未知 domain profile WARNING + 10 条测试；结构性去重（CLAUDE.md / local_setup.md / lite-mode.md 并入 startup.md）；删除失效 examples JSON 等。验证：660 passed / 1 skipped、doc-check 50 份 0 违规、mypy 155 文件 0 issue。决策：`.upgrade/decisions/doc-code-reconciliation-20260731.md`。
 - **2026-07-14 – 2026-07-27（摘要，详情见 CHANGELOG 对应日期条目与归档报告）**：
@@ -42,9 +43,9 @@ Phase 0–4 代码侧已完成；formal-project-uplift Wave A–E（Task 0–18�
 
 - **旧 Docker 镜像敏感文件复核**：本次已修复 build context，但 Docker Desktop daemon 当前未运行，无法检查修复前构建的本地/远端镜像是否含 `/app/secrets`。daemon 恢复后需重建并检查；如旧镜像曾被推送或分享，应轮换相关密钥。步骤见 `.upgrade/decisions/ignore-boundary-hardening-20260725.md`。
 - **Phase 4 T4.2 分支保护**：决策记录已入库（`.upgrade/decisions/branch-protection.md`），但实际开启需维护者登录 GitHub 后台手动操作（Settings → Branches → main → Enable protection）。操作后预期 Scorecard Branch-Protection 0→8+、Code-Review 0→3-5。
-- **`sensitive_personal` 升档不是地板值**（2026-07-31 发现，按用户决策维持文档登记，不改代码）：`core/gates/risk_profile.py` 中 low-scope 降档在敏感数据升档之后执行，`sensitive_personal` 会话仍可落到 LOW。已在 `docs/spec/data-classification-and-privacy.md` 如实标注为已知缺口。如需强制下限需改代码 + 补回归测试。
-- **报告 Markdown 导出无转义**（2026-07-31 发现，按用户决策维持文档登记，不改代码）：`core/report_service.py` 直接 f-string 拼接 LLM 生成内容，导出报告若被下游渲染器直接渲染仍可能执行 `<script>` 或伪协议链接。已在 `docs/spec/risk-taxonomy-engine.md` 标注；当前唯一防线是 `improper_output_handling` finding（检测非阻断）。
-- **`premortem_pending_actions` 指标语义错配**（按用户决策维持文档登记，不改代码）：`api/metrics.py` 把会话风险档位分布喂给了本应表示待处理动作数的 Gauge，且 `refresh_gauge_metrics()` 传空 tenant_id 导致取到零值模板。
+- ~~`sensitive_personal` 升档不是地板值~~（已修复，2026-09-01，提交 a9f18a2）。
+- ~~报告 Markdown 导出无转义~~（已修复，2026-09-01，提交 57de39f；JSON 导出净化责任仍在消费端，见 `docs/spec/security-model.md`）。
+- ~~`premortem_pending_actions` 指标语义错配~~（已修复，2026-09-01，提交 8023d7c；仍无周期性调度，仅启动时刷新）。
 - Phase 3 T3.6 (LLM Judge)：已随 Wave C 落地（v1.3.0，flag 默认关）。真实 LLM 一致率数据待生产启用后经 human_calibrations 累计。
 - NIST AI 600-1 中 4 项动作项编号标 [存疑]（MS-2.10-002 / MS-2.5-005 / MS-2.5-003 / GV-1.3-002），待 NIST 发布修订版后核对。
 - TC260《智能体部署使用安全指引》条款文字基于二手摘要，待补全文核对。
@@ -57,7 +58,8 @@ Phase 0–4 与 formal-project-uplift 代码侧全部完成。能力现状一览
 - 文档一致性 CI（doc-check）已转强制；mypy 与 docker-full-integration 维持 non-blocking 观察期。
 - 社区模板（Issue/PR/CoC/GOVERNANCE/CODEOWNERS）齐备；分支保护待维护者 GitHub 后台操作。
 - 前端侧栏会话删除（admin 门控 + 二次确认）与治理总览中文化已落地（2026-09-01）；死代码 panels 已清理。
-- 当前测试基线：666 passed, 1 skipped（2026-09-01，`uv run pytest` / 项目 `.venv` 等价命令），详见 `docs/acceptance_report.md` 与 `CHANGELOG.md`；不从历史小节推断当前测试数量。
+- 三个已知代码缺口已修复（2026-09-01）：sensitive_personal 风险地板值、报告 Markdown 导出净化、pending_actions 指标语义。
+- 当前测试基线：681 passed, 1 skipped（2026-09-01，`uv run pytest` / 项目 `.venv` 等价命令），详见 `docs/acceptance_report.md` 与 `CHANGELOG.md`；不从历史小节推断当前测试数量。
 
 ## Validation Commands
 
@@ -76,8 +78,14 @@ Phase 0–4 与 formal-project-uplift 代码侧全部完成。能力现状一览
 
 ## Last Updated
 
+- Date: 2026-09-01（第二批）
+- By: Trae Code（用户决策：按顺序依次修复三个已知代码缺口，每个修复完成后立即本地 git 提交）
+- Summary: 修复①sensitive_personal 地板值（a9f18a2）、②报告 Markdown 导出净化（57de39f）、③pending_actions 指标语义（8023d7c）；新增/改写 15 条测试；三处 spec 同步；Blockers 移除三条已修复项；基线 681 passed / 1 skipped。
+
+### 上一轮（2026-09-01 第一批）
+
 - Date: 2026-09-01
-- By: Trae Code（按用户 5 项决策执行：①先建自动化测试再落账——新增 6 条前端契约测试后记录；②删除 11 个死代码文件；③三个已知代码缺口维持文档登记不改代码；④STATE.md 历史条目压缩；⑤仅本地 git 提交不推送。测试基线更新为 666 passed / 1 skipped。）
+- By: Trae Code（按用户 5 项决策执行：①先建自动化测试再落账——新增 6 条前端契约测试后记录；②删除 11 个死代码文件；③三个已知代码缺口当时维持文档登记；④STATE.md 历史条目压缩；⑤仅本地 git 提交不推送。基线 666 passed / 1 skipped。）
 - Summary: 前端会话删除功能 + 治理图表中文化 + 契约测试；死代码清理（1157 行）；STATE.md 压缩 2026-07-14–07-27 条目为摘要；Next Action #3 标记已过期。
 
 ### 上一轮（2026-08-22）

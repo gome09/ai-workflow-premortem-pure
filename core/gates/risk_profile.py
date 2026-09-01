@@ -29,6 +29,15 @@ class ProjectGateRiskTier(StrEnum):
     CRITICAL = "critical"
 
 
+# 风险序（用于 tier floor 比较；StrEnum 字母序与风险序不一致）
+_TIER_ORDER: dict[ProjectGateRiskTier, int] = {
+    ProjectGateRiskTier.LOW: 0,
+    ProjectGateRiskTier.MEDIUM: 1,
+    ProjectGateRiskTier.HIGH: 2,
+    ProjectGateRiskTier.CRITICAL: 3,
+}
+
+
 # ─────────────────────────────────────────────
 # Gate profile
 # ─────────────────────────────────────────────
@@ -247,14 +256,19 @@ def classify_project_risk(ctx: ProjectContext) -> tuple[ProjectGateRiskTier, lis
             tier = ProjectGateRiskTier.CRITICAL
 
     # 3.5 Sensitive personal data classification → raise to at least HIGH
+    # 该升档是地板值（floor）：敏感个人数据的项目不允许被后续 low-scope
+    # 降档拉回 MEDIUM/LOW（此前降档在升档之后执行，会话可落 LOW，见
+    # docs/spec/data-classification-and-privacy.md 的缺口登记——已于 2026-09-01 修复）。
+    tier_floor = ProjectGateRiskTier.MEDIUM
     if getattr(ctx, "data_classification", None) == "sensitive_personal":
         reasons.append("sensitive_personal data classification")
         if tier == ProjectGateRiskTier.MEDIUM:
             tier = ProjectGateRiskTier.HIGH
         elif tier == ProjectGateRiskTier.HIGH:
             tier = ProjectGateRiskTier.CRITICAL
+        tier_floor = ProjectGateRiskTier.HIGH
 
-    # 4. Low scope → lower one level
+    # 4. Low scope → lower one level (respecting the tier floor)
     low_hits = _text_contains_any(text, _LOW_SCOPE_KEYWORDS)
     if low_hits:
         reasons.extend([f"low_scope: {h}" for h in low_hits])
@@ -262,12 +276,12 @@ def classify_project_risk(ctx: ProjectContext) -> tuple[ProjectGateRiskTier, lis
             # Critical stays critical even with low-scope signals
             pass
         elif tier == ProjectGateRiskTier.HIGH:
-            tier = ProjectGateRiskTier.MEDIUM
+            tier = max(ProjectGateRiskTier.MEDIUM, tier_floor, key=_TIER_ORDER.get)
         elif tier == ProjectGateRiskTier.MEDIUM:
-            tier = ProjectGateRiskTier.LOW
+            tier = max(ProjectGateRiskTier.LOW, tier_floor, key=_TIER_ORDER.get)
 
     # 5. If no domain keyword matched and we're still MEDIUM with low-scope signals, go LOW
-    if not high_hits and not critical_hits and low_hits:
+    if not high_hits and not critical_hits and low_hits and tier_floor == ProjectGateRiskTier.MEDIUM:
         tier = ProjectGateRiskTier.LOW
 
     if not reasons:

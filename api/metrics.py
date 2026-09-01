@@ -82,18 +82,24 @@ def record_llm_usage(call_count_delta: int = 1, token_delta: int = 0) -> None:
 
 
 def refresh_gauge_metrics(tenant_name: str = "default") -> None:
-    """按需刷新 Gauge 指标（会话数、pending 动作）。
+    """按需刷新 Gauge 指标（会话状态分布、待处理人工动作分布）。
 
-    MVP 阶段惰性刷新：调用 governance_overview(tenant_id="") 返回零值模板，
-    待真实多租户聚合可用时再传入 tenant_id。失败不影响主路径。
+    2026-09-01 修复（STATE.md Blockers 登记项）：
+    - 语义修正：`premortem_pending_actions` 此前被喂了会话风险档位分布
+      （`risk_tier_distribution`），语义错配；现改为真实的 pending 动作
+      按 risk_level 计数（`governance_metrics_all_tenants`）。
+    - 数据修正：此前调用 `governance_overview(tenant_id="")` 恒返回零值
+      模板；Prometheus Gauge 是进程级全局指标且刷新点（lifespan 启动）
+      无请求上下文，现改为跨租户真实聚合。
+    失败不影响主路径。
     """
     try:
         from storage.session_store import session_store
 
-        overview = session_store.governance_overview(tenant_id="")
-        for state, cnt in overview.get("state_distribution", {}).items():
+        metrics_data = session_store.governance_metrics_all_tenants()
+        for state, cnt in metrics_data.get("state_distribution", {}).items():
             premortem_sessions_total.labels(tenant=tenant_name, state=state).set(cnt)
-        for risk, cnt in overview.get("risk_tier_distribution", {}).items():
+        for risk, cnt in metrics_data.get("pending_actions_by_risk", {}).items():
             premortem_pending_actions.labels(risk_level=risk).set(cnt)
     except Exception:
         logger.debug("refresh_gauge_metrics failed; non-fatal", exc_info=True)

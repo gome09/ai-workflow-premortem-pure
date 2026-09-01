@@ -105,9 +105,9 @@ Streamlit 新增"治理总览"页：三张卡片（项目数/风险分布/积压
 ### 4.3 业务指标接入 Prometheus/Grafana
 
 - 在现有 instrumentator 之上注册自定义指标（`api/metrics.py`）：
-  - `premortem_sessions_total{tenant,state}`（Gauge；当前仅在 API 启动时用空租户刷新一次，属于零值 scaffold，尚不是实时多租户统计）
+  - `premortem_sessions_total{tenant,state}`（Gauge；启动时经 `governance_metrics_all_tenants()` 跨租户真实聚合刷新——2026-09-01 修复：此前用空租户刷新恒为零值 scaffold。仍无周期性调度，仅在启动时刷新）
   - `premortem_gate_evaluations_total{result}` / `premortem_gate_blocked_total{rule_id}`（Counter，评估路径打点）
-  - `premortem_pending_actions{risk_level}`（Gauge；与 sessions Gauge 一样尚未接入周期性真实聚合）
+  - `premortem_pending_actions{risk_level}`（Gauge；语义为"待处理人工动作数按 risk_level"——2026-09-01 修复：此前被错喂会话风险档位分布且恒为零值，现取跨租户真实 pending 动作计数。仍无周期性调度）
   - `premortem_llm_calls_total` / `premortem_llm_tokens_total`（Counter，与阶段 2 LLM10 计数共用数据源）
 - Grafana 新增 `governance-overview.json` 面板（与现有 fastapi-overview.json 并列，provisioning 自动加载）。
 - 注意基数控制：tenant 标签用 tenant 名而非 UUID，且内部工具租户数有限，无高基数风险。

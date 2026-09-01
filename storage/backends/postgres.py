@@ -1247,6 +1247,34 @@ class PostgresSessionStore:
             ).fetchall()
         return _aggregate_actions_backlog(rows, limit)
 
+    def governance_metrics_all_tenants(self) -> dict:
+        """跨租户聚合的 Prometheus 指标数据（全局监控视角，2026-09-01 修复③）。
+
+        与 per-tenant 的 governance_overview 不同，本方法无租户过滤——
+        Prometheus 业务 Gauge 是进程级全局指标，刷新点（lifespan 启动）无
+        请求上下文，取全部租户聚合。
+        """
+        state_distribution: dict[str, int] = {}
+        pending_by_risk: dict[str, int] = {}
+        with self._get_conn() as conn:
+            state_rows = conn.execute(
+                "SELECT current_state, COUNT(*) AS n FROM sessions GROUP BY current_state"
+            ).fetchall()
+            ctx_rows = conn.execute("SELECT context_json FROM sessions").fetchall()
+        for row in state_rows:
+            state_distribution[row["current_state"]] = row["n"]
+        for row in ctx_rows:
+            raw = row.get("context_json") or "{}"
+            ctx_data = json.loads(raw) if isinstance(raw, str) else raw
+            for action in ctx_data.get("pending_actions", []) or []:
+                if action.get("status") == "pending":
+                    risk = action.get("risk_level", "unknown")
+                    pending_by_risk[risk] = pending_by_risk.get(risk, 0) + 1
+        return {
+            "state_distribution": state_distribution,
+            "pending_actions_by_risk": pending_by_risk,
+        }
+
 
 def _aggregate_gate_trends(rows: list[dict]) -> list[dict]:
     """Shared weekly-bucket aggregation for gate_trends."""

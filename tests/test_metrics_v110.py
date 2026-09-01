@@ -148,7 +148,12 @@ def test_refresh_gauge_metrics_no_raise_when_store_uninitialized() -> None:
 
 
 def test_refresh_gauge_metrics_with_mocked_store() -> None:
-    """refresh_gauge_metrics 在 governance_overview 返回有效数据时正确设置 Gauge。"""
+    """refresh_gauge_metrics 在跨租户聚合返回有效数据时正确设置 Gauge。
+
+    2026-09-01 修复③回归：`premortem_pending_actions` 语义为"待处理人工动作
+    数（按 risk_level）"，不再错配喂会话风险档位分布；数据源为
+    `governance_metrics_all_tenants`（跨租户真实聚合）。
+    """
     from api.metrics import (
         premortem_pending_actions,
         premortem_sessions_total,
@@ -156,14 +161,10 @@ def test_refresh_gauge_metrics_with_mocked_store() -> None:
     )
 
     class _FakeStore:
-        def governance_overview(self, tenant_id: str) -> dict:
+        def governance_metrics_all_tenants(self) -> dict:
             return {
                 "state_distribution": {"stage_1": 3, "stage_2": 5},
-                "risk_tier_distribution": {"high": 2, "medium": 4},
-                "sessions_total": 8,
-                "open_safety_findings": 0,
-                "pending_actions": 6,
-                "reports_exported": 0,
+                "pending_actions_by_risk": {"high": 2, "medium": 4},
             }
 
     import storage.session_store as session_store_mod
@@ -178,6 +179,39 @@ def test_refresh_gauge_metrics_with_mocked_store() -> None:
         assert _get_counter_value(premortem_pending_actions, risk_level="medium") == 4.0
     finally:
         session_store_mod.session_store = original  # type: ignore[assignment]
+
+
+def test_sqlite_store_governance_metrics_all_tenants(tmp_path) -> None:
+    """SQLite 后端跨租户聚合：pending 动作按 risk_level 计数，与租户无关。"""
+    import json
+    import uuid
+
+    from storage.backends.sqlite_store import SQLiteSessionStore
+
+    store = SQLiteSessionStore(db_path=str(tmp_path / "metrics_all_tenants.db"))
+    store.initialize()
+
+    def _insert(session_id: str, tenant_id: str, ctx: dict) -> None:
+        with store._get_conn() as conn:
+            conn.execute(
+                "INSERT INTO sessions "
+                "(session_id, tenant_id, current_state, context_json, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (session_id, tenant_id, "stage_1_review", json.dumps(ctx), "", ""),
+            )
+
+    _insert("s1", str(uuid.uuid4()), {"pending_actions": [
+        {"action_id": "a1", "status": "pending", "risk_level": "high"},
+        {"action_id": "a2", "status": "resolved", "risk_level": "critical"},
+    ]})
+    _insert("s2", str(uuid.uuid4()), {"pending_actions": [
+        {"action_id": "a3", "status": "pending", "risk_level": "high"},
+        {"action_id": "a4", "status": "pending", "risk_level": "medium"},
+    ]})
+
+    result = store.governance_metrics_all_tenants()
+    assert result["state_distribution"].get("stage_1_review") == 2
+    assert result["pending_actions_by_risk"] == {"high": 2, "medium": 1}
 
 
 def test_grafana_dashboard_json_valid() -> None:

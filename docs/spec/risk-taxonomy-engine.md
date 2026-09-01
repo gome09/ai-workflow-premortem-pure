@@ -66,7 +66,7 @@ stages/base.py:scan_stage_io / core/session_service.py:scan_user_materials 等
 
 判定点选在**输出消费边界**而非生成时：
 - `scan_text` 对 AI 输出增加规则组 `UNSAFE_OUTPUT_PATTERNS`：`<script`、`javascript:` 伪协议链接、`on\w+=` 内联事件、SQL DML/DDL 语句特征、shell 命令注入特征（`; rm `、`$(`）。命中产出 `improper_output_handling`（severity=medium，供人工判断是否属演示性内容）。
-- **未实现（已知缺口，截至 2026-07-31）**：`core/report_service.py` 的 Markdown 导出**不做**转义或净化处理，`build_markdown_report` 直接以 f-string 拼接 finding description 等 LLM 生成内容。因此导出的 Markdown/JSON 报告若被下游渲染器（浏览器、Wiki、支持 HTML 的 Markdown 引擎）直接渲染，仍可能执行其中的 `<script>` 或伪协议链接。当前唯一的防线是上述 `improper_output_handling` finding 提示人工判断，属检测而非阻断。消费报告的一方需自行做输出净化。
+- **已实现（2026-09-01 修复）**：`core/report_service.py` 的 Markdown 导出经 `_sanitize_markdown` 出口净化——fenced code block 之外转义 `&` `<` `>`，所有区域中和 `javascript:`/`vbscript:`/`data:` 伪协议链接，报告头部 AIGC 标识注释原样保留；fenced code block（结构化 JSON 数据）内部保留原样以维持可复制性，主流渲染器不解析块内 HTML。回归测试见 `tests/test_report_markdown_sanitization.py`。`improper_output_handling` finding 保持检测职责不变；JSON 导出（`content_json`）仍为结构化数据，净化责任在消费端。
 
 ### 3.4 LLM10：Unbounded Consumption 接入
 

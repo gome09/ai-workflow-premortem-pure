@@ -165,6 +165,6 @@ Phase 1（T1.1–T1.4，自 v1.0.3 起落地并沿用至今）的数据安全能
 - 这不是完整的生产级安全策略引擎
 - `unsupported_claim` 依赖证据引用和规则判断，不等于事实核验系统
 - `policy_gap` 仍以高风险节点和触发方式的人工审核要求为主
-- `core/report_service.py` 的 Markdown / JSON 报告导出**不做 HTML 转义或净化**：下游消费侧若直接将报告内容渲染为 HTML，存在 XSS 风险。报告导出链路的输出净化责任在消费端，本项目仅提供原始结构化与 Markdown 文本导出。
+- `core/report_service.py` 的 **Markdown 导出已做输出净化**（2026-09-01：`_sanitize_markdown` 转义 HTML 字符并中和伪协议链接，见 `risk-taxonomy-engine.md` §3.3）；**JSON 导出（`content_json`）不做净化**：下游消费侧若直接将 JSON 内容渲染为 HTML，输出净化责任仍在消费端。
 
 因此，当前 workflow safety 能证明“系统会阻断明显高风险推进”，但不能替代正式安全评审。

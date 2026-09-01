@@ -1,6 +1,7 @@
 # core/report_service.py
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any
 
@@ -859,4 +860,62 @@ def build_markdown_report(ctx: ProjectContext) -> str:
             "AI-generated outputs must be reviewed by humans before real-world use.",
         ]
     )
-    return "\n".join(lines)
+    return _sanitize_markdown("\n".join(lines))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Markdown 输出净化（2026-09-01 修复：报告导出此前无转义）
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 报告头部合法的 AIGC 标识注释（模板静态生成，非动态内容，须保留原样）
+_AIGC_COMMENT_RE = re.compile(r"<!--\s*ai-generated:[^>]*?-->")
+# Markdown 链接中的危险伪协议
+_DANGEROUS_URL_RE = re.compile(r"\]\(\s*(javascript|vbscript|data)\s*:", re.IGNORECASE)
+# fenced code block（``` 围栏），块内为结构化数据，保留原样以维持可读性
+# （捕获组使 re.split 在结果中保留围栏块本身）
+_FENCED_BLOCK_RE = re.compile(r"(```[\s\S]*?```)")
+
+
+def _sanitize_markdown(text: str) -> str:
+    """净化导出报告的 Markdown，阻断下游渲染器中的脚本/伪协议注入。
+
+    背景：build_markdown_report 以 f-string 直接拼接 LLM 生成内容（描述、
+    目标、finding 等），此前无任何转义；导出报告被下游渲染器直接渲染时，
+    `<script>` 或 `[x](javascript:...)` 可执行（STATE.md Blockers 登记项）。
+
+    策略（出口收敛，覆盖所有动态字段）：
+    - fenced code block 之外：转义 `&` `<` `>`（HTML 实体），中和链接伪协议；
+      标准 Markdown 渲染器会把实体解码回原字符显示，阅读不受影响；
+    - fenced code block 之内：保留原样（主流渲染器不解析块内 HTML，且保住
+      JSON 块的可复制性），仅中和伪协议；
+    - 报告头部 AIGC 标识注释（静态模板）先摘出、最后原样还原。
+    """
+    # 1. 摘出合法 AIGC 注释，避免被 HTML 转义破坏
+    placeholders: dict[str, str] = {}
+
+    def _stash(match: re.Match[str]) -> str:
+        key = f"\x00AIGC-COMMENT-{len(placeholders)}\x00"
+        placeholders[key] = match.group(0)
+        return key
+
+    text = _AIGC_COMMENT_RE.sub(_stash, text)
+
+    # 2. 按围栏块切分，分别净化
+    parts = _FENCED_BLOCK_RE.split(text)
+    result: list[str] = []
+    for part in parts:
+        if part.startswith("```"):
+            result.append(_DANGEROUS_URL_RE.sub("](blocked:", part))
+        else:
+            escaped = (
+                part.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+            )
+            result.append(_DANGEROUS_URL_RE.sub("](blocked:", escaped))
+    text = "".join(result)
+
+    # 3. 还原 AIGC 注释
+    for key, original in placeholders.items():
+        text = text.replace(key, original)
+    return text

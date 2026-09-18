@@ -54,7 +54,7 @@ Before cleanup, classify each file as one of:
 
 | File | Status | Lifecycle | Notes |
 |---|---|---|---|
-| `.upgrade/STATE.md` | active | permanent | 当前升级状态（Phase 0-4 全部完成；formal-project-uplift Wave A–E 全部完成，v1.3.0 已发布，仓库已公开） |
+| `.upgrade/STATE.md` | active | permanent | 当前升级状态（Phase 0-4 全部完成；formal-project-uplift Wave A–E 全部完成；本地 v1.3.0 tag 已存在，GitHub Release 状态待远端确认，仓库已公开） |
 | `.upgrade/MANIFEST.md` | active | permanent | 本文件 |
 | `.upgrade/decisions/RELEASE_CLEANUP.md` | active | permanent | v1.0 发布前组件清理决策记录（移除/归档了哪些组件及原因），moved from project root 2026-07-13 |
 | `.upgrade/decisions/branch-protection.md` | active | permanent | Phase 4 T4.2 main 分支保护策略决策（GitHub 后台手动操作步骤） |

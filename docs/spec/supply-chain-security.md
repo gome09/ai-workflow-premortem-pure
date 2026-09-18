@@ -1,7 +1,7 @@
 # 供应链与 CI 安全设计规格
 
 > Status: Implemented（Phase 0 + Phase 4 落地：CI 权限最小化 / Dependabot / SAST / pip-audit / 文档一致性检查 / Scorecard；分支保护待维护者在 GitHub 后台开启。落地任务见 [../archive/plan/phase-0-repo-governance.md](../archive/plan/phase-0-repo-governance.md) 与 [../archive/plan/phase-4-community.md](../archive/plan/phase-4-community.md)）
-> Last updated: 2026-07-27（按当前 workflow / Ruff 配置复核）
+> Last updated: 2026-09-18（按当前 workflow / Ruff 配置与远端状态边界复核）
 > 对标依据：OpenSSF Scorecard 18 项检查（v5.5.0，2026-04）、GitHub Actions 安全加固最佳实践
 
 本规格定义仓库供应链安全与 CI 安全的目标形态，覆盖：CI 权限最小化、依赖自动更新、SAST、依赖漏洞审计、文档-代码一致性检查、Scorecard 水位管理。
@@ -82,7 +82,7 @@ updates:
 
 当前形态：CI lint job 已运行 `uv run pip-audit --strict`，策略：
 - 发现漏洞时**先告警不阻断**（`continue-on-error: true`），避免上游未修复漏洞卡死所有 PR。
-- 每次告警必须在 24h 内人工分诊：可升级则由 Dependabot PR 解决；不可升级则在 `.upgrade/reports/` 记录豁免理由与复查日期。
+- 每次告警必须在 24h 内人工分诊：可升级则由 Dependabot PR 解决；不可升级则在 `.upgrade/decisions/` 记录豁免理由与复查日期。
 
 ## 6. Scorecard 水位管理
 
@@ -101,7 +101,7 @@ updates:
 | Fuzzing / Packaging / CII-Badge | ❌ | 不做 | 视精力（可选） |
 | Maintained / CI-Tests / Binary-Artifacts / Pinned-Dependencies(lock) | ✅ | 保持 | 保持 |
 
-管理机制：`.github/workflows/scorecard.yml` 已入库（weekly cron + `workflow_dispatch` 手动触发，Scorecard CLI v5.5.0，`permissions: contents: read`）；此外每完成一个阶段重跑一次并把结果追加存档到 `.upgrade/reports/`，趋势必须向上——这是阶段 4 的验收口径（"分数相比基线有实质提升且可追踪"）。
+管理机制：`.github/workflows/scorecard.yml` 已入库（weekly cron + `workflow_dispatch` 手动触发，Scorecard CLI v5.5.0，`permissions: contents: read`）；此外每完成一个阶段重跑一次，并将已完成的结果存档到 `.upgrade/archive/reports/`，趋势必须向上——这是阶段 4 的验收口径（"分数相比基线有实质提升且可追踪"）。
 
 ## 7. 文档-代码一致性检查 CI
 

@@ -1,7 +1,7 @@
 # 风险分类体系升级设计规格
 
 > Status: Implemented（v1.1.0 落地 T2.1–T2.6；LLM08 依赖 RAG 组件，明确缓办。落地任务见 [../archive/plan/phase-2-risk-taxonomy.md](../archive/plan/phase-2-risk-taxonomy.md)）
-> Last updated: 2026-07-18
+> Last updated: 2026-09-18（复核当前标准映射与升级记录路径）
 > 对标依据：OWASP LLM Top 10 2025 (v2.0)、OWASP Top 10 for Agentic Applications 2026 (ASI)、NIST-AI-600-1 Generative AI Profile、TC260《智能体部署使用安全指引》（2026-07 发布）
 >
 > **阅读提示**：本文为设计规格，§1 是**设计当时（2026-07-13）的历史快照**，其中列出的缺口已随 v1.1.0 全部补齐（LLM08 除外，见 §3.5）；§3–§7 的"新增/目标形态"描述均已落地，落点见各节补注。
@@ -125,7 +125,7 @@ NIST_GAI_ACTION_DESCRIPTIONS = { "MS-2.7-008": {"zh": "...", "source": "NIST AI 
 
 2026-07 该指引已正式发布（覆盖评估/准备/部署/使用/停用五阶段），路线图中"文件真实性待确认"的前提已解除。设计分两步：
 
-1. **前置任务**：从 TC260 官网获取全文（官网 upload 区可下载 PDF），存档条款摘要至 `.upgrade/reports/`。
+1. **前置任务**：从 TC260 官网获取全文（官网 upload 区可下载 PDF），将已完成的条款摘要存档至 `.upgrade/archive/reports/`。
 2. **映射落地**：新增 `tools/taxonomies/tc260_agent_deployment.py`，两类映射：
    - 五阶段 ↔ 本项目四阶段工作流的对应关系表（评估≈Stage1 失败模式识别、准备≈Stage2 工作流设计、部署/使用≈Stage3 压力测试+Stage4 触发策略、停用=当前无对应——这本身是一个值得记录的产品缺口）；
    - 指引中的安全要求（最小权限运行、目录访问限制、敏感数据最小必要提供等）→ 对应 attack_type/control_refs 标签。

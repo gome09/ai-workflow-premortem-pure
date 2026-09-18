@@ -8,7 +8,7 @@
    按部署环境清理撤销凭证、确认订阅费用）在本项目工作流中无环节。
    记录于 phase-2-risk-taxonomy.md §5 与本文件 TC260_STAGE_MAP["停用"]=None。
 
-条款摘要存档：.upgrade/reports/tc260-agent-deployment-summary.md
+条款摘要存档：.upgrade/archive/reports/tc260-agent-deployment-summary.md
 
 [信源说明]：官方 PDF 通过 WebSearch 检索获取封面/前言/目录/第 1-5 章正文，
 确认章节级条款号（第 6-10 章对应五阶段）。五阶段内子条款（a-j 字母项）

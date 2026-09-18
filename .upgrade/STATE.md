@@ -22,10 +22,12 @@ Phase 0–4 代码侧已完成；formal-project-uplift Wave A–E（Task 0–18�
   - 文档同步 + `.upgrade` 整理 (2026-07-16)、GitHub CI 离线全流程验证 (2026-07-15)、文档对齐 + 前端中文化收尾 (2026-07-14)、E2E 全流程复测 (2026-07-14)。
   - Phase 1 (v1.0.3) / Phase 2 (v1.1.0) / Phase 3 (v1.2.0) / Phase 4 (v1.2.1) 全部完成 (2026-07-14)。
 
-## Required Context Files
+## Current Authority and Historical Context
+
+当前执行应优先读取 `AGENTS.md`、当前业务代码与测试、`docs/spec/`、`docs/startup.md`、`docs/local_setup.md`、`.upgrade/STATE.md` 和 `.upgrade/MANIFEST.md`。下列归档文件仅作为历史背景或证据，不代表当前计划、实现状态或待办：
 
 - `.upgrade/MANIFEST.md`
-- `docs/archive/plan/phase-1-design.md` — Phase 1 详细设计方案
+- `docs/archive/plan/phase-1-design.md` — Phase 1 历史设计方案
 - `docs/archive/plan/phase-2-design.md` — Phase 2 详细设计方案
 - `docs/archive/plan/phase-3-design.md` — Phase 3 详细设计方案
 - `docs/archive/plan/phase-4-design.md` — Phase 4 详细设计方案
@@ -37,7 +39,7 @@ Phase 0–4 代码侧已完成；formal-project-uplift Wave A–E（Task 0–18�
 - `docs/spec/governance-platform.md` — 治理平台设计规格
 - `docs/spec/supply-chain-security.md` — 供应链与 CI 安全设计规格
 - `docs/compliance/iso42001-mapping.md` — ISO/IEC 42001 条款映射表
-- `.upgrade/archive/reports/standard-tracking-2026-07-14.md` — 标准动态跟踪记录
+- `.upgrade/archive/reports/standard-tracking-2026-07-14.md` — 历史标准动态跟踪记录
 
 ## Blockers
 
@@ -72,11 +74,15 @@ Phase 0–4 与 formal-project-uplift 代码侧全部完成。能力现状一览
 
 ## Next Action
 
-1. **远端治理操作**：按 `.upgrade/archive/reports/pre-publication-checklist-20260717.md` 文末清单执行剩余项——分支保护 → Private vulnerability reporting → Dependabot → CodeQL 转正（Task 19）→ Scorecard dispatch → 徽章核验 → GitHub Release v1.3.0
+1. **远端治理核验**：按 `.upgrade/decisions/branch-protection.md` 和当前 GitHub 设置逐项确认分支保护、Private vulnerability reporting、Dependabot、CodeQL required check、Scorecard、徽章及 GitHub Release；本地 workflow 和 tag 不能替代远端实查。
 2. **观察期评估**：mypy 与 `docker-full-integration` 均继续 non-blocking；待远端稳定数轮并单独评估后再决定是否移除 `continue-on-error`
 3. **【已过期，待执行】未成年人 AI 应用指南复核**：《未成年人 AI 应用安全指南》征求意见截止（2026-08-16）已过，需核对定稿内容并回填 roadmap §10.7（截至 2026-09-01 未执行）
 
 ## Last Updated
+
+- Date: 2026-09-18（文档与配置生命周期审计）
+- By: Codex（用户要求：读取当前权威文档与业务代码，盘点 Markdown、配置、说明和报告文件，并按压缩/更新/归档/需确认分类；本轮只读审计，未删除或移动文件）
+- Summary: 核对 `AGENTS.md`、`.upgrade/STATE.md`、`core/version.py`、`pyproject.toml`、迁移链、`core/migrations/registry.py`、`docs/spec/` 与主要业务引用。当前代码权威事实未发现版本、schema 或迁移头冲突；确认 50 份 Markdown，当前文档与历史归档边界总体清晰。发现 `docs/acceptance_report.md` 尾部日期仍为 2026-08-15、`.upgrade/MANIFEST.md` 的“v1.3.0 已发布”措辞强于 STATE 可证明范围、若干 spec 复核日期和治理历史措辞滞后。未发现可仅凭本地证据安全删除的产品文档；远端发布/分支保护/CodeQL 转正、外部标准定稿复核和运行时产物归属列为需人工确认。
 
 - Date: 2026-09-01（第二批）
 - By: Trae Code（用户决策：按顺序依次修复三个已知代码缺口，每个修复完成后立即本地 git 提交）

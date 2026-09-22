@@ -172,7 +172,37 @@ class PostgresSessionStore:
             self._sync_eval_experiments(conn, ctx)
             self._sync_redteam_cases(conn, ctx)
             self._sync_interrupt_records(conn, ctx)
+            self._sync_interrupt_resume_outbox(conn, ctx)
             conn.commit()
+
+    def _sync_interrupt_resume_outbox(self, conn: DictConnection, ctx: ProjectContext) -> None:
+        for record in getattr(ctx, "interrupt_records", []) or []:
+            if record.status != "resumed" or record.resume_consumed_at is not None:
+                continue
+            conn.execute(
+                """
+                INSERT INTO interrupt_resume_outbox (
+                    interrupt_id, session_id, tenant_id, action_id, thread_id,
+                    checkpoint_ns, resume_payload, status, updated_at
+                ) VALUES (%s, %s, %s::uuid, %s, %s, %s, %s, 'pending', NOW())
+                ON CONFLICT (action_id) DO UPDATE SET
+                    resume_payload = EXCLUDED.resume_payload,
+                    updated_at = NOW(),
+                    status = CASE
+                        WHEN interrupt_resume_outbox.status = 'completed' THEN 'completed'
+                        ELSE interrupt_resume_outbox.status
+                    END
+                """,
+                (
+                    record.interrupt_id,
+                    ctx.session_id,
+                    ctx.tenant_id or None,
+                    record.action_id,
+                    record.thread_id,
+                    record.checkpoint_ns,
+                    json.dumps(record.resume_value or {}, default=str),
+                ),
+            )
 
     def _sync_human_actions(self, conn: DictConnection, ctx: ProjectContext) -> None:
         """同步 ProjectContext 中的人工动作到索引表。使用 upsert，避免删除历史。"""
@@ -1001,9 +1031,13 @@ class PostgresSessionStore:
                         row["target_id"],
                         row["before_hash"],
                         row["after_hash"],
-                        row["before_snapshot"],
-                        row["after_snapshot"],
-                        row["metadata"],
+                        json.dumps(row["before_snapshot"], default=str)
+                        if row["before_snapshot"] is not None
+                        else None,
+                        json.dumps(row["after_snapshot"], default=str)
+                        if row["after_snapshot"] is not None
+                        else None,
+                        json.dumps(row["metadata"], default=str),
                         row["created_at"],
                     ),
                 )
@@ -1032,6 +1066,161 @@ class PostgresSessionStore:
             conn.commit()
         return archived
 
+    def purge_session(
+        self,
+        session_id: str,
+        tenant_id: str,
+        purged_by: str,
+        summary: dict,
+    ) -> int:
+        """Archive audit evidence and delete a session in one transaction."""
+        import uuid
+
+        archived = 0
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                "SELECT event_id, actor, event_type, target_type, target_id, "
+                "before_hash, after_hash, before_snapshot, after_snapshot, metadata, created_at "
+                "FROM audit_events WHERE session_id = %s",
+                (session_id,),
+            ).fetchall()
+            for row in rows:
+                conn.execute(
+                    "INSERT INTO audit_events_archive "
+                    "(archive_id, original_session_id, event_id, actor, event_type, "
+                    "target_type, target_id, before_hash, after_hash, before_snapshot, "
+                    "after_snapshot, metadata, original_created_at, archived_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()) "
+                    "ON CONFLICT (archive_id) DO NOTHING",
+                    (
+                        f"arch-{row['event_id']}",
+                        session_id,
+                        row["event_id"],
+                        row["actor"],
+                        row["event_type"],
+                        row["target_type"],
+                        row["target_id"],
+                        row["before_hash"],
+                        row["after_hash"],
+                        json.dumps(row["before_snapshot"], default=str)
+                        if row["before_snapshot"] is not None
+                        else None,
+                        json.dumps(row["after_snapshot"], default=str)
+                        if row["after_snapshot"] is not None
+                        else None,
+                        json.dumps(row["metadata"], default=str),
+                        row["created_at"],
+                    ),
+                )
+                archived += 1
+            conn.execute(
+                "INSERT INTO audit_events_archive "
+                "(archive_id, original_session_id, event_id, actor, event_type, target_type, "
+                "target_id, before_snapshot, after_snapshot, metadata, original_created_at, archived_at) "
+                "VALUES (%s, %s, %s, %s, 'session_purged', 'session', %s, NULL, %s, %s, NOW(), NOW())",
+                (
+                    f"arch-purged-{uuid.uuid4()}",
+                    session_id,
+                    f"purge-{uuid.uuid4()}",
+                    purged_by,
+                    session_id,
+                    json.dumps(summary, default=str),
+                    json.dumps({"purged_by": purged_by}, default=str),
+                ),
+            )
+            archived += 1
+            if tenant_id:
+                cursor = conn.execute(
+                    "DELETE FROM sessions WHERE session_id = %s AND tenant_id = %s::uuid",
+                    (session_id, tenant_id),
+                )
+            else:
+                cursor = conn.execute("DELETE FROM sessions WHERE session_id = %s", (session_id,))
+            if cursor.rowcount != 1:
+                raise ValueError(f"Session not found during purge: {session_id}")
+            conn.commit()
+        return archived
+
+    def enqueue_interrupt_resume(self, ctx: ProjectContext, record: Any) -> None:
+        """Persist one idempotent resume delivery before invoking LangGraph."""
+        with self._get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO interrupt_resume_outbox (
+                    interrupt_id, session_id, tenant_id, action_id, thread_id,
+                    checkpoint_ns, resume_payload, status, updated_at
+                ) VALUES (%s, %s, %s::uuid, %s, %s, %s, %s, 'pending', NOW())
+                ON CONFLICT (action_id) DO UPDATE SET
+                    resume_payload = EXCLUDED.resume_payload,
+                    updated_at = NOW(),
+                    status = CASE
+                        WHEN interrupt_resume_outbox.status = 'completed' THEN 'completed'
+                        ELSE 'pending'
+                    END,
+                    last_error = CASE
+                        WHEN interrupt_resume_outbox.status = 'completed'
+                        THEN interrupt_resume_outbox.last_error ELSE NULL
+                    END
+                """,
+                (
+                    record.interrupt_id,
+                    ctx.session_id,
+                    ctx.tenant_id or None,
+                    record.action_id,
+                    record.thread_id,
+                    record.checkpoint_ns,
+                    json.dumps(record.resume_value or {}, default=str),
+                ),
+            )
+            conn.commit()
+
+    def claim_interrupt_resume(self, interrupt_id: str) -> bool:
+        """Atomically claim a pending/failed or abandoned resume delivery."""
+        with self._get_conn() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE interrupt_resume_outbox
+                SET status = 'processing', attempts = attempts + 1,
+                    claimed_at = NOW(), updated_at = NOW(), last_error = NULL
+                WHERE interrupt_id = %s
+                  AND (
+                    status IN ('pending', 'failed')
+                    OR (status = 'processing' AND claimed_at < NOW() - INTERVAL '5 minutes')
+                  )
+                """,
+                (interrupt_id,),
+            )
+            conn.commit()
+            return cursor.rowcount == 1
+
+    def complete_interrupt_resume(self, interrupt_id: str, error: str = "") -> None:
+        with self._get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE interrupt_resume_outbox
+                SET status = %s, completed_at = CASE WHEN %s = '' THEN NOW() ELSE NULL END,
+                    last_error = NULLIF(%s, ''), updated_at = NOW()
+                WHERE interrupt_id = %s
+                """,
+                ("failed" if error else "completed", error, error, interrupt_id),
+            )
+            conn.commit()
+
+    def list_pending_interrupt_resumes(self, limit: int = 100) -> list[dict]:
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT interrupt_id, session_id, tenant_id::text, action_id
+                FROM interrupt_resume_outbox
+                WHERE status IN ('pending', 'failed')
+                   OR (status = 'processing' AND claimed_at < NOW() - INTERVAL '5 minutes')
+                ORDER BY updated_at, created_at
+                LIMIT %s
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def delete(self, session_id: str, tenant_id: str = "") -> bool:
         """Delete a session row. Returns True if a row was deleted."""
         with self._get_conn() as conn:
@@ -1054,6 +1243,8 @@ class PostgresSessionStore:
         if tenant_id:
             sql = """
                 SELECT session_id, current_state, created_at, updated_at,
+                       context_json->>'session_name' AS session_name,
+                       context_json->>'scenario_name' AS scenario_name,
                        context_json->>'research_target' AS research_target,
                        context_json->>'domain' AS domain
                 FROM sessions
@@ -1065,6 +1256,8 @@ class PostgresSessionStore:
         else:
             sql = """
                 SELECT session_id, current_state, created_at, updated_at,
+                       context_json->>'session_name' AS session_name,
+                       context_json->>'scenario_name' AS scenario_name,
                        context_json->>'research_target' AS research_target,
                        context_json->>'domain' AS domain
                 FROM sessions
@@ -1172,7 +1365,7 @@ class PostgresSessionStore:
             INSERT INTO gate_evaluation_records (
                 record_id, session_id, tenant_id, stage_id, risk_tier, passed,
                 blocking_rule_ids, rule_versions, evaluated_at
-            ) VALUES (%s, %s, %s::uuid, %s, %s, %s, %s, %s, NOW())
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
         """
         with self._get_conn() as conn:
             conn.execute(
@@ -1191,24 +1384,29 @@ class PostgresSessionStore:
             conn.commit()
 
     def gate_trends(self, tenant_id: str, weeks: int = 8) -> list[dict]:
-        """按周聚合门禁评估趋势。空 tenant_id 不开放跨租户查询。"""
+        """按周聚合真实业务会话的门禁趋势；空 tenant_id 不跨租户查询。"""
         if not tenant_id:
             return []
         sql = """
-            SELECT date_trunc('week', evaluated_at)::date::text AS week,
-                   passed,
-                   blocking_rule_ids
-            FROM gate_evaluation_records
-            WHERE tenant_id = %s::uuid
-              AND evaluated_at >= NOW() - (%s || ' weeks')::INTERVAL
+            SELECT date_trunc('week', ger.evaluated_at)::date::text AS week,
+                   ger.passed,
+                   ger.blocking_rule_ids
+            FROM gate_evaluation_records AS ger
+            JOIN sessions AS s ON s.session_id = ger.session_id
+            WHERE ger.tenant_id = %s
+              AND s.tenant_id = %s::uuid
+              AND COALESCE(s.context_json->>'data_classification', 'business_internal')
+                  <> 'public_demo'
+              AND NULLIF(s.context_json->>'selected_scenario_id', '') IS NULL
+              AND ger.evaluated_at >= NOW() - (%s || ' weeks')::INTERVAL
             ORDER BY week DESC
         """
         with self._get_conn() as conn:
-            rows = conn.execute(sql, (tenant_id, str(weeks))).fetchall()
+            rows = conn.execute(sql, (tenant_id, tenant_id, str(weeks))).fetchall()
         return _aggregate_gate_trends(rows)
 
     def governance_overview(self, tenant_id: str) -> dict:
-        """租户内治理总览聚合。空 tenant_id 返回零值字典。"""
+        """租户内真实业务治理总览；内置场景演示会话不参与聚合。"""
         zero = {
             "sessions_total": 0,
             "state_distribution": {},
@@ -1216,33 +1414,58 @@ class PostgresSessionStore:
             "open_safety_findings": 0,
             "pending_actions": 0,
             "reports_exported": 0,
+            "excluded_demo_sessions": 0,
         }
         if not tenant_id:
             return zero
         with self._get_conn() as conn:
             state_rows = conn.execute(
                 "SELECT current_state, COUNT(*) AS n FROM sessions "
-                "WHERE tenant_id = %s::uuid GROUP BY current_state",
+                "WHERE tenant_id = %s::uuid "
+                "AND COALESCE(context_json->>'data_classification', 'business_internal') "
+                "<> 'public_demo' "
+                "AND NULLIF(context_json->>'selected_scenario_id', '') IS NULL "
+                "GROUP BY current_state",
                 (tenant_id,),
             ).fetchall()
             ctx_rows = conn.execute(
-                "SELECT session_id, context_json FROM sessions WHERE tenant_id = %s::uuid",
+                "SELECT session_id, context_json FROM sessions WHERE tenant_id = %s::uuid "
+                "AND COALESCE(context_json->>'data_classification', 'business_internal') "
+                "<> 'public_demo' "
+                "AND NULLIF(context_json->>'selected_scenario_id', '') IS NULL",
                 (tenant_id,),
             ).fetchall()
             eval_rows = conn.execute(
-                "SELECT session_id, risk_tier, evaluated_at "
-                "FROM gate_evaluation_records WHERE tenant_id = %s::uuid",
-                (tenant_id,),
+                "SELECT ger.session_id, ger.risk_tier, ger.evaluated_at "
+                "FROM gate_evaluation_records AS ger "
+                "JOIN sessions AS s ON s.session_id = ger.session_id "
+                "WHERE ger.tenant_id = %s AND s.tenant_id = %s::uuid "
+                "AND COALESCE(s.context_json->>'data_classification', 'business_internal') "
+                "<> 'public_demo' "
+                "AND NULLIF(s.context_json->>'selected_scenario_id', '') IS NULL",
+                (tenant_id, tenant_id),
             ).fetchall()
-        return _aggregate_governance_overview(state_rows, ctx_rows, eval_rows, zero)
+            demo_row = conn.execute(
+                "SELECT COUNT(*) AS n FROM sessions WHERE tenant_id = %s::uuid "
+                "AND (COALESCE(context_json->>'data_classification', 'business_internal') "
+                "= 'public_demo' "
+                "OR NULLIF(context_json->>'selected_scenario_id', '') IS NOT NULL)",
+                (tenant_id,),
+            ).fetchone()
+        overview = _aggregate_governance_overview(state_rows, ctx_rows, eval_rows, zero)
+        overview["excluded_demo_sessions"] = demo_row["n"] if demo_row else 0
+        return overview
 
     def actions_backlog(self, tenant_id: str, limit: int = 50) -> list[dict]:
-        """待处理人工动作明细，按 risk_level + 等待时长排序。空 tenant_id 返回空列表。"""
+        """真实业务会话的待处理动作；空 tenant_id 返回空列表。"""
         if not tenant_id:
             return []
         with self._get_conn() as conn:
             rows = conn.execute(
-                "SELECT session_id, context_json FROM sessions WHERE tenant_id = %s::uuid",
+                "SELECT session_id, context_json FROM sessions WHERE tenant_id = %s::uuid "
+                "AND COALESCE(context_json->>'data_classification', 'business_internal') "
+                "<> 'public_demo' "
+                "AND NULLIF(context_json->>'selected_scenario_id', '') IS NULL",
                 (tenant_id,),
             ).fetchall()
         return _aggregate_actions_backlog(rows, limit)
@@ -1258,9 +1481,18 @@ class PostgresSessionStore:
         pending_by_risk: dict[str, int] = {}
         with self._get_conn() as conn:
             state_rows = conn.execute(
-                "SELECT current_state, COUNT(*) AS n FROM sessions GROUP BY current_state"
+                "SELECT current_state, COUNT(*) AS n FROM sessions "
+                "WHERE COALESCE(context_json->>'data_classification', 'business_internal') "
+                "<> 'public_demo' "
+                "AND NULLIF(context_json->>'selected_scenario_id', '') IS NULL "
+                "GROUP BY current_state"
             ).fetchall()
-            ctx_rows = conn.execute("SELECT context_json FROM sessions").fetchall()
+            ctx_rows = conn.execute(
+                "SELECT context_json FROM sessions "
+                "WHERE COALESCE(context_json->>'data_classification', 'business_internal') "
+                "<> 'public_demo' "
+                "AND NULLIF(context_json->>'selected_scenario_id', '') IS NULL"
+            ).fetchall()
         for row in state_rows:
             state_distribution[row["current_state"]] = row["n"]
         for row in ctx_rows:

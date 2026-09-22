@@ -276,12 +276,25 @@ def classify_project_risk(ctx: ProjectContext) -> tuple[ProjectGateRiskTier, lis
             # Critical stays critical even with low-scope signals
             pass
         elif tier == ProjectGateRiskTier.HIGH:
-            tier = max(ProjectGateRiskTier.MEDIUM, tier_floor, key=_TIER_ORDER.get)
+            tier = max(
+                ProjectGateRiskTier.MEDIUM,
+                tier_floor,
+                key=lambda candidate: _TIER_ORDER[candidate],
+            )
         elif tier == ProjectGateRiskTier.MEDIUM:
-            tier = max(ProjectGateRiskTier.LOW, tier_floor, key=_TIER_ORDER.get)
+            tier = max(
+                ProjectGateRiskTier.LOW,
+                tier_floor,
+                key=lambda candidate: _TIER_ORDER[candidate],
+            )
 
     # 5. If no domain keyword matched and we're still MEDIUM with low-scope signals, go LOW
-    if not high_hits and not critical_hits and low_hits and tier_floor == ProjectGateRiskTier.MEDIUM:
+    if (
+        not high_hits
+        and not critical_hits
+        and low_hits
+        and tier_floor == ProjectGateRiskTier.MEDIUM
+    ):
         tier = ProjectGateRiskTier.LOW
 
     if not reasons:

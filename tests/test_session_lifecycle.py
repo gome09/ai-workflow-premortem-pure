@@ -28,7 +28,6 @@ pytest.importorskip("prometheus_fastapi_instrumentator")
 from fastapi.testclient import TestClient
 
 from auth.jwt import create_access_token
-from core.config import settings
 from core.session_service import SessionService
 from storage.backends.memory_cache import MemoryCache
 from storage.backends.sqlite_store import SQLiteSessionStore
@@ -36,8 +35,7 @@ from storage.backends.sqlite_store import SQLiteSessionStore
 
 # ── API-level fixtures (TestClient + shared store/cache) ──────────────
 @pytest.fixture
-def client_and_service(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "default_scenario_id", "")
+def client_and_service(tmp_path):
     db_path = tmp_path / "workflow.db"
     store = SQLiteSessionStore(str(db_path))
     store.initialize()

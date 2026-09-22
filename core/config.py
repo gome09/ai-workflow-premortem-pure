@@ -33,12 +33,12 @@ class Settings(BaseSettings):
 
     # DeepSeek V4 thinking mode 控制。
     # 可选值：enabled / disabled / default。default 表示不显式传参，由服务端默认决定。
-    model_stage_1_thinking: str = "enabled"
-    model_stage_2_thinking: str = "disabled"
-    model_stage_3_thinking: str = "enabled"
-    model_stage_4_thinking: str = "disabled"
+    model_stage_1_thinking: Literal["enabled", "disabled", "default"] = "enabled"
+    model_stage_2_thinking: Literal["enabled", "disabled", "default"] = "disabled"
+    model_stage_3_thinking: Literal["enabled", "disabled", "default"] = "enabled"
+    model_stage_4_thinking: Literal["enabled", "disabled", "default"] = "disabled"
     # DeepSeek V4 thinking mode 推理强度：high / max。仅在 thinking=enabled 时传递。
-    deepseek_reasoning_effort: str = "high"
+    deepseek_reasoning_effort: Literal["high", "max"] = "high"
 
     # 搜索
     tavily_api_key: str = ""
@@ -57,12 +57,12 @@ class Settings(BaseSettings):
     redis_db: int = 0
 
     # 应用
-    app_env: str = "development"
+    app_env: Literal["development", "production"] = "development"
     log_level: str = "INFO"
     session_ttl_hours: int = 72
     api_base: str = "http://localhost:8000"
     # json_first: 优先要求并解析 JSON；markdown_legacy: 保持旧版 Markdown 输出
-    stage_output_mode: str = "json_first"
+    stage_output_mode: Literal["json_first", "markdown_legacy"] = "json_first"
     # Domain profile: "default" uses existing general-purpose prompts;
     # "university_ai" loads university AI application risk assessment prompts;
     # "medical_ai" loads clinical AI governance prompts (HIPAA/FDA SaMD/ISO 14971).
@@ -70,11 +70,13 @@ class Settings(BaseSettings):
     # LLM mode: "real" uses live DeepSeek + Tavily; "mock" returns fixture JSON (no network).
     llm_mode: Literal["real", "mock"] = "real"
     # Storage backend: "postgres" uses PostgreSQL; "sqlite" for lightweight local use (E1).
-    storage_backend: str = "postgres"
-    # Optional built-in scenario attached to newly created sessions when the caller does not specify one.
-    default_scenario_id: str = ""
-    # 当前生产路径固定为 single_step；langgraph_interrupt 仅保留为未来适配开关。
+    storage_backend: Literal["postgres", "sqlite"] = "postgres"
+    # single_step remains the stable default; langgraph_interrupt is an explicit opt-in.
     workflow_execution_mode: WorkflowExecutionMode = WorkflowExecutionMode.SINGLE_STEP
+    # LangGraph checkpoint backend. Memory is non-persistent and limited to local SQLite/dev use.
+    checkpoint_backend: Literal["postgres", "memory"] = "postgres"
+    # Independent Fernet key for encrypting checkpoint payloads (do not reuse DATA_ENCRYPTION_KEY).
+    checkpoint_encryption_key: str = ""
 
     # Auth
     jwt_secret: str = ""
@@ -129,6 +131,38 @@ class Settings(BaseSettings):
                 raise ValueError("TAVILY_API_KEY must be set when LLM_MODE=real")
         if self.storage_backend != "sqlite" and not self.postgres_password:
             raise ValueError("POSTGRES_PASSWORD must be set when STORAGE_BACKEND is not sqlite")
+
+        execution_mode = WorkflowExecutionMode.normalize(self.workflow_execution_mode)
+        if execution_mode == WorkflowExecutionMode.LANGGRAPH_INTERRUPT:
+            if self.uvicorn_workers != 1:
+                raise ValueError(
+                    "UVICORN_WORKERS must be 1 when WORKFLOW_EXECUTION_MODE=langgraph_interrupt"
+                )
+            if self.app_env.lower() == "production" and self.checkpoint_backend != "postgres":
+                raise ValueError(
+                    "CHECKPOINT_BACKEND must be postgres for langgraph_interrupt in production"
+                )
+            if self.storage_backend == "postgres" and self.checkpoint_backend != "postgres":
+                raise ValueError(
+                    "CHECKPOINT_BACKEND must be postgres when langgraph_interrupt uses "
+                    "STORAGE_BACKEND=postgres"
+                )
+            if self.storage_backend == "sqlite" and self.checkpoint_backend != "memory":
+                raise ValueError(
+                    "CHECKPOINT_BACKEND must be memory when langgraph_interrupt uses "
+                    "STORAGE_BACKEND=sqlite"
+                )
+            if self.checkpoint_backend == "postgres" and not self.checkpoint_encryption_key:
+                raise ValueError(
+                    "CHECKPOINT_ENCRYPTION_KEY must be set when langgraph_interrupt uses "
+                    "CHECKPOINT_BACKEND=postgres"
+                )
+            if (
+                self.checkpoint_encryption_key
+                and self.data_encryption_key
+                and self.checkpoint_encryption_key == self.data_encryption_key
+            ):
+                raise ValueError("CHECKPOINT_ENCRYPTION_KEY must not reuse DATA_ENCRYPTION_KEY")
         return self
 
     @property

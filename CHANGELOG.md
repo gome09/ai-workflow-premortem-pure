@@ -4,6 +4,15 @@
 > 远程 `origin`（github.com/gome09/ai-workflow-premortem-pure）与本地共享同一根提交，**不包含更早的历史**，无法用于追溯 v1.0 之前的开发过程。
 > 截至 2026-09-01，本地 `main` 已与 `origin/main` 同步（当日推送 10 次提交，至 `08f8a99`）。
 
+## 未发布维护记录 (2026-09-21)
+
+- **会话工作台交互**：四个内置场景的用户可见名称统一中文化；场景下拉只允许展开和选择，不支持输入、新增选项或关键词查询。选择场景后显式创建绑定场景的会话并加载样例对话；“新建空白会话”保持无场景、无默认消息。最近会话支持右键重命名，Enter 或失焦保存；名称框与删除按钮采用独立灰色样式。
+- **治理真实数据隔离**：治理总览、门禁趋势、积压动作及启动时业务 Gauge 只统计 `business_internal` / `sensitive_personal` 会话，防御性排除 `public_demo` 和带 `selected_scenario_id` 的内置场景会话；总览新增 `excluded_demo_sessions` 并在页面明确展示统计口径。
+- **PostgreSQL 治理接口修复**：V005 的 `gate_evaluation_records.tenant_id` 是 TEXT，旧查询错误强转 UUID，导致 overview 与 gate-trends 返回 500；写入和查询现按 TEXT 处理，并通过 sessions 联表保证租户与真实业务口径。
+- **治理图表可读性**：分布柱状图恢复整数轴与横向参考网格；门禁趋势固定使用 0%–100% 轴，按周正序显示并提供评估次数/通过次数 tooltip。单周真实数据只显示一个增强数据点并明确说明不足以形成趋势线，不补造空周。
+- **LangGraph 中断正式启用**：新增 Alembic V006 checkpoint schema 与 V007 durable resume outbox；PostgreSQL checkpoint 使用独立 Fernet key、tenant-scoped thread、严格恢复定位校验和 fail-closed readiness。人工决定先与 resume outbox 持久化，再以原子 claim / 可重试 reconcile 恢复；会话清除同步删除 checkpoint，业务删除与审计归档保持事务一致。
+- **测试验证**：项目 `.venv` 全量 `731 passed, 1 skipped`；本轮相关源文件 Ruff lint、mypy、文档一致性、版本一致性和 `git diff --check` 通过；真实 PostgreSQL 暂停—runtime 重建—恢复—清理冒烟通过，`single_step` 回滚及重新启用后的 readiness 均为 HTTP 200。全仓格式检查和全仓 mypy 仍分别受既有工作树的待格式化文件与 `core/gates/risk_profile.py` 两处类型问题影响。
+
 ## 维护记录 (2026-09-01)（第二批：三个已知代码缺口修复）
 
 - **修复① sensitive_personal 风险地板值**（`core/gates/risk_profile.py`，提交 a9f18a2）：`classify_project_risk` 引入 `_TIER_ORDER` 与 `tier_floor`——`data_classification == sensitive_personal` 升档为地板值 HIGH，low-scope 降档（第 4 步）与"无领域关键词直接置 LOW"覆盖分支（第 5 步）均尊重 floor。修复前敏感个人数据 + 个人/学习类关键词的会话可落 LOW（2026-07-31 登记、按用户决策暂缓的缺口，本轮修复）。新增 `tests/test_sensitive_personal_floor.py` 6 条回归测试；spec `data-classification-and-privacy.md` §3.2 缺口标注更新为已修复。

@@ -6,8 +6,8 @@ project. It does not call LLMs, pytest, Streamlit, Docker, Tavily, or any
 external runtime. It only prepares already-supported stage state transitions:
 rerun, revise, rollback, and explicit review-action synchronization.
 
-The stable execution path remains deterministic single_step. LangGraph
-interrupt/checkpoint support stays experimental and is coordinated by
+The stable default remains deterministic single_step. Guarded LangGraph
+interrupt/checkpoint support is coordinated by
 core.execution_service after these business mutations are persisted.
 """
 

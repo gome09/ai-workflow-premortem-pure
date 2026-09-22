@@ -32,7 +32,13 @@ from auth.router import router as auth_router
 from core.audit_service import append_audit_event
 from core.config import settings
 from core.execution_mode import WorkflowExecutionMode
+from core.execution_service import reconcile_pending_interrupt_resumes
 from core.version import APP_STATUS, APP_VERSION
+from graph.checkpoint_manager import (
+    close_interrupt_runtime,
+    get_interrupt_adapter_health,
+    initialize_interrupt_runtime,
+)
 from scenarios import list_scenarios
 from storage.field_security import is_encryption_enabled
 from storage.session_store import session_store
@@ -78,6 +84,8 @@ _instrumentator = Instrumentator()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     session_store.initialize()
+    initialize_interrupt_runtime()
+    reconcile_pending_interrupt_resumes()
     _instrumentator.expose(app, endpoint="/metrics", include_in_schema=False)
     # T3.5 启动时刷新业务 Gauge 指标（prometheus_client 默认 REGISTRY 已通过
     # instrumentator 的 /metrics 端点一并暴露）
@@ -89,6 +97,7 @@ async def lifespan(app: FastAPI):
         logger.warning("refresh_gauge_metrics failed on startup; non-fatal", exc_info=True)
     logger.info("App started.")
     yield
+    close_interrupt_runtime()
     logger.info("App shutting down.")
 
 
@@ -192,6 +201,15 @@ def health_ready() -> JSONResponse:
     else:
         checks["redis"] = "skipped (sqlite mode)"
 
+    adapter = get_interrupt_adapter_health()
+    checks["interrupt_adapter"] = adapter["status"]
+    if (
+        WorkflowExecutionMode.normalize(settings.workflow_execution_mode)
+        == WorkflowExecutionMode.LANGGRAPH_INTERRUPT
+        and adapter["status"] != "healthy"
+    ):
+        overall_ok = False
+
     status_code = 200 if overall_ok else 503
     body = {"status": "ready" if overall_ok else "degraded", "checks": checks}
     return JSONResponse(content=body, status_code=status_code)
@@ -201,18 +219,15 @@ def health_ready() -> JSONResponse:
 def health():
     """Legacy health endpoint — kept for backward compatibility."""
     mode = WorkflowExecutionMode.normalize(settings.workflow_execution_mode)
+    adapter = get_interrupt_adapter_health()
     return {
         "status": "ok",
         "version": APP_VERSION,
         "app_status": APP_STATUS,
         "workflow_execution_mode": mode.value,
-        # 前端侧栏展示用：langgraph_interrupt 路径启用时适配器视为正常，
-        # 默认 single_step 路径下中断适配器只是审计映射层，标记为未启用。
-        "interrupt_adapter_status": (
-            "healthy" if mode == WorkflowExecutionMode.LANGGRAPH_INTERRUPT else "disabled"
-        ),
+        "interrupt_adapter_status": adapter["status"],
+        "interrupt_adapter": adapter,
         "default_domain_profile": settings.domain_profile,
-        "default_scenario_id": settings.default_scenario_id or None,
         "builtin_scenarios": [item.scenario_id for item in list_scenarios()],
         "data_encryption": "enabled" if is_encryption_enabled() else "disabled",
         "audit_retention_days": settings.audit_retention_days,

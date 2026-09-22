@@ -1,7 +1,7 @@
 {
   "scenario_id": "university_mental_health",
-  "name": "University Mental Health",
-  "description": "高校学生心理健康风险预测示例，复用 university_ai domain profile 与 mock fixture。",
+  "name": "高校学生心理健康风险预测",
+  "description": "高校学生心理健康风险预测示例，使用高校 AI 领域配置和对应模拟数据。",
   "input_sample_path": "examples/university_ai_mental_health_input.md",
   "domain_profile": "university_ai",
   "mock_fixture": "university_ai",

@@ -1,7 +1,7 @@
 # api/schemas.py
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class SendMessageRequest(BaseModel):
@@ -30,6 +30,15 @@ class CreateSessionRequest(BaseModel):
     scenario_id: str | None = None
 
 
+class RenameSessionRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+
 class ScenarioSummaryResponse(BaseModel):
     scenario_id: str
     name: str
@@ -45,6 +54,8 @@ class ScenarioSummaryResponse(BaseModel):
 class SessionListItem(BaseModel):
     session_id: str
     current_state: str
+    session_name: str = ""
+    scenario_name: str = ""
     research_target: str
     domain: str
     updated_at: str

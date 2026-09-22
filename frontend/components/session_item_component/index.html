@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --sidebar-background: #262730;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        align-items: stretch;
+        background: var(--sidebar-background);
+        display: flex;
+        font-family: sans-serif;
+        gap: 1rem;
+        height: 38px;
+        margin: 0;
+        padding: 0;
+        width: 100%;
+      }
+      #session-item {
+        align-items: center;
+        background: transparent;
+        border: 1px solid rgba(128, 128, 128, 0.28);
+        border-radius: 0.5rem;
+        color: var(--text-color, inherit);
+        cursor: pointer;
+        display: flex;
+        height: 38px;
+        overflow: hidden;
+        padding: 0 0.65rem;
+        user-select: none;
+        flex: 1;
+        min-width: 0;
+      }
+      #session-item:hover { border-color: rgb(255, 75, 75); }
+      #session-item.current {
+        background: transparent;
+        border-color: rgba(128, 128, 128, 0.72);
+      }
+      #label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #domain { opacity: 0.72; }
+      #editor {
+        background: transparent;
+        border: 0;
+        color: inherit;
+        display: none;
+        flex: 1;
+        font: inherit;
+        height: 100%;
+        min-width: 0;
+        outline: none;
+        padding: 0;
+      }
+      #editor::selection { background: #355d7d; color: white; }
+      #delete-button {
+        align-items: center;
+        background: transparent;
+        border: 1px solid rgba(128, 128, 128, 0.5);
+        border-radius: 0.5rem;
+        color: var(--text-color, inherit);
+        cursor: pointer;
+        display: none;
+        flex: 0 0 38px;
+        font-size: 1rem;
+        height: 38px;
+        justify-content: center;
+        margin: 0;
+        padding: 0;
+        width: 38px;
+      }
+      #delete-button:hover { border-color: rgb(255, 75, 75); }
+    </style>
+  </head>
+  <body>
+    <div id="session-item" title="单击打开，右键重命名">
+      <span id="icon"></span>&nbsp;<span id="label"></span><span id="domain"></span>
+      <input id="editor" type="text" aria-label="会话名称" />
+    </div>
+    <button id="delete-button" type="button" title="删除会话" aria-label="删除会话">🗑️</button>
+    <script>
+      const item = document.getElementById("session-item");
+      const icon = document.getElementById("icon");
+      const label = document.getElementById("label");
+      const domain = document.getElementById("domain");
+      const editor = document.getElementById("editor");
+      const deleteButton = document.getElementById("delete-button");
+      let args = {};
+      let editing = false;
+      let originalName = "";
+
+      function emit(action, extra = {}) {
+        window.parent.postMessage({
+          isStreamlitMessage: true,
+          type: "streamlit:setComponentValue",
+          value: { action, session_id: args.session_id, nonce: Date.now(), ...extra },
+        }, "*");
+      }
+
+      function resize() {
+        window.parent.postMessage({
+          isStreamlitMessage: true,
+          type: "streamlit:setFrameHeight",
+          height: 38,
+        }, "*");
+      }
+
+      function render(nextArgs) {
+        args = nextArgs || {};
+        originalName = String(args.label || "未命名会话");
+        icon.textContent = String(args.icon || "");
+        label.textContent = originalName.length > 14 ? `${originalName.slice(0, 14)}…` : originalName;
+        const domainText = String(args.domain || "");
+        domain.textContent = domainText ? ` · ${domainText.slice(0, 6)}` : "";
+        item.classList.toggle("current", Boolean(args.is_current));
+        deleteButton.style.display = args.can_delete ? "flex" : "none";
+        editor.maxLength = Number(args.max_length || 80);
+        resize();
+      }
+
+      function startEditing(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (args.disabled) return;
+        editing = true;
+        editor.value = originalName;
+        icon.style.display = "none";
+        label.style.display = "none";
+        domain.style.display = "none";
+        editor.style.display = "block";
+        editor.focus();
+        editor.select();
+      }
+
+      function finishEditing() {
+        if (!editing) return;
+        const nextName = editor.value.trim();
+        if (!nextName) {
+          editing = false;
+          editor.value = originalName;
+          editor.style.display = "none";
+          icon.style.display = "inline";
+          label.style.display = "inline";
+          domain.style.display = "inline";
+          return;
+        }
+        editing = false;
+        editor.style.display = "none";
+        icon.style.display = "inline";
+        label.style.display = "inline";
+        domain.style.display = "inline";
+        if (nextName !== originalName) emit("rename", { name: nextName });
+      }
+
+      item.addEventListener("click", () => { if (!editing) emit("select"); });
+      item.addEventListener("contextmenu", startEditing);
+      editor.addEventListener("click", (event) => event.stopPropagation());
+      editor.addEventListener("contextmenu", (event) => event.stopPropagation());
+      deleteButton.addEventListener("click", () => emit("delete"));
+      editor.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          editor.blur();
+        } else if (event.key === "Escape") {
+          editing = false;
+          editor.style.display = "none";
+          icon.style.display = "inline";
+          label.style.display = "inline";
+          domain.style.display = "inline";
+        }
+      });
+      editor.addEventListener("blur", finishEditing);
+      window.addEventListener("message", (event) => {
+        if (event.data.type === "streamlit:render") {
+          render(event.data.args);
+        }
+      });
+      window.parent.postMessage({ isStreamlitMessage: true, type: "streamlit:componentReady", apiVersion: 1 }, "*");
+      resize();
+    </script>
+  </body>
+</html>

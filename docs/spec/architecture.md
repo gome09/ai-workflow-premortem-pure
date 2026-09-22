@@ -14,7 +14,7 @@ graph TD
     API["API 层<br/>FastAPI + Nginx 反向代理"]
     Auth["认证授权<br/>JWT + RBAC + 多租户隔离"]
     Core["核心业务层<br/>Session / Stage / Gate Services"]
-    Graph["工作流引擎<br/>确定性 single_step（默认）<br/>LangGraph interrupt（实验）"]
+    Graph["工作流引擎<br/>确定性 single_step（默认）<br/>LangGraph interrupt（受控 opt-in）"]
     S1["Stage 1<br/>失败模式识别"]
     S2["Stage 2<br/>Human-in-the-Loop 设计"]
     S3["Stage 3<br/>Zero-Shot 压力测试"]
@@ -81,7 +81,7 @@ FastAPI / Streamlit
 -> core.execution_service.execute_one_turn(ctx)
    -> single_step
       -> graph.runner.run_one_step(ctx)
-   -> langgraph_interrupt experimental mode
+   -> langgraph_interrupt guarded opt-in mode
       -> graph.langgraph_interrupt_runner.invoke_one_turn_with_interrupts(ctx)
 -> graph.nodes
 -> StageExecutor
@@ -90,7 +90,15 @@ FastAPI / Streamlit
 -> PostgreSQL + Redis cache，或 SQLite + MemoryCache
 ```
 
-`single_step` remains the default stable path. `langgraph_interrupt` is an experimental adapter path selected only through `WORKFLOW_EXECUTION_MODE=langgraph_interrupt`.
+`single_step` remains the default stable path. `langgraph_interrupt` is a guarded opt-in path selected only through `WORKFLOW_EXECUTION_MODE=langgraph_interrupt`.
+
+The interrupt path uses a fail-closed runtime contract:
+
+- PostgreSQL business storage requires `CHECKPOINT_BACKEND=postgres`, an independent `CHECKPOINT_ENCRYPTION_KEY`, and `UVICORN_WORKERS=1`.
+- Checkpoint schema changes are owned by Alembic; runtime initialization validates the schema and must not create tables ad hoc.
+- A PostgreSQL checkpoint initialization or health failure makes the service unready; it must not fall back to an in-memory saver.
+- `CHECKPOINT_BACKEND=memory` is restricted to SQLite/local development. It is non-persistent and cannot recover an interrupt after process restart.
+- Checkpoint payload encryption is separate from business-field encryption. `CHECKPOINT_ENCRYPTION_KEY` and `DATA_ENCRYPTION_KEY` have different key lifecycles and must not share values.
 
 ## Review and Action Resolution Path
 
@@ -137,6 +145,7 @@ Stage rerun, revise, rollback, and sync-review-actions are explicit stage operat
 - Eval coverage and high-risk eval review are part of the Stage 3 gate.
 - `core/gates/rules/manifest.py` is the authoritative source for gate rule metadata (owner / version / changelog / safety_bottom_line).
 - `gate_evaluation_records` table (alembic V005) is the baseline data source for governance pass-rate trends.
+- LangGraph checkpoint tables are owned by Alembic V006; the durable resume outbox is owned by V007.
 - `core/eval_llm_judge.py` is the authoritative implementation of LLM Judge (suggestion only, never overrides final judgment directly).
 
 

@@ -26,7 +26,6 @@ pytest.importorskip("prometheus_fastapi_instrumentator")
 from fastapi.testclient import TestClient
 
 from auth.jwt import create_access_token
-from core.config import settings
 from core.migrations import migrate_context
 from core.session_service import SessionService
 from storage.backends.memory_cache import MemoryCache
@@ -49,8 +48,7 @@ def isolated_service(tmp_path):
 
 # ── API-level fixtures (TestClient + shared store/cache) ──────────────
 @pytest.fixture
-def client_and_service(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "default_scenario_id", "")
+def client_and_service(tmp_path):
     db_path = tmp_path / "workflow.db"
     store = SQLiteSessionStore(str(db_path))
     store.initialize()
@@ -84,14 +82,12 @@ def _set_classification(client, session_id: str, value: str, role: str = "admin"
 
 # ── 1 & 2: create_session defaults ────────────────────────────────────
 def test_scenario_session_gets_public_demo(monkeypatch, isolated_service):
-    monkeypatch.setattr(settings, "default_scenario_id", "")
     ctx = isolated_service.create_session(scenario_id="generic_rag_demo")
     assert ctx.selected_scenario_id == "generic_rag_demo"
     assert ctx.data_classification == "public_demo"
 
 
 def test_user_session_gets_business_internal(monkeypatch, isolated_service):
-    monkeypatch.setattr(settings, "default_scenario_id", "")
     ctx = isolated_service.create_session()
     assert ctx.selected_scenario_id is None
     assert ctx.data_classification == "business_internal"

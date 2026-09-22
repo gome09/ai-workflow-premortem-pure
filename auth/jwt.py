@@ -1,7 +1,6 @@
 # auth/jwt.py
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -10,22 +9,16 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel
 
+from core.config import settings
+
 ALGORITHM = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 def _secret() -> str:
-    try:
-        from core.config import settings
-
-        if settings.jwt_secret:
-            return settings.jwt_secret
-    except Exception:  # noqa: S110  # settings 未就绪时回退到环境变量
-        pass
-    secret = os.environ.get("JWT_SECRET", "")
-    if not secret:
-        raise RuntimeError("JWT_SECRET is not configured")
-    return secret
+    if settings.jwt_secret:
+        return settings.jwt_secret
+    raise RuntimeError("JWT_SECRET is not configured")
 
 
 class TenantContext(BaseModel):
@@ -39,8 +32,7 @@ def create_access_token(
     expires_delta: timedelta | None = None,
 ) -> str:
     expire = datetime.now(UTC) + (
-        expires_delta
-        or timedelta(minutes=int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "15")))
+        expires_delta or timedelta(minutes=settings.jwt_access_token_expire_minutes)
     )
     return jwt.encode({**data, "exp": expire, "type": "access"}, _secret(), algorithm=ALGORITHM)
 
@@ -50,7 +42,7 @@ def create_refresh_token(
     expires_delta: timedelta | None = None,
 ) -> str:
     expire = datetime.now(UTC) + (
-        expires_delta or timedelta(days=int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7")))
+        expires_delta or timedelta(days=settings.jwt_refresh_token_expire_days)
     )
     return jwt.encode({**data, "exp": expire, "type": "refresh"}, _secret(), algorithm=ALGORITHM)
 

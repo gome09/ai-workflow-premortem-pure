@@ -17,6 +17,7 @@ class TestProjectContext:
         assert ctx.session_id != ""
         assert ctx.current_state == SessionState.INIT
         assert ctx.research_target == ""
+        assert ctx.session_name == ""
         assert ctx.iteration_count == 0
 
     def test_append_message(self, base_ctx):

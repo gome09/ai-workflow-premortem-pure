@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 
-from core.config import settings
+from core.audit_service import append_audit_event
 from core.eval_dataset_service import (
     add_cases_to_dataset,
     create_dataset,
@@ -40,6 +40,7 @@ from core.eval_service import score_eval_case
 from core.evidence_service import evidence_sources_from_user_materials, verify_evidence_source
 from core.execution_service import (
     execute_one_turn,
+    prepare_execution_after_action_resolutions,
     sync_execution_after_stage_revision,
 )
 from core.models import AuditEvent, FlagStatus, LLMTrace, MessageRole, ProjectContext, SessionState
@@ -122,7 +123,9 @@ class SessionService:
     def create_session(self, tenant_id: str = "", scenario_id: str | None = None) -> ProjectContext:
         """创建新会话"""
         ctx = ProjectContext(tenant_id=tenant_id)
-        ctx = attach_scenario_to_context(ctx, scenario_id or settings.default_scenario_id or None)
+        # 无 scenario_id 永远创建空白会话。内置场景只能由调用方显式选择，
+        # 避免部署环境中的默认值让「新建会话」悄悄携带场景内容。
+        ctx = attach_scenario_to_context(ctx, scenario_id)
         # T1.1: 数据分类分级——场景会话 public_demo，用户会话 business_internal
         ctx.data_classification = "public_demo" if ctx.selected_scenario_id else "business_internal"
         session_store.save(ctx)
@@ -142,6 +145,33 @@ class SessionService:
             context_cache.set(ctx)
         return ctx
 
+    def rename_session(self, session_id: str, name: str, tenant_id: str = "") -> dict:
+        """重命名会话并记录审计事件。"""
+        normalized_name = name.strip()
+        if not normalized_name or len(normalized_name) > 80:
+            raise ValueError("Session name must contain 1 to 80 characters")
+
+        ctx = self.get_session(session_id, tenant_id=tenant_id)
+        if not ctx:
+            raise ValueError(f"Session not found: {session_id}")
+
+        previous_name = ctx.session_name
+        if previous_name != normalized_name:
+            append_audit_event(
+                ctx,
+                actor="user",
+                event_type="session_renamed",
+                target_type="session",
+                target_id=session_id,
+                before={"session_name": previous_name},
+                after={"session_name": normalized_name},
+            )
+            ctx.session_name = normalized_name
+            session_store.save(ctx)
+            context_cache.set(ctx)
+
+        return {"session_id": session_id, "session_name": normalized_name}
+
     def delete_session(
         self, session_id: str, *, purged_by: str = "admin", tenant_id: str = ""
     ) -> dict:
@@ -157,6 +187,7 @@ class SessionService:
         summary = {
             "session_id": session_id,
             "tenant_id": tenant_id,
+            "session_name": ctx.session_name,
             "research_target": ctx.research_target,
             "domain": ctx.domain,
             "current_state": ctx.current_state.value,
@@ -166,12 +197,22 @@ class SessionService:
             "purged_by": purged_by,
         }
 
-        # Archive audit events + write session_purged event
-        archived_count = session_store.archive_audit_events(session_id, purged_by, summary)
-        summary["archived_audit_events"] = archived_count
+        # Delete checkpoints before the authoritative session row. If this
+        # fails, keep the session so operators never receive a false purge
+        # success while sensitive execution snapshots remain behind.
+        from graph.checkpoint_manager import delete_session_checkpoints
+        from storage.backends.postgres import PostgresSessionStore
 
-        # Delete session (cascade handles audit_events, evidence_sources, etc.)
-        session_store.delete(session_id, tenant_id)
+        delete_session_checkpoints(ctx, persistent=isinstance(session_store, PostgresSessionStore))
+
+        # Archive evidence and delete the business session atomically.
+        archived_count = session_store.purge_session(
+            session_id,
+            tenant_id,
+            purged_by,
+            summary,
+        )
+        summary["archived_audit_events"] = archived_count
 
         # Invalidate cache
         context_cache.delete(session_id, tenant_id)
@@ -194,6 +235,8 @@ class SessionService:
                 {
                     "session_id": row.get("session_id", ""),
                     "current_state": row.get("current_state", SessionState.INIT.value),
+                    "session_name": row.get("session_name") or "",
+                    "scenario_name": row.get("scenario_name") or "",
                     "research_target": row.get("research_target") or "",
                     "domain": row.get("domain") or "",
                     "updated_at": str(updated_at),
@@ -266,7 +309,7 @@ class SessionService:
         # 将用户输入注入 state，供单步 runner 调用当前状态节点。
         ctx.pending_input = user_input
 
-        # 驱动执行引擎单步推进。默认 single_step；langgraph_interrupt 为实验性 adapter。
+        # 驱动执行引擎单步推进。默认 single_step；langgraph_interrupt 为受控 opt-in。
         updated_ctx: ProjectContext = execute_one_turn(ctx)
 
         # 持久化
@@ -357,6 +400,9 @@ class SessionService:
             decision=action,
             note=note,
         )
+        prepare_execution_after_action_resolutions(ctx, resolved_action_ids)
+        session_store.save(ctx)
+        context_cache.set(ctx)
         ctx, _decision = after_human_resolution(
             ctx,
             action_ids=resolved_action_ids,
@@ -465,7 +511,12 @@ class SessionService:
             metadata={"decision": decision, "log_id": result.log_id, "note": note},
         )
         safe_stage = action_stage or self._current_stage(ctx) or 1
-        if result.result_status == "resolved":
+        if result.result_status in {"resolved", "idempotent_replay"}:
+            # Persist the human decision before checkpoint resume. A checkpoint
+            # outage must never roll back or lose an accepted review decision.
+            prepare_execution_after_action_resolutions(ctx, [action_id])
+            session_store.save(ctx)
+            context_cache.set(ctx)
             ctx, stage_decision = after_human_resolution(
                 ctx,
                 action_ids=[action_id],
@@ -545,6 +596,9 @@ class SessionService:
             session_store.save(ctx)
             context_cache.set(ctx)
             raise
+        prepare_execution_after_action_resolutions(ctx, [action_id])
+        session_store.save(ctx)
+        context_cache.set(ctx)
         ctx, stage_decision = after_human_resolution(
             ctx,
             action_ids=[action_id],
@@ -669,6 +723,9 @@ class SessionService:
             decision="verify_evidence",
             note=note,
         )
+        prepare_execution_after_action_resolutions(ctx, resolved_action_ids)
+        session_store.save(ctx)
+        context_cache.set(ctx)
         ctx, _decision = after_human_resolution(
             ctx,
             action_ids=resolved_action_ids,
@@ -735,6 +792,9 @@ class SessionService:
             for action in ctx.pending_actions
             if action.action_id in before_pending and action.status == "resolved"
         ]
+        prepare_execution_after_action_resolutions(ctx, resolved_action_ids)
+        session_store.save(ctx)
+        context_cache.set(ctx)
         ctx, _decision = after_human_resolution(
             ctx,
             action_ids=resolved_action_ids,

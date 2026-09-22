@@ -146,6 +146,9 @@ def check_file(source: Path, make_targets: set[str]) -> list[str]:
             path_str = m.group("path")
             if not is_repo_path(path_str):
                 continue
+            # Optional governed resources are documented even when their module is inactive.
+            if path_str == ".upgrade/delivery/POLICY.json" and "when configured" in line.lower():
+                continue
             # 通配符路径跳过（如 docs/**/*.md）
             if "*" in path_str:
                 continue

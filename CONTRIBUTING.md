@@ -44,7 +44,7 @@ CI 还会运行覆盖率测试与 docker-lite 集成；mypy、pip-audit 和 dock
 
 ## 测试约定
 
-- 测试位于 `tests/`，使用内存存储 + monkeypatched LLM，**不依赖** PostgreSQL / Redis / 外部 API Key。
+- 默认 `tests/` 套件使用内存或临时 SQLite、monkeypatched 服务，不要求正在运行的 PostgreSQL / Redis，也不需要外部 API Key。真实 PostgreSQL checkpoint 的暂停—重建—恢复属于独立运行时验收，不应与默认单元/契约测试口径混写。
 - 新增功能须附带测试；bug 修复须附回归测试。
 - `pytest` 配置见 `pyproject.toml`（`asyncio_mode = "auto"`）。
 

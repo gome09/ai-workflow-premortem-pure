@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, TypedDict
 
 from core.audit_service import append_audit_event
-from core.config import settings
 from core.models import ProjectContext
+from graph.checkpoint_manager import (
+    checkpoint_manager,
+    checkpoint_namespace,
+    checkpoint_thread_id,
+)
 from graph.interrupt_gate import review_interrupt_gate
 from graph.interrupts import (
     get_pending_blocking_interrupt,
@@ -18,7 +22,12 @@ from graph.runner import run_one_step
 logger = logging.getLogger(__name__)
 
 _GRAPH_CACHE: Any | None = None
-_CHECKPOINTER_RESOURCE: Any | None = None
+
+
+class InterruptGraphState(TypedDict):
+    """Single encrypted checkpoint channel containing workflow product state."""
+
+    context: ProjectContext
 
 
 def _coerce_context(result: Any, fallback: ProjectContext) -> ProjectContext:
@@ -26,10 +35,14 @@ def _coerce_context(result: Any, fallback: ProjectContext) -> ProjectContext:
     if isinstance(result, ProjectContext):
         return result
     if isinstance(result, dict):
-        # LangGraph returns __interrupt__ payloads when execution is paused.
-        # In that case, keep the already-mutated context as the product state.
-        if "__interrupt__" in result:
-            return fallback
+        context = result.get("context")
+        if isinstance(context, ProjectContext):
+            return context
+        if isinstance(context, dict):
+            try:
+                return ProjectContext.model_validate(context)
+            except Exception:
+                logger.exception("Could not validate context channel from LangGraph result.")
         try:
             return ProjectContext.model_validate(result)
         except Exception:
@@ -43,8 +56,8 @@ def _coerce_context(result: Any, fallback: ProjectContext) -> ProjectContext:
 def _langgraph_config(ctx: ProjectContext, thread_id: str | None = None) -> dict[str, Any]:
     return {
         "configurable": {
-            "thread_id": thread_id or ctx.session_id,
-            "checkpoint_ns": "ai_workflow_v0_6_review_gate",
+            "thread_id": thread_id or checkpoint_thread_id(ctx),
+            "checkpoint_ns": checkpoint_namespace(),
         }
     }
 
@@ -58,37 +71,6 @@ def _load_command_type() -> Any:
     return Command
 
 
-def _build_checkpointer() -> Any:
-    """Prefer PostgreSQL checkpoints; fall back to memory for local/dev use."""
-    global _CHECKPOINTER_RESOURCE
-    try:
-        import psycopg
-        from langgraph.checkpoint.postgres import PostgresSaver
-
-        conn = psycopg.connect(settings.postgres_dsn_sync)
-        # psycopg default Connection row type is tuple; PostgresSaver expects a
-        # dict-row Connection. The saver works with the live connection at runtime.
-        saver: Any = PostgresSaver(conn)  # type: ignore[arg-type]
-        saver.setup()
-        _CHECKPOINTER_RESOURCE = conn
-        return saver
-    except Exception:
-        logger.exception(
-            "PostgreSQL LangGraph checkpointer unavailable; falling back to in-memory checkpointer."
-        )
-        try:
-            from langgraph.checkpoint.memory import MemorySaver
-
-            saver = MemorySaver()
-            _CHECKPOINTER_RESOURCE = saver
-            return saver
-        except Exception:
-            logger.exception(
-                "No LangGraph checkpointer available; graph will compile without checkpointing."
-            )
-            return None
-
-
 def _build_one_turn_graph() -> Any:
     # -> Any：编译图实为 CompiledStateGraph[ProjectContext, ...]；为免惰性加载边界引入 TYPE_CHECKING 导入，保持 Any
     """Build a one-turn graph that preserves the deterministic stage model.
@@ -100,23 +82,28 @@ def _build_one_turn_graph() -> Any:
     """
     from langgraph.graph import END, StateGraph
 
-    graph = StateGraph(ProjectContext)
+    graph = StateGraph(InterruptGraphState)
 
-    def dispatch_one_step(ctx: ProjectContext) -> ProjectContext:
+    def dispatch_one_step(state: InterruptGraphState) -> InterruptGraphState:
+        ctx = state["context"]
         # If a blocking action already exists, never run a stage node again.
         if get_pending_blocking_interrupt(ctx):
-            return ctx
+            return {"context": ctx}
         updated = run_one_step(ctx)
         sync_interrupt_records(updated)
-        return updated
+        return {"context": updated}
 
-    def route_after_dispatch(ctx: ProjectContext) -> str:
+    def route_after_dispatch(state: InterruptGraphState) -> str:
+        ctx = state["context"]
         return "review_interrupt_gate" if get_pending_blocking_interrupt(ctx) else "end"
+
+    def interrupt_gate(state: InterruptGraphState) -> InterruptGraphState:
+        return {"context": review_interrupt_gate(state["context"])}
 
     # add_node overloads reject a plain ProjectContext->ProjectContext callable in langgraph's
     # generic StateGraph typing; the node contract holds at runtime.
-    graph.add_node("dispatch_one_step", dispatch_one_step)  # type: ignore[call-overload]
-    graph.add_node("review_interrupt_gate", review_interrupt_gate)  # type: ignore[call-overload]
+    graph.add_node("dispatch_one_step", dispatch_one_step)
+    graph.add_node("review_interrupt_gate", interrupt_gate)
     graph.set_entry_point("dispatch_one_step")
     graph.add_conditional_edges(
         "dispatch_one_step",
@@ -128,10 +115,7 @@ def _build_one_turn_graph() -> Any:
     )
     graph.add_edge("review_interrupt_gate", END)
 
-    checkpointer = _build_checkpointer()
-    if checkpointer is None:
-        return graph.compile()
-    return graph.compile(checkpointer=checkpointer)
+    return graph.compile(checkpointer=checkpoint_manager.get_saver())
 
 
 def get_one_turn_interrupt_graph() -> Any:
@@ -143,15 +127,13 @@ def get_one_turn_interrupt_graph() -> Any:
 
 
 def invoke_one_turn_with_interrupts(ctx: ProjectContext) -> ProjectContext:
-    """Execute one user turn through the experimental LangGraph interrupt path."""
+    """Execute one user turn through the guarded LangGraph interrupt path."""
     graph = get_one_turn_interrupt_graph()
     sync_interrupt_records(ctx)
     try:
-        result = graph.invoke(ctx, config=_langgraph_config(ctx))
-    except Exception:
-        logger.exception(
-            "LangGraph interrupt runner failed; returning context without fallback stage execution."
-        )
+        result = graph.invoke({"context": ctx}, config=_langgraph_config(ctx))
+    except Exception as exc:
+        logger.exception("LangGraph interrupt runner failed; refusing fallback stage execution.")
         append_audit_event(
             ctx,
             actor="system",
@@ -161,7 +143,7 @@ def invoke_one_turn_with_interrupts(ctx: ProjectContext) -> ProjectContext:
             after=ctx,
             metadata={"execution_mode": "langgraph_interrupt"},
         )
-        return ctx
+        raise RuntimeError("LangGraph interrupt execution failed") from exc
     updated = _coerce_context(result, fallback=ctx)
     sync_interrupt_records(updated)
     return updated
@@ -175,9 +157,40 @@ def consume_resumable_interrupt_if_needed(ctx: ProjectContext, action_id: str) -
     """
     sync_interrupt_records(ctx)
     record = next((item for item in ctx.interrupt_records if item.action_id == action_id), None)
+    action = next((item for item in ctx.pending_actions if item.action_id == action_id), None)
     if record is None:
         return ctx
     if record.status != "resumed" or record.resume_consumed_at is not None:
+        return ctx
+    expected_thread_id = checkpoint_thread_id(ctx)
+    expected_version = ctx.stage_output_versions.get(f"stage_{record.stage_id}", 1)
+    if (
+        action is None
+        or action.status != "resolved"
+        or action.reviewer_decision == "reject"
+        or record.thread_id != expected_thread_id
+        or record.checkpoint_ns != checkpoint_namespace()
+        or record.node_name != (action.node_id or f"stage_{action.stage_id}_review_gate")
+        or record.stage_id != action.stage_id
+        or record.stage_output_version != action.stage_output_version
+        or record.stage_output_version != expected_version
+        or not isinstance(record.resume_value, dict)
+        or record.resume_value.get("allow_continue") is not True
+        or record.resume_value.get("action_id") != action_id
+        or record.resume_value.get("decision") != action.reviewer_decision
+    ):
+        append_audit_event(
+            ctx,
+            actor="system",
+            event_type="interrupt_resume_rejected",
+            target_type="interrupt_record",
+            target_id=record.interrupt_id,
+            after=record,
+            metadata={
+                "action_id": action_id,
+                "reason": "stale or mismatched interrupt checkpoint metadata",
+            },
+        )
         return ctx
 
     Command = _load_command_type()
@@ -198,14 +211,17 @@ def consume_resumable_interrupt_if_needed(ctx: ProjectContext, action_id: str) -
 
     try:
         graph = get_one_turn_interrupt_graph()
-        result = graph.invoke(
+        graph.invoke(
             Command(resume=record.resume_value or {"action_id": action_id}),
-            config=_langgraph_config(ctx, thread_id=record.thread_id or ctx.session_id),
+            config=_langgraph_config(ctx, thread_id=expected_thread_id),
         )
-        updated = _coerce_context(result, fallback=ctx)
-        mark_interrupt_resume_consumed(updated, record.interrupt_id)
-        sync_interrupt_records(updated)
-        return updated
+        # The checkpoint contains the product state as it existed before the
+        # human decision. Never merge that stale snapshot back over the latest
+        # authoritative context loaded from the session store. The resume is an
+        # execution acknowledgement only; business state remains authoritative.
+        mark_interrupt_resume_consumed(ctx, record.interrupt_id)
+        sync_interrupt_records(ctx)
+        return ctx
     except Exception as exc:
         logger.exception("Failed to consume LangGraph resume for action_id=%s", action_id)
         append_audit_event(

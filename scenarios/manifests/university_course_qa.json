@@ -1,7 +1,7 @@
 {
   "scenario_id": "university_course_qa",
-  "name": "University Course QA",
-  "description": "高校课程知识问答系统示例，复用 university_ai domain profile 与 mock fixture。",
+  "name": "高校课程知识问答",
+  "description": "高校课程知识问答系统示例，使用高校 AI 领域配置和对应模拟数据。",
   "input_sample_path": "examples/university_ai_course_qa_input.md",
   "domain_profile": "university_ai",
   "mock_fixture": "university_ai",

@@ -2,7 +2,7 @@
 
 > 评估对象：本平台（ai-workflow-premortem）处理用户上传材料这一个人信息处理活动。
 > 评估依据：PIPL 第 55 条、第 56 条；DSL 第 21 条。
-> 评估日期：2026-07-14；代码事实复核：2026-07-27。
+> 评估日期：2026-07-14；代码事实复核：2026-09-21。
 > 复评触发：重大架构变更（如更换 LLM provider、新增数据字段、新增跨境传输路径）。
 > 留存期限：3 年。
 
@@ -25,11 +25,13 @@
 | 证据来源 | evidence_sources (summary, claims) | Tavily 搜索 / 用户材料资产化 | 可能 |
 | 会话审计 | audit_events | 系统自动记录 | actor 字段含角色信息 |
 | LLM 交互 | conversation_history, llm_traces | 用户消息 + DeepSeek API 返回 | 可能包含用户消息原文与 prompt 内容 |
+| 中断执行快照 | LangGraph checkpoint | `langgraph_interrupt` 执行时由完整 `ProjectContext` 生成 | 可能包含上述材料、证据、消息和执行状态；PostgreSQL payload 使用独立 Fernet key 加密 |
 
 ### 1.3 数据流
 
 ```
 用户 → 平台 API → [四类正则 PII 检测] → [指定材料字段加密（需有效密钥）] → PostgreSQL/SQLite
+                 → [可选：完整上下文 checkpoint，PostgreSQL 使用独立 Fernet key] → PostgreSQL checkpoint 表
                  → [evidence/user_materials 路径可选掩码；直接消息/历史不覆盖] → DeepSeek API → 报告
 ```
 
@@ -58,6 +60,7 @@
 | PII 通过 prompt 传到 DeepSeek | 跨境传输 | 高 | evidence/user_materials 路径支持可选掩码；直接消息/历史仍是缺口，默认关闭时不掩码 |
 | 审计日志含操作者信息 | 关联分析 | 中 | 审计事件仅记录角色（system/user/ai），不记录 PII |
 | 数据库泄露 | 批量泄露 | 高 | JWT 认证 + 租户隔离；Fernet 仅在 `DATA_ENCRYPTION_KEY` 有效时启用 |
+| checkpoint 或其密钥泄露 | 中断时的完整上下文副本可被读取 | 高 | PostgreSQL checkpoint 强制独立 `CHECKPOINT_ENCRYPTION_KEY` 加密、tenant-scoped thread、单 worker和 fail-closed readiness；密钥需由部署方独立备份与轮换 |
 | 会话长期留存 | 留存过度 | 中 | T1.6 DELETE 端点；留存天数目前只展示配置，尚无自动清理任务 |
 
 ### 2.3 保护措施与风险适配性
@@ -67,6 +70,7 @@
 | 数据分类分级（T1.1） | 适配性控制 | DSL 21 条 / PIPL 51 条 | ✅ 已实现 |
 | 字段级加密（T1.3） | 存储泄露 | PIPL 51 条 | ⚠️ 代码已实现，部署时需显式配置密钥并验证 `/health.data_encryption` |
 | PII 检测与掩码（T1.4） | 跨境传输 | PIPL 38/39 条 | ⚠️ 部分实现：四类正则 + 材料注入路径；默认关闭，直接消息/历史不覆盖 |
+| 加密持久 checkpoint | 中断恢复与执行快照泄露 | PIPL 51 条 | ⚠️ 仅在显式启用 `langgraph_interrupt` 时使用；PostgreSQL 强制独立 key，`make setup` 不生成该 key，需部署方配置并验证 `/health/ready` |
 | 会话删除与审计归档（T1.6） | 留存过度 | PIPL 47 条 | ✅ 已实现 |
 | 应急响应（T1.9） | 事件响应 | PIPL 57 条 | ✅ 已实现 |
 
@@ -78,6 +82,7 @@
 | 会话数据 | 配置值默认 0=永久（`SESSION_RETENTION_DAYS`） | 当前无自动期限清理；管理员调用 `DELETE /sessions/{id}` 级联删除 |
 | 归档审计事件 | 未配置自动删除 | 当前不自动删除（合规留痕） |
 | LLM traces | 跟随会话 | 级联删除 |
+| PostgreSQL checkpoint / resume outbox | 跟随会话 | admin 删除会话时清理 checkpoint；outbox 随 session 外键级联删除。checkpoint 清理失败时会话删除失败，不报告假性成功 |
 
 > **当前缺口**：`AUDIT_RETENTION_DAYS` 与 `SESSION_RETENTION_DAYS` 只由 `/health` 展示，尚无调度器消费。生产环境必须通过外部作业或人工流程执行留存策略，直至项目实现自动清理任务。
 

@@ -725,7 +725,7 @@ class InterruptRecord(BaseModel):
 
     PendingHumanAction remains the product/business approval contract.
     InterruptRecord is the execution-engine mapping layer used by the
-    experimental LangGraph interrupt/checkpoint adapter (langgraph_interrupt mode).
+    guarded LangGraph interrupt/checkpoint adapter (langgraph_interrupt mode).
     """
 
     interrupt_id: str = Field(default_factory=lambda: f"INT-{str(uuid.uuid4())[:8]}")
@@ -780,6 +780,7 @@ class ProjectContext(BaseModel):
     current_state: SessionState = SessionState.INIT
     # 多租户：session 所属 tenant_id，由 session_store.load() 填充，保存时写入 sessions 表
     tenant_id: str = ""
+    session_name: str = ""
     selected_scenario_id: str | None = None
     scenario_name: str | None = None
     scenario_description: str = ""

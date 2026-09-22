@@ -82,7 +82,6 @@ def isolated_service(tmp_path):
 
 def test_create_session_attaches_builtin_scenario(monkeypatch, isolated_service):
     service = isolated_service
-    monkeypatch.setattr(settings, "default_scenario_id", "")
 
     ctx = service.create_session(scenario_id="university_course_qa")
     assert ctx.selected_scenario_id == "university_course_qa"
@@ -90,10 +89,20 @@ def test_create_session_attaches_builtin_scenario(monkeypatch, isolated_service)
     assert ctx.scenario_config["mock_fixture"] == "university_ai"
 
 
+def test_create_session_without_scenario_stays_blank(isolated_service):
+    ctx = isolated_service.create_session()
+
+    assert ctx.selected_scenario_id is None
+    assert ctx.scenario_name is None
+    assert ctx.scenario_description == ""
+    assert ctx.scenario_config == {}
+    assert ctx.conversation_history == {}
+    assert ctx.current_state == SessionState.INIT
+
+
 def test_builtin_scenario_input_enters_workflow(monkeypatch, isolated_service):
     monkeypatch.setattr(settings, "llm_mode", "mock")
     monkeypatch.setattr(settings, "storage_backend", "sqlite")
-    monkeypatch.setattr(settings, "default_scenario_id", "")
 
     service = isolated_service
     ctx = service.create_session(scenario_id="generic_rag_demo")
@@ -110,7 +119,6 @@ def test_builtin_scenario_input_enters_workflow(monkeypatch, isolated_service):
 def test_mock_scenario_can_run_from_init_to_stage4(monkeypatch, isolated_service):
     monkeypatch.setattr(settings, "llm_mode", "mock")
     monkeypatch.setattr(settings, "storage_backend", "sqlite")
-    monkeypatch.setattr(settings, "default_scenario_id", "")
 
     service = isolated_service
     ctx = service.create_session(scenario_id="generic_rag_demo")

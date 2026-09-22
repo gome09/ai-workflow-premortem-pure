@@ -1,7 +1,7 @@
 # API 接口参考
 
 > 本文档按当前源码静态提取整理。
-> 当前仓库可直接识别的 HTTP 路由总数为 `84`（`api/routers/*.py` 75 条 + `auth/router.py` 5 条 + `/health*`/`/health` 3 条 + `/metrics` 1 条）。
+> 当前仓库可直接识别的 HTTP 路由总数为 `84`（`api/routers/*.py` 76 条 + `auth/router.py` 5 条 + `/health*`/`/health` 3 条；`/metrics` 由监控组件在运行时挂载）。
 
 > Status: Implemented（HTTP 路由按当前源码静态提取）
 
@@ -39,6 +39,7 @@
 | GET | `/sessions/scenarios/{scenario_id}` | 查看单个内置场景详情 |
 | GET | `/sessions/` | 列出会话 |
 | GET | `/sessions/{session_id}` | 获取完整会话上下文 |
+| PATCH | `/sessions/{session_id}/name` | 修改会话名称（editor / admin；租户隔离并记录审计事件） |
 | PATCH | `/sessions/{session_id}/data-classification` | 覆写会话数据分级（editor+；降级须 admin 并写审计事件） |
 | DELETE | `/sessions/{session_id}` | 删除会话（admin；审计归档保留，写 `session_purged` 处置事件） |
 | POST | `/chat/{session_id}` | 发送消息并推进一个执行回合 |
@@ -63,7 +64,7 @@
 | POST | `/sessions/{session_id}/stages/{stage_id}/revise` | 准备阶段修订 |
 | POST | `/sessions/{session_id}/stages/{stage_id}/rollback` | 回退阶段 |
 | POST | `/sessions/{session_id}/stages/{stage_id}/sync-review-actions` | 同步审核动作 |
-| GET | `/sessions/{session_id}/gate-report?stage={stage_id}` | 获取单阶段 Gate 诊断报告 |
+| GET | `/sessions/{session_id}/gate-report` | 获取单阶段 Gate 诊断报告；`stage` 为必填 query 参数（1–4） |
 
 ---
 
@@ -178,6 +179,8 @@
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/governance/overview` | 治理总览：租户内项目数 / 风险等级分布 / 门禁通过率 / 待处理人工动作总览 |
-| GET | `/governance/gate-trends` | 门禁通过率趋势（基于 `gate_evaluation_records` 聚合） |
-| GET | `/governance/actions-backlog` | 待处理人工动作积压清单 |
+| GET | `/governance/overview` | 真实业务治理总览：租户内会话数、状态/风险分布、安全发现、待处理动作、报告数和已隔离演示会话数 |
+| GET | `/governance/gate-trends` | 真实业务门禁通过率周趋势（基于 `gate_evaluation_records` 聚合，不补造空周） |
+| GET | `/governance/actions-backlog` | 真实业务会话的待处理人工动作积压清单 |
+
+三个治理端点的统计口径均为当前租户的真实业务会话（`business_internal` / `sensitive_personal`）。`public_demo` 数据及带 `selected_scenario_id` 的四个内置场景会话会被排除；`/governance/overview` 通过 `excluded_demo_sessions` 返回本次隔离的演示会话数。真实业务数为零时仍返回 HTTP 200 与零值结构，不属于加载失败。

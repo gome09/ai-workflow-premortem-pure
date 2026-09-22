@@ -43,8 +43,9 @@ def run_one_step(ctx: ProjectContext) -> ProjectContext:
     "用户发一条消息 -> 状态机推进一步 -> 等用户审核/确认"的交互模型。
     这里保留 graph/nodes.py 中已有节点实现，但显式做单步调度。
 
-    # TODO: 这里其实可以用 LangGraph 的 interrupt_before 来实现暂停,
-    # 但当时调 interrupt 模式调了半天没调通, 就先用 single_step 了
+    `single_step` 默认路径直接调用本调度器；受控 opt-in 的
+    `langgraph_interrupt` 路径在 `graph.langgraph_interrupt_runner` 中复用
+    本函数执行单个确定性节点，并在其外围提供持久 checkpoint 与中断恢复。
     """
     if ctx.current_state == SessionState.COMPLETE:
         logger.info("[%s] Workflow already COMPLETE; no node executed.", ctx.session_id)

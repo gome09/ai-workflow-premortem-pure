@@ -58,6 +58,19 @@ def _insert_eval(
     record_id = str(uuid.uuid4())[:8]
     with store._get_conn() as conn:
         conn.execute(
+            "INSERT OR IGNORE INTO sessions "
+            "(session_id, tenant_id, current_state, context_json, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                session_id,
+                tenant_id,
+                "init",
+                json.dumps({"data_classification": "business_internal"}),
+                evaluated_at,
+                evaluated_at,
+            ),
+        )
+        conn.execute(
             "INSERT INTO gate_evaluation_records "
             "(record_id, session_id, tenant_id, stage_id, risk_tier, passed, "
             " blocking_rule_ids, rule_versions, evaluated_at) "

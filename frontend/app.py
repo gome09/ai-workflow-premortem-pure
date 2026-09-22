@@ -11,6 +11,7 @@ import streamlit as st
 from components.governance_overview import render_governance_overview
 from components.redteam_panel import render_redteam_panel
 from components.report_panel import render_report_panel
+from components.session_item import render_session_item
 from components.stage_message import render_assistant_message
 from dotenv import load_dotenv
 from labels import (
@@ -34,6 +35,12 @@ load_dotenv()
 # ─────────────────────────────────────────────────────────────────────────────
 
 API_BASE = os.getenv("API_BASE", "http://127.0.0.1:8000")
+DEMO_AUTO_AUTH = os.getenv("DEMO_AUTO_AUTH", "false").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 DEMO_USER_EMAIL = os.getenv("DEMO_USER_EMAIL", "demo@example.com")
 DEMO_USER_PASSWORD = os.getenv("DEMO_USER_PASSWORD", "demo-password-123")
 
@@ -111,12 +118,53 @@ def ensure_auth() -> None:
         # 角色以当前 token 的 JWT payload 为准（login 响应体不含 role 字段）
         st.session_state.user_role = _role_from_token(st.session_state.access_token)
         return
-    # 演示账号通常已存在：先登录（不受注册限流影响），失败再注册
-    tokens = _login_demo_user() or _register_demo_user()
+    if DEMO_AUTO_AUTH:
+        # 仅显式启用的演示环境使用固定账号：先登录，失败再注册。
+        tokens = _login_demo_user() or _register_demo_user()
+    else:
+        st.title("登录 AI 工作流风险复核工作台")
+        with st.form("interactive_login"):
+            email = st.text_input("邮箱")
+            password = st.text_input("密码", type="password")
+            register = st.checkbox("首次使用：注册新工作区")
+            submitted = st.form_submit_button("注册并登录" if register else "登录")
+        tokens = None
+        if submitted and email and password:
+            if register:
+                try:
+                    response = requests.post(
+                        f"{API_BASE}/auth/register",
+                        json={"email": email, "password": password},
+                        timeout=10,
+                    )
+                except requests.exceptions.RequestException:
+                    response = None
+            else:
+                try:
+                    response = requests.post(
+                        f"{API_BASE}/auth/login",
+                        data={"username": email, "password": password},
+                        timeout=10,
+                    )
+                except requests.exceptions.RequestException:
+                    response = None
+            if response is not None and response.ok:
+                tokens = response.json()
+            else:
+                detail = "无法连接认证服务"
+                if response is not None:
+                    try:
+                        detail = response.json().get("detail", "认证失败")
+                    except ValueError:
+                        detail = "认证失败"
+                st.error(detail)
     if tokens and tokens.get("access_token"):
         st.session_state.access_token = tokens["access_token"]
         st.session_state.refresh_token = tokens.get("refresh_token")
         st.session_state.user_role = _role_from_token(tokens["access_token"])
+        st.rerun()
+    if not st.session_state.get("access_token"):
+        st.stop()
 
 
 def _auth_headers() -> dict:
@@ -245,6 +293,19 @@ def api_get(path: str) -> dict | list | None:
         return None
 
 
+def api_patch(path: str, body: dict) -> dict | None:
+    try:
+        r = requests.patch(f"{API_BASE}{path}", json=body, headers=_auth_headers(), timeout=30)
+        if r.status_code == 401 and _refresh_access_token():
+            r = requests.patch(f"{API_BASE}{path}", json=body, headers=_auth_headers(), timeout=30)
+        r.raise_for_status()
+        return r.json()
+    except requests.exceptions.RequestException as e:
+        status_code = e.response.status_code if e.response is not None else "连接"
+        st.error(f"❌ 重命名失败（{status_code}）。")
+        return None
+
+
 def api_delete(path: str) -> dict | None:
     try:
         r = requests.delete(f"{API_BASE}{path}", headers=_auth_headers(), timeout=30)
@@ -292,6 +353,32 @@ def _reset_session_state() -> None:
     st.session_state.stage_advancement_decisions = {}
     st.session_state.next_required_operation = None
     st.session_state.selected_scenario_id = None
+    st.session_state.reset_scenario_selector = True
+
+
+def _activate_created_session(created: dict) -> None:
+    """把新建会话切换为当前会话，并清空上一会话的前端派生状态。"""
+    st.session_state.session_id = created["session_id"]
+    st.session_state.selected_scenario_id = created.get("selected_scenario_id")
+    st.session_state.messages = []
+    st.session_state.current_state = created.get("current_state", "init")
+    st.session_state.pending_flags = []
+    st.session_state.pending_actions = []
+    st.session_state.interrupt_records = []
+    st.session_state.stage_readiness = {}
+    st.session_state.stage_resolution = {}
+    st.session_state.stage_advancement_decision = None
+    st.session_state.stage_advancement_decisions = {}
+    st.session_state.next_required_operation = None
+
+
+def _append_bootstrap_exchange(scenario_input: str, result: dict) -> None:
+    """将内置场景的样例输入与首轮回复呈现为正常会话消息。"""
+    st.session_state.messages = [
+        {"role": "user", "content": scenario_input, "metadata": {}},
+        {"role": "assistant", "content": result["ai_reply"], "metadata": {}},
+    ]
+    st.session_state.current_state = result["current_state"]
 
 
 @st.dialog("确认删除会话")
@@ -375,6 +462,10 @@ def list_sessions() -> list[dict]:
     if isinstance(result, list):
         return result
     return []
+
+
+def rename_session(session_id: str, name: str) -> dict | None:
+    return api_patch(f"/sessions/{session_id}/name", {"name": name})
 
 
 def export_report(session_id: str, format: str = "json") -> dict | None:
@@ -855,7 +946,8 @@ def init_session_state() -> None:
     defaults = {
         "session_id": None,
         "selected_scenario_id": None,
-        "selected_scenario_label": "[通用模式]",
+        "selected_scenario_label": None,
+        "loaded_scenario_label": None,
         "messages": [],
         "current_state": "init",
         "pending_flags": [],
@@ -868,6 +960,7 @@ def init_session_state() -> None:
         "next_required_operation": None,
         "health": {},
         "is_loading": False,
+        "handled_session_events": {},
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -875,6 +968,23 @@ def init_session_state() -> None:
 
 
 init_session_state()
+
+
+def consume_session_event(event: dict | None) -> dict | None:
+    """每个会话组件事件只处理一次，避免 Streamlit rerun 后重复提交。"""
+    if not isinstance(event, dict):
+        return None
+    session_id = str(event.get("session_id", ""))
+    nonce = event.get("nonce")
+    if not session_id or nonce is None:
+        return None
+    handled = dict(st.session_state.get("handled_session_events", {}))
+    if handled.get(session_id) == nonce:
+        return None
+    handled[session_id] = nonce
+    st.session_state.handled_session_events = handled
+    return event
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 辅助：刷新当前会话的 flags/actions
@@ -968,18 +1078,38 @@ with st.sidebar:
         # 清除所有 widget keys 以确保干净渲染
         for key in list(st.session_state.keys()):
             if key not in (
-                "_last_nav_choice", "nav_page", "access_token", "refresh_token",
-                "health", "session_id", "current_state", "messages",
-                "pending_flags", "pending_actions", "interrupt_records",
-                "stage_readiness", "selected_scenario_id",
+                "_last_nav_choice",
+                "nav_page",
+                "access_token",
+                "refresh_token",
+                "health",
+                "session_id",
+                "current_state",
+                "messages",
+                "pending_flags",
+                "pending_actions",
+                "interrupt_records",
+                "stage_readiness",
+                "selected_scenario_id",
             ):
-                if key.startswith((
-                    "sess_", "flag_note_", "ev_note_", "finding_note_",
-                    "selected_scenario", "eval_", "material_",
-                    "file_uploader", "export_", "create_artifact",
-                    "report_snapshot_", "selected_report_label",
-                    "dataset_name", "experiment_name",
-                )):
+                if key.startswith(
+                    (
+                        "sess_",
+                        "flag_note_",
+                        "ev_note_",
+                        "finding_note_",
+                        "selected_scenario",
+                        "eval_",
+                        "material_",
+                        "file_uploader",
+                        "export_",
+                        "create_artifact",
+                        "report_snapshot_",
+                        "selected_report_label",
+                        "dataset_name",
+                        "experiment_name",
+                    )
+                ):
                     del st.session_state[key]
         st.rerun()
 
@@ -993,77 +1123,92 @@ with st.sidebar:
         # ── 会话管理 ──────────────────────────────────────────────────────────────
         st.subheader("📋 会话管理")
 
-        col_new, col_refresh = st.columns(2)
+        scenarios = list_builtin_scenarios()
+        scenario_placeholder = "选择内置场景"
+        scenario_options = {}
+        for item in scenarios:
+            scenario_options[item.get("name", "未命名场景")] = item.get("scenario_id")
 
-        with col_new:
-            scenarios = list_builtin_scenarios()
-            scenario_options = {"[通用模式]": None}
-            for item in scenarios:
-                scenario_options[f"{item.get('name')} · {item.get('scenario_id')}"] = item.get(
-                    "scenario_id"
-                )
+        # 「新建空白会话」在上一次渲染中设置复位标记；必须在创建 widget 前
+        # 改写其 key，避免 Streamlit 的 widget-state mutation 异常。
+        if st.session_state.pop("reset_scenario_selector", False):
+            st.session_state.selected_scenario_label = None
+            st.session_state.loaded_scenario_label = None
+        if (
+            st.session_state.get("selected_scenario_label") is not None
+            and st.session_state.selected_scenario_label not in scenario_options
+        ):
+            st.session_state.selected_scenario_label = None
 
+        col_scenario, col_refresh = st.columns([3, 2], vertical_alignment="bottom")
+        with col_scenario:
             selected_scenario_label = st.selectbox(
                 "内置场景",
                 options=list(scenario_options.keys()),
+                index=None,
+                placeholder=scenario_placeholder,
                 key="selected_scenario_label",
+                help="选择后会立即创建会话，并把该场景的样例输入加载到主工作区。",
+                label_visibility="collapsed",
+                accept_new_options=False,
+                filter_mode=None,
             )
-            selected_scenario_id = scenario_options[selected_scenario_label]
-
-            if selected_scenario_id:
-                scenario_detail = get_builtin_scenario(selected_scenario_id)
-                if scenario_detail:
-                    st.caption(scenario_detail.get("description", ""))
-                    st.caption(
-                        f"profile=`{scenario_detail.get('domain_profile')}` · mock=`{scenario_detail.get('mock_fixture')}`"
-                    )
-                    with st.expander("查看场景样例输入", expanded=False):
-                        st.code(scenario_detail.get("input_sample", ""), language="markdown")
-            else:
-                scenario_detail = None
-
-            if st.button("➕ 新建会话", use_container_width=True):
-                with st.spinner("创建中..."):
-                    created = create_session(selected_scenario_id)
-                if created:
-                    sid = created["session_id"]
-                    st.session_state.session_id = sid
-                    st.session_state.selected_scenario_id = created.get("selected_scenario_id")
-                    st.session_state.messages = []
-                    st.session_state.current_state = "init"
-                    st.session_state.pending_flags = []
-                    st.session_state.pending_actions = []
-                    st.session_state.interrupt_records = []
-                    st.session_state.stage_readiness = {}
-
-                    bootstrap_input = (
-                        scenario_detail.get("input_sample")
-                        if scenario_detail
-                        and scenario_detail.get("default_config", {}).get("auto_bootstrap_input")
-                        else "你好，我想开始一个新的项目分析。"
-                    )
-                    with st.spinner("加载引导语..."):
-                        result = bootstrap_scenario_input(sid, bootstrap_input)
-                    if result:
-                        st.session_state.messages.append(
-                            {
-                                "role": "user",
-                                "content": bootstrap_input,
-                                "metadata": {},
-                            }
-                        )
-                        st.session_state.messages.append(
-                            {
-                                "role": "assistant",
-                                "content": result["ai_reply"],
-                                "metadata": {},
-                            }
-                        )
-                        st.session_state.current_state = result["current_state"]
-                    st.rerun()
-
         with col_refresh:
             if st.button("🔄 刷新", use_container_width=True):
+                st.rerun()
+
+        selected_scenario_id = (
+            scenario_options.get(selected_scenario_label) if selected_scenario_label else None
+        )
+
+        if not selected_scenario_id:
+            st.session_state.loaded_scenario_label = None
+
+        if selected_scenario_id:
+            scenario_detail = get_builtin_scenario(selected_scenario_id)
+            if scenario_detail:
+                st.caption(scenario_detail.get("description", ""))
+                st.caption(
+                    f"领域配置=`{scenario_detail.get('domain_profile')}` · "
+                    f"模拟数据=`{scenario_detail.get('mock_fixture')}`"
+                )
+                with st.expander("查看场景样例输入", expanded=False):
+                    st.code(scenario_detail.get("input_sample", ""), language="markdown")
+        else:
+            scenario_detail = None
+
+        # 下拉选择本身就是「加载场景」动作：创建绑定场景的会话并自动发送
+        # 样例输入，使主工作区呈现与正常会话完全一致的用户/助手消息。
+        if (
+            selected_scenario_id
+            and scenario_detail
+            and selected_scenario_label != st.session_state.loaded_scenario_label
+        ):
+            with st.spinner("正在加载内置场景..."):
+                created = create_session(selected_scenario_id)
+                if created:
+                    _activate_created_session(created)
+                    scenario_input = scenario_detail.get("input_sample", "")
+                    result = (
+                        bootstrap_scenario_input(created["session_id"], scenario_input)
+                        if scenario_input
+                        else None
+                    )
+                    if result:
+                        _append_bootstrap_exchange(scenario_input, result)
+                        refresh_flags()
+                        refresh_actions()
+                    st.session_state.loaded_scenario_label = selected_scenario_label
+            if created:
+                st.rerun()
+
+        st.html("<style>.st-key-create_blank_session button p { white-space: nowrap; }</style>")
+        if st.button("➕ 新建空白会话", use_container_width=True, key="create_blank_session"):
+            with st.spinner("创建中..."):
+                created = create_session()
+            if created:
+                _activate_created_session(created)
+                st.session_state.reset_scenario_selector = True
                 st.rerun()
 
         # ── 历史会话列表 ──────────────────────────────────────────────────────────
@@ -1073,63 +1218,62 @@ with st.sidebar:
             st.caption(f"最近 {len(sessions)} 个会话")
             for s in sessions[:10]:
                 icon, _ = STATE_LABELS.get(s["current_state"], ("⚪", ""))
-                raw_label = s.get("research_target") or "未命名"
+                raw_label = (
+                    s.get("session_name")
+                    or s.get("research_target")
+                    or s.get("scenario_name")
+                    or "未命名会话"
+                )
                 domain = s.get("domain") or ""
-
-                # 截断过长的标签
-                label_short = raw_label[:10] + "…" if len(raw_label) > 10 else raw_label
-                domain_short = f" · {domain[:6]}" if domain else ""
-                btn_label = f"{icon} {label_short}{domain_short}"
 
                 # 高亮当前会话
                 is_current = s["session_id"] == st.session_state.session_id
-                btn_type = "primary" if is_current else "secondary"
 
-                if is_admin:
-                    sess_col, del_col = st.columns([4, 1])
-                else:
-                    sess_col = st.columns([1])[0]
-                    del_col = None
+                session_event = consume_session_event(
+                    render_session_item(
+                        session_id=s["session_id"],
+                        label=raw_label,
+                        icon=icon,
+                        domain=domain,
+                        is_current=is_current,
+                        disabled=st.session_state.get("user_role") == "viewer",
+                        can_delete=is_admin,
+                    )
+                )
+                if session_event and session_event.get("action") == "rename":
+                    renamed = rename_session(s["session_id"], session_event.get("name", ""))
+                    if renamed:
+                        st.toast(f"会话已重命名为：{renamed['session_name']}")
+                        st.rerun()
+                elif session_event and session_event.get("action") == "delete":
+                    confirm_delete_session(
+                        s["session_id"],
+                        raw_label,
+                        s.get("current_state", ""),
+                        is_current,
+                    )
+                elif session_event and session_event.get("action") == "select":
+                    if not is_current:
+                        st.session_state.session_id = s["session_id"]
+                        st.session_state.current_state = s["current_state"]
 
-                with sess_col:
-                    if st.button(
-                        btn_label,
-                        key=f"sess_{s['session_id']}",
-                        use_container_width=True,
-                        type=btn_type,
-                    ):
-                        if not is_current:
-                            st.session_state.session_id = s["session_id"]
-                            st.session_state.current_state = s["current_state"]
-
-                            ctx = get_session(s["session_id"])
-                            if ctx:
-                                st.session_state.selected_scenario_id = ctx.get("selected_scenario_id")
-                                st.session_state.messages = restore_messages_from_ctx(ctx)
-                                st.session_state.pending_flags = [
-                                    f for f in ctx.get("flagged_items", []) if f["status"] == "pending"
-                                ]
-                                st.session_state.pending_actions = [
-                                    a for a in ctx.get("pending_actions", []) if a["status"] == "pending"
-                                ]
-                                st.session_state.interrupt_records = list_interrupt_records(s["session_id"])
-                                st.session_state.stage_readiness = get_stage_readiness(s["session_id"])
-                            st.rerun()
-
-                if del_col is not None:
-                    with del_col:
-                        if st.button(
-                            "🗑️",
-                            key=f"del_{s['session_id']}",
-                            use_container_width=True,
-                            help=f"删除会话：{raw_label}",
-                        ):
-                            confirm_delete_session(
-                                s["session_id"],
-                                raw_label,
-                                s.get("current_state", ""),
-                                is_current,
+                        ctx = get_session(s["session_id"])
+                        if ctx:
+                            st.session_state.selected_scenario_id = ctx.get("selected_scenario_id")
+                            st.session_state.messages = restore_messages_from_ctx(ctx)
+                            st.session_state.pending_flags = [
+                                f for f in ctx.get("flagged_items", []) if f["status"] == "pending"
+                            ]
+                            st.session_state.pending_actions = [
+                                a
+                                for a in ctx.get("pending_actions", [])
+                                if a["status"] == "pending"
+                            ]
+                            st.session_state.interrupt_records = list_interrupt_records(
+                                s["session_id"]
                             )
+                            st.session_state.stage_readiness = get_stage_readiness(s["session_id"])
+                        st.rerun()
         else:
             st.caption("暂无历史会话")
 
@@ -1222,7 +1366,9 @@ with st.sidebar:
                                 f"{blocker_type_zh(blocker.get('blocker_type'))}] "
                                 f"{blocker.get('message')}"
                             )
-                            st.caption(f"建议操作：{resolution_zh(blocker.get('required_resolution'))}")
+                            st.caption(
+                                f"建议操作：{resolution_zh(blocker.get('required_resolution'))}"
+                            )
 
                         stage_ops = advancement_decision.get("required_operations") or (
                             stage_resolution.get("by_stage") or {}
@@ -1271,7 +1417,9 @@ with st.sidebar:
                                                 st.session_state.stage_resolution = {}
                                                 refresh_actions()
                                                 st.rerun()
-                                    if not op.get("action_id") and op.get("required_resolution") in {
+                                    if not op.get("action_id") and op.get(
+                                        "required_resolution"
+                                    ) in {
                                         "resolve_action",
                                         "edit_stage_output",
                                         "approve_escalation",
@@ -1332,7 +1480,9 @@ with st.sidebar:
                                     f"source={blocker.get('source_type') or '-'}:"
                                     f"{blocker.get('source_id') or '-'}"
                                 )
-                                bits.append(f"required_resolution={blocker.get('required_resolution')}")
+                                bits.append(
+                                    f"required_resolution={blocker.get('required_resolution')}"
+                                )
                                 st.caption(" · ".join(bits))
                     else:
                         st.success("当前阶段没有阻断项。")
@@ -1369,7 +1519,9 @@ with st.sidebar:
             # ── Human Oversight 动作队列 ───────────────────────────────────────────
             refresh_actions()
             actions = st.session_state.pending_actions
-            action_title = f"🚦 待处理人工动作 ({len(actions)})" if actions else "✅ 无待处理人工动作"
+            action_title = (
+                f"🚦 待处理人工动作 ({len(actions)})" if actions else "✅ 无待处理人工动作"
+            )
             st.subheader(action_title)
 
             if actions:
@@ -1416,7 +1568,10 @@ with st.sidebar:
                                     use_container_width=True,
                                 ):
                                     if resolve_action(
-                                        st.session_state.session_id, action_id, "verify_evidence", note
+                                        st.session_state.session_id,
+                                        action_id,
+                                        "verify_evidence",
+                                        note,
                                     ):
                                         refresh_flags()
                                         refresh_actions()
@@ -1705,13 +1860,17 @@ with st.sidebar:
                         st.caption(finding.get("description", ""))
                         st.caption("建议处理：" + finding.get("recommended_action", ""))
                         if is_high_crit:
-                            st.warning("高危 / 危急安全发现尚未处理——可能阻断阶段推进或需要人工复核。")
+                            st.warning(
+                                "高危 / 危急安全发现尚未处理——可能阻断阶段推进或需要人工复核。"
+                            )
                         finding_note = st.text_input(
                             "处理备注", key=f"safety_note_{finding.get('finding_id')}"
                         )
                         requires_review = finding.get("requires_human_review")
                         if requires_review and is_high_crit:
-                            st.caption('该高风险安全发现已派生阻断动作，请到"待处理人工动作"面板处理。')
+                            st.caption(
+                                '该高风险安全发现已派生阻断动作，请到"待处理人工动作"面板处理。'
+                            )
                             if st.button(
                                 "✅ 标记已处理",
                                 key=f"resolve_safety_{finding.get('finding_id')}",
@@ -1871,7 +2030,9 @@ with st.sidebar:
                             key=f"sync_redteam_{case_id}",
                             use_container_width=True,
                         ):
-                            eval_case = sync_redteam_case_to_eval(st.session_state.session_id, case_id)
+                            eval_case = sync_redteam_case_to_eval(
+                                st.session_state.session_id, case_id
+                            )
                             if eval_case:
                                 st.success(f"已同步为评测用例：{eval_case.get('eval_id')}")
                             refresh_actions()
@@ -2014,7 +2175,9 @@ with st.sidebar:
                             result = run_eval_cases(st.session_state.session_id, None, run_mode)
                             if result:
                                 refresh_actions()
-                                st.success(f"已创建 {len(result.get('created_runs', []))} 次评测运行。")
+                                st.success(
+                                    f"已创建 {len(result.get('created_runs', []))} 次评测运行。"
+                                )
                                 st.rerun()
                     with col_refresh_runs:
                         st.caption(f"评测运行数：{len(eval_runs)}")
@@ -2067,7 +2230,11 @@ with st.sidebar:
                             height=90,
                         )
                         score_value = st.slider(
-                            "人工评分（1-5）", 1, 5, int(case.get("human_score") or 3), key=score_key
+                            "人工评分（1-5）",
+                            1,
+                            5,
+                            int(case.get("human_score") or 3),
+                            key=score_key,
                         )
                         passed_value = st.selectbox(
                             "人工结论", ["未定", "通过", "不通过"], key=pass_key
@@ -2211,7 +2378,6 @@ with st.sidebar:
             else:
                 st.info("暂无报告快照。可在上方创建快照或导出实时报告。")
 
-
     # ─────────────────────────────────────────────────────────────────────────────
 # 主区域
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2230,7 +2396,7 @@ elif not st.session_state.session_id:
 
     ## 🚀 快速开始
 
-    点击左侧 **「➕ 新建会话」** 即可开始。
+    选择左侧 **内置场景** 可直接加载示例，或点击 **「➕ 新建空白会话」** 从零开始。
 
     ---
 

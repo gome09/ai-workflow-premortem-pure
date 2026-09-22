@@ -8,10 +8,11 @@
 
 - 项目：AI Workflow Premortem，AI 工作流预验尸与人机监督平台；源于本科毕业设计，当前按长期维护的开源项目演进。
 - 当前应用版本：`1.3.0`；版本元数据必须同时保持 `core/version.py` 与 `pyproject.toml` 一致。
-- 当前数据库迁移头：Alembic `V005`；当前 `ProjectContext` schema：`0.9.0`。
+- 当前数据库迁移头：Alembic `V007`；当前 `ProjectContext` schema：`0.9.0`。
 - Phase 0–4 代码侧已完成；`docs/archive/plan/phase-*.md` 与 `phase-*-design.md` 是历史实施/设计基线（已归档），不得把其中旧版本、旧行号或未勾选项当作当前事实。
 - formal-project-uplift Wave A–E 已完成；剩余工作主要是仓库公开后的远端治理动作，如 CodeQL 转正、main 分支保护和发布设置。权威状态见 `.upgrade/STATE.md`。
-- 最近一次本地全量测试基线：`681 passed, 1 skipped`（2026-09-01，项目 `.venv` pytest，与 `make test` 即 `uv run pytest tests/` 等价）。测试数量会随测试集合变化，不应硬编码为永久断言。
+- 最近一次本地全量测试基线：`731 passed, 1 skipped`（2026-09-21，项目 `.venv` pytest，与 `make test` 即 `uv run pytest tests/` 等价）。本次基线包含会话工作台交互、治理真实数据隔离、稀疏趋势图显示，以及 LangGraph PostgreSQL checkpoint / durable resume 回归；测试数量会随测试集合变化，不应硬编码为永久断言。
+- 治理总览当前只聚合真实业务会话（`business_internal` / `sensitive_personal`）；四个内置场景及其他 `public_demo` 会话必须与总览、趋势、积压动作和对应业务 Gauge 隔离。前端必须明确展示该统计口径，正常零数据不得表述为加载失败。
 - 录制测试基线必须走 `uv run`（项目 `.venv`）。用系统 Python 直接跑 `python -m pytest` 会因缺少 `prometheus-fastapi-instrumentator` 等主依赖触发 7 处 `importorskip` 跳过，得到 `623 passed, 8 skipped` 的降级结果——该数字不是有效基线。
 
 ## 事实来源优先级
@@ -57,7 +58,7 @@ make version-check
 ## 架构不变量
 
 - 状态转换由确定性代码控制，LLM 只生成分析内容，不决定流程跳转。
-- 默认执行路径是 `single_step`；`langgraph_interrupt` 是实验性 opt-in 路径。
+- 默认执行路径是 `single_step`；`langgraph_interrupt` 是受控 opt-in 路径，启用时必须使用加密 PostgreSQL checkpoint、单 worker 和 fail-closed readiness。
 - 高风险推进必须经过风险自适应门禁和必要的 `PendingHumanAction`。
 - API 路由只做协议适配，核心逻辑应位于 `core/`、`graph/`、`stages/` 或 `storage/`。
 - PostgreSQL schema 迁移只通过 Alembic；`core/migrations/` 仅用于历史 `ProjectContext` JSON 升级，二者不得混用。
@@ -66,7 +67,7 @@ make version-check
 
 ## 当前安全与合规边界
 
-- 字段加密代码已实现，但 `make setup` 不生成 `DATA_ENCRYPTION_KEY`；未配置时 PostgreSQL 会告警并继续明文存储。生产文档必须要求检查 `/health.data_encryption == enabled`。
+- `make setup` 会生成独立的字段加密与 checkpoint Fernet key，并通过 Docker secrets 注入；非 Docker 部署仍需显式配置。生产必须检查 `/health.data_encryption == enabled`，中断模式还必须确认 adapter 为 persistent/encrypted/healthy。
 - `AUDIT_RETENTION_DAYS` 与 `SESSION_RETENTION_DAYS` 当前仅是配置和健康检查展示，尚无自动清理调度器，不得宣称已自动执行留存策略。
 - `PII_MASK_BEFORE_LLM` 默认关闭；涉及真实个人信息的场景必须明确部署侧启用责任。
 - main 分支保护是否已在 GitHub 后台开启，必须以远端实查为准；本地当前状态记录为待维护者执行。
@@ -97,3 +98,13 @@ make version-check
 - ✅ 提交前运行 `git status --short` 检查改动
 - ✅ 使用 `git add <specific-file>` 显式添加
 <!-- project-upgrade:end -->
+
+<!-- project-upgrade-maintainer:start -->
+## Project Upgrade Governance
+
+This repository contains a governed upgrade workspace at `.upgrade/`. Before reading, planning, or modifying upgrade-workflow artifacts, read `.upgrade/AGENTS.md`, which is the canonical scoped governance contract for `.upgrade/**`.
+
+Canonical context: `.upgrade/CONFIG.json` (active modules), `.upgrade/AUTHORITY.md` / `.upgrade/AUTHORITY.json` (approved project authority map), `.upgrade/ARTIFACTS.json` (registered artifact policies), `.upgrade/STATE.md` (current state), `.upgrade/MANIFEST.md` (inventory), `.upgrade/docs/UPGRADE_REQUIREMENTS.md` (requirements), and `.upgrade/docs/UPGRADE_PLAN.md` (upgrade plan). When configured, `.upgrade/delivery/POLICY.json` defines approved minimum delivery evidence. Additional phase/evidence/lifecycle resources materialize only when their modules are active.
+
+Do not bypass the review -> exact approval -> apply lifecycle for governed mutations. Protected or sensitive collection requires exact-path authorization again at apply time. Repository/local instructions remain authoritative for their own scope; surface conflicts instead of silently resolving them.
+<!-- project-upgrade-maintainer:end -->

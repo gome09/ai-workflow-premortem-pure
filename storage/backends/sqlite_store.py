@@ -8,7 +8,7 @@ import logging
 import sqlite3
 import threading
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -363,6 +363,25 @@ CREATE TABLE IF NOT EXISTS interrupt_records (
     resolved_at           TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_interrupt_records_session ON interrupt_records (session_id);
+
+CREATE TABLE IF NOT EXISTS interrupt_resume_outbox (
+    interrupt_id   TEXT PRIMARY KEY,
+    session_id     TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+    tenant_id      TEXT,
+    action_id      TEXT NOT NULL UNIQUE,
+    thread_id      TEXT NOT NULL,
+    checkpoint_ns  TEXT NOT NULL DEFAULT '',
+    resume_payload TEXT NOT NULL,
+    status         TEXT NOT NULL DEFAULT 'pending',
+    attempts       INTEGER NOT NULL DEFAULT 0,
+    claimed_at     TEXT,
+    completed_at   TEXT,
+    last_error     TEXT,
+    created_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_interrupt_resume_outbox_pending
+ON interrupt_resume_outbox (status, updated_at, created_at);
 
 CREATE TABLE IF NOT EXISTS tenants (
     tenant_id  TEXT PRIMARY KEY,
@@ -1050,7 +1069,34 @@ class SQLiteSessionStore:
                 self._sync_eval_experiments(conn, ctx)
                 self._sync_redteam_cases(conn, ctx)
                 self._sync_interrupt_records(conn, ctx)
+                self._sync_interrupt_resume_outbox(conn, ctx)
                 conn.commit()
+
+    def _sync_interrupt_resume_outbox(self, conn: sqlite3.Connection, ctx: ProjectContext) -> None:
+        for record in getattr(ctx, "interrupt_records", []) or []:
+            if record.status != "resumed" or record.resume_consumed_at is not None:
+                continue
+            conn.execute(
+                """
+                INSERT INTO interrupt_resume_outbox (
+                    interrupt_id, session_id, tenant_id, action_id, thread_id,
+                    checkpoint_ns, resume_payload, status, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP)
+                ON CONFLICT(action_id) DO UPDATE SET
+                    resume_payload=excluded.resume_payload,
+                    updated_at=CURRENT_TIMESTAMP,
+                    status=CASE WHEN status='completed' THEN 'completed' ELSE status END
+                """,
+                (
+                    record.interrupt_id,
+                    ctx.session_id,
+                    ctx.tenant_id or None,
+                    record.action_id,
+                    record.thread_id,
+                    record.checkpoint_ns,
+                    json.dumps(record.resume_value or {}, default=str),
+                ),
+            )
 
     def load(self, session_id: str, tenant_id: str = "") -> ProjectContext | None:
         """Load a session; return None if not found or tenant mismatch."""
@@ -1147,6 +1193,152 @@ class SQLiteSessionStore:
                 conn.commit()
         return archived
 
+    def purge_session(
+        self,
+        session_id: str,
+        tenant_id: str,
+        purged_by: str,
+        summary: dict,
+    ) -> int:
+        """Archive audit evidence and delete a session in one SQLite transaction."""
+        archived = 0
+        with self._lock:
+            with self._get_conn() as conn:
+                rows = conn.execute(
+                    "SELECT event_id, actor, event_type, target_type, target_id, before_hash, "
+                    "after_hash, before_snapshot, after_snapshot, metadata, created_at "
+                    "FROM audit_events WHERE session_id = ?",
+                    (session_id,),
+                ).fetchall()
+                for row in rows:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO audit_events_archive "
+                        "(archive_id, original_session_id, event_id, actor, event_type, target_type, "
+                        "target_id, before_hash, after_hash, before_snapshot, after_snapshot, metadata, "
+                        "original_created_at, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            f"arch-{row['event_id']}",
+                            session_id,
+                            row["event_id"],
+                            row["actor"],
+                            row["event_type"],
+                            row["target_type"],
+                            row["target_id"],
+                            row["before_hash"],
+                            row["after_hash"],
+                            row["before_snapshot"],
+                            row["after_snapshot"],
+                            row["metadata"],
+                            row["created_at"],
+                            datetime.utcnow().isoformat(),
+                        ),
+                    )
+                    archived += 1
+                conn.execute(
+                    "INSERT INTO audit_events_archive "
+                    "(archive_id, original_session_id, event_id, actor, event_type, target_type, "
+                    "target_id, before_snapshot, after_snapshot, metadata, original_created_at, archived_at) "
+                    "VALUES (?, ?, ?, ?, 'session_purged', 'session', ?, NULL, ?, ?, ?, ?)",
+                    (
+                        f"arch-purged-{uuid.uuid4()}",
+                        session_id,
+                        f"purge-{uuid.uuid4()}",
+                        purged_by,
+                        session_id,
+                        json.dumps(summary, default=str),
+                        json.dumps({"purged_by": purged_by}, default=str),
+                        datetime.utcnow().isoformat(),
+                        datetime.utcnow().isoformat(),
+                    ),
+                )
+                archived += 1
+                if tenant_id:
+                    cursor = conn.execute(
+                        "DELETE FROM sessions WHERE session_id = ? AND tenant_id = ?",
+                        (session_id, tenant_id),
+                    )
+                else:
+                    cursor = conn.execute(
+                        "DELETE FROM sessions WHERE session_id = ?", (session_id,)
+                    )
+                if cursor.rowcount != 1:
+                    raise ValueError(f"Session not found during purge: {session_id}")
+                conn.commit()
+        return archived
+
+    def enqueue_interrupt_resume(self, ctx: ProjectContext, record: Any) -> None:
+        with self._lock:
+            with self._get_conn() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO interrupt_resume_outbox (
+                        interrupt_id, session_id, tenant_id, action_id, thread_id,
+                        checkpoint_ns, resume_payload, status, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP)
+                    ON CONFLICT(action_id) DO UPDATE SET
+                        resume_payload=excluded.resume_payload,
+                        updated_at=CURRENT_TIMESTAMP,
+                        status=CASE WHEN status='completed' THEN 'completed' ELSE 'pending' END,
+                        last_error=CASE WHEN status='completed' THEN last_error ELSE NULL END
+                    """,
+                    (
+                        record.interrupt_id,
+                        ctx.session_id,
+                        ctx.tenant_id or None,
+                        record.action_id,
+                        record.thread_id,
+                        record.checkpoint_ns,
+                        json.dumps(record.resume_value or {}, default=str),
+                    ),
+                )
+                conn.commit()
+
+    def claim_interrupt_resume(self, interrupt_id: str) -> bool:
+        stale_before = (datetime.utcnow() - timedelta(minutes=5)).isoformat()
+        with self._lock:
+            with self._get_conn() as conn:
+                cursor = conn.execute(
+                    """
+                    UPDATE interrupt_resume_outbox
+                    SET status='processing', attempts=attempts+1,
+                        claimed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP, last_error=NULL
+                    WHERE interrupt_id=? AND (
+                        status IN ('pending','failed') OR (status='processing' AND claimed_at < ?)
+                    )
+                    """,
+                    (interrupt_id, stale_before),
+                )
+                conn.commit()
+                return cursor.rowcount == 1
+
+    def complete_interrupt_resume(self, interrupt_id: str, error: str = "") -> None:
+        with self._lock:
+            with self._get_conn() as conn:
+                conn.execute(
+                    "UPDATE interrupt_resume_outbox SET status=?, completed_at=?, last_error=?, "
+                    "updated_at=CURRENT_TIMESTAMP WHERE interrupt_id=?",
+                    (
+                        "failed" if error else "completed",
+                        None if error else datetime.utcnow().isoformat(),
+                        error or None,
+                        interrupt_id,
+                    ),
+                )
+                conn.commit()
+
+    def list_pending_interrupt_resumes(self, limit: int = 100) -> list[dict]:
+        stale_before = (datetime.utcnow() - timedelta(minutes=5)).isoformat()
+        with self._lock:
+            with self._get_conn() as conn:
+                rows = conn.execute(
+                    "SELECT interrupt_id, session_id, tenant_id, action_id "
+                    "FROM interrupt_resume_outbox WHERE status IN ('pending','failed') "
+                    "OR (status='processing' AND claimed_at < ?) "
+                    "ORDER BY updated_at, created_at LIMIT ?",
+                    (stale_before, limit),
+                ).fetchall()
+        return [dict(row) for row in rows]
+
     def delete(self, session_id: str, tenant_id: str = "") -> bool:
         """Delete a session row. Returns True if a row was deleted."""
         with self._lock:
@@ -1171,6 +1363,8 @@ class SQLiteSessionStore:
                 if tenant_id:
                     rows = conn.execute(
                         "SELECT session_id, current_state, created_at, updated_at, "
+                        "json_extract(context_json,'$.session_name') AS session_name, "
+                        "json_extract(context_json,'$.scenario_name') AS scenario_name, "
                         "json_extract(context_json,'$.research_target') AS research_target, "
                         "json_extract(context_json,'$.domain') AS domain "
                         "FROM sessions WHERE tenant_id=? ORDER BY updated_at DESC LIMIT ?",
@@ -1179,6 +1373,8 @@ class SQLiteSessionStore:
                 else:
                     rows = conn.execute(
                         "SELECT session_id, current_state, created_at, updated_at, "
+                        "json_extract(context_json,'$.session_name') AS session_name, "
+                        "json_extract(context_json,'$.scenario_name') AS scenario_name, "
                         "json_extract(context_json,'$.research_target') AS research_target, "
                         "json_extract(context_json,'$.domain') AS domain "
                         "FROM sessions ORDER BY updated_at DESC LIMIT ?",
@@ -1398,7 +1594,7 @@ class SQLiteSessionStore:
                 conn.commit()
 
     def gate_trends(self, tenant_id: str, weeks: int = 8) -> list[dict]:
-        """按周聚合门禁评估趋势。空 tenant_id 不开放跨租户查询。"""
+        """按周聚合真实业务会话的门禁趋势；空 tenant_id 不跨租户查询。"""
         if not tenant_id:
             return []
         from datetime import datetime, timedelta
@@ -1408,19 +1604,29 @@ class SQLiteSessionStore:
             with self._get_conn() as conn:
                 rows = conn.execute(
                     """
-                    SELECT strftime('%Y-W%W', evaluated_at) AS week,
-                           passed,
-                           blocking_rule_ids
-                    FROM gate_evaluation_records
-                    WHERE tenant_id = ? AND evaluated_at >= ?
+                    SELECT strftime('%Y-W%W', ger.evaluated_at) AS week,
+                           ger.passed,
+                           ger.blocking_rule_ids
+                    FROM gate_evaluation_records AS ger
+                    JOIN sessions AS s ON s.session_id = ger.session_id
+                    WHERE ger.tenant_id = ?
+                      AND s.tenant_id = ?
+                      AND COALESCE(
+                          json_extract(s.context_json, '$.data_classification'),
+                          'business_internal'
+                      ) <> 'public_demo'
+                      AND NULLIF(
+                          json_extract(s.context_json, '$.selected_scenario_id'), ''
+                      ) IS NULL
+                      AND ger.evaluated_at >= ?
                     ORDER BY week DESC
                     """,
-                    (tenant_id, cutoff),
+                    (tenant_id, tenant_id, cutoff),
                 ).fetchall()
         return _aggregate_gate_trends([dict(r) for r in rows])
 
     def governance_overview(self, tenant_id: str) -> dict:
-        """租户内治理总览聚合。空 tenant_id 返回零值字典。"""
+        """租户内真实业务治理总览；内置场景演示会话不参与聚合。"""
         zero = {
             "sessions_total": 0,
             "state_distribution": {},
@@ -1428,6 +1634,7 @@ class SQLiteSessionStore:
             "open_safety_findings": 0,
             "pending_actions": 0,
             "reports_exported": 0,
+            "excluded_demo_sessions": 0,
         }
         if not tenant_id:
             return zero
@@ -1435,33 +1642,61 @@ class SQLiteSessionStore:
             with self._get_conn() as conn:
                 state_rows = conn.execute(
                     "SELECT current_state, COUNT(*) AS n FROM sessions "
-                    "WHERE tenant_id=? GROUP BY current_state",
+                    "WHERE tenant_id=? "
+                    "AND COALESCE(json_extract(context_json, '$.data_classification'), "
+                    "'business_internal') <> 'public_demo' "
+                    "AND NULLIF(json_extract(context_json, '$.selected_scenario_id'), '') "
+                    "IS NULL GROUP BY current_state",
                     (tenant_id,),
                 ).fetchall()
                 ctx_rows = conn.execute(
-                    "SELECT session_id, context_json FROM sessions WHERE tenant_id=?",
+                    "SELECT session_id, context_json FROM sessions WHERE tenant_id=? "
+                    "AND COALESCE(json_extract(context_json, '$.data_classification'), "
+                    "'business_internal') <> 'public_demo' "
+                    "AND NULLIF(json_extract(context_json, '$.selected_scenario_id'), '') "
+                    "IS NULL",
                     (tenant_id,),
                 ).fetchall()
                 eval_rows = conn.execute(
-                    "SELECT session_id, risk_tier, evaluated_at "
-                    "FROM gate_evaluation_records WHERE tenant_id=?",
-                    (tenant_id,),
+                    "SELECT ger.session_id, ger.risk_tier, ger.evaluated_at "
+                    "FROM gate_evaluation_records AS ger "
+                    "JOIN sessions AS s ON s.session_id = ger.session_id "
+                    "WHERE ger.tenant_id=? AND s.tenant_id=? "
+                    "AND COALESCE(json_extract(s.context_json, '$.data_classification'), "
+                    "'business_internal') <> 'public_demo' "
+                    "AND NULLIF(json_extract(s.context_json, '$.selected_scenario_id'), '') "
+                    "IS NULL",
+                    (tenant_id, tenant_id),
                 ).fetchall()
-        return _aggregate_governance_overview(
+                demo_row = conn.execute(
+                    "SELECT COUNT(*) AS n FROM sessions WHERE tenant_id=? "
+                    "AND (COALESCE(json_extract(context_json, '$.data_classification'), "
+                    "'business_internal') = 'public_demo' "
+                    "OR NULLIF(json_extract(context_json, '$.selected_scenario_id'), '') "
+                    "IS NOT NULL)",
+                    (tenant_id,),
+                ).fetchone()
+        overview = _aggregate_governance_overview(
             [dict(r) for r in state_rows],
             [dict(r) for r in ctx_rows],
             [dict(r) for r in eval_rows],
             zero,
         )
+        overview["excluded_demo_sessions"] = demo_row["n"] if demo_row else 0
+        return overview
 
     def actions_backlog(self, tenant_id: str, limit: int = 50) -> list[dict]:
-        """待处理人工动作明细，按 risk_level + 等待时长排序。空 tenant_id 返回空列表。"""
+        """真实业务会话的待处理动作；空 tenant_id 返回空列表。"""
         if not tenant_id:
             return []
         with self._lock:
             with self._get_conn() as conn:
                 rows = conn.execute(
-                    "SELECT session_id, context_json FROM sessions WHERE tenant_id=?",
+                    "SELECT session_id, context_json FROM sessions WHERE tenant_id=? "
+                    "AND COALESCE(json_extract(context_json, '$.data_classification'), "
+                    "'business_internal') <> 'public_demo' "
+                    "AND NULLIF(json_extract(context_json, '$.selected_scenario_id'), '') "
+                    "IS NULL",
                     (tenant_id,),
                 ).fetchall()
         return _aggregate_actions_backlog([dict(r) for r in rows], limit)
@@ -1478,9 +1713,19 @@ class SQLiteSessionStore:
         with self._lock:
             with self._get_conn() as conn:
                 state_rows = conn.execute(
-                    "SELECT current_state, COUNT(*) AS n FROM sessions GROUP BY current_state"
+                    "SELECT current_state, COUNT(*) AS n FROM sessions "
+                    "WHERE COALESCE(json_extract(context_json, '$.data_classification'), "
+                    "'business_internal') <> 'public_demo' "
+                    "AND NULLIF(json_extract(context_json, '$.selected_scenario_id'), '') "
+                    "IS NULL GROUP BY current_state"
                 ).fetchall()
-                ctx_rows = conn.execute("SELECT context_json FROM sessions").fetchall()
+                ctx_rows = conn.execute(
+                    "SELECT context_json FROM sessions "
+                    "WHERE COALESCE(json_extract(context_json, '$.data_classification'), "
+                    "'business_internal') <> 'public_demo' "
+                    "AND NULLIF(json_extract(context_json, '$.selected_scenario_id'), '') "
+                    "IS NULL"
+                ).fetchall()
         for row in state_rows:
             r = dict(row)
             state_distribution[r["current_state"]] = r["n"]

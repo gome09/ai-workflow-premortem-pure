@@ -1,4 +1,8 @@
-# Stage 1: Install dependencies
+# Stage 1: obtain the pinned uv binary from its official container image.
+# This avoids a mutable, unauthenticated-at-build-time `pip install uv` download.
+FROM ghcr.io/astral-sh/uv:0.11.12@sha256:3a59a3cdd5f7c217faa36e32dbc7fddbb0412889c2a0a5229f6d790e5a019dd7 AS uv
+
+# Stage 2: Install dependencies
 FROM python:3.11-slim AS deps
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -6,11 +10,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_PROJECT_ENVIRONMENT=/opt/aiwf-venv
 
 WORKDIR /app
-RUN pip install --no-cache-dir uv
+COPY --from=uv /uv /uvx /bin/
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-install-project
 
-# Stage 2: Runtime image
+# Stage 3: Runtime image
 FROM python:3.11-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

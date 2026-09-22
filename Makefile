@@ -24,22 +24,22 @@ dev-db:
 
 # 启动 API（需先启动 dev-db）
 dev-api:
-	uvicorn api.main:app --reload --port 8000
+	uv run python -m uvicorn api.main:app --reload --port 8000
 
 # 启动前端（需先启动 dev-api）
 dev-frontend:
-	streamlit run frontend/app.py --server.port 8501
+	uv run python -m streamlit run frontend/app.py --server.port 8501
 
 demo-api:
 	cp -f .env.demo .env
-	uvicorn api.main:app --reload --port 8000
+	uv run python -m uvicorn api.main:app --reload --port 8000
 
 # demo-frontend 与 demo-ui 等价（均刷新 .env 后启动前端）
 demo-frontend: demo-ui
 
 demo-ui:
 	cp -f .env.demo .env
-	streamlit run frontend/app.py --server.port 8501
+	uv run python -m streamlit run frontend/app.py --server.port 8501
 
 # 完整 Docker 启动
 docker-up:
@@ -67,11 +67,11 @@ security-check: lint audit
 
 # 版本元数据一致性检查（pyproject.toml 与 core/version.py 对齐）
 version-check:
-	python scripts/version_check.py
+	uv run python scripts/version_check.py
 
 # 文档-代码一致性检查（链接/make target/仓库路径）
 doc-check:
-	python scripts/doc_consistency_check.py
+	uv run python scripts/doc_consistency_check.py
 
 # 运行测试
 test:
@@ -109,7 +109,7 @@ migrate-history:
 setup:
 	@if [ ! -f .env ]; then echo "Copying .env.example to .env..."; cp .env.example .env; fi
 	@if [ ! -d secrets ]; then echo "Copying secrets.example/ to secrets/..."; cp -r secrets.example secrets; fi
-	@echo "Randomizing generatable secrets (jwt/postgres/redis/grafana) and syncing .env..."
+	@echo "Randomizing service secrets and Fernet encryption keys, then syncing .env..."
 	./scripts/gen_secrets.sh
 	@echo "Generating TLS certificates..."
 	./scripts/gen_certs.sh
@@ -122,11 +122,11 @@ lite-up:
 	@if [ ! -f .env ]; then echo "Copying .env.demo to .env..."; cp .env.demo .env; fi
 	docker compose -f docker-compose.lite.yml up --build
 
-# prod-up 前置检查：secrets/ 六文件与 TLS 证书缺失时立即报错（避免晦涩的 compose 挂载失败）；
+# prod-up 前置检查：secrets/ 八文件与 TLS 证书缺失时立即报错（避免晦涩的 compose 挂载失败）；
 # 可生成密钥仍为 CHANGE_ME 示例值时仅警告（本地试跑生产栈仍可用）。
 prod-preflight:
 	@missing=0; \
-	for f in jwt_secret postgres_password redis_password deepseek_api_key tavily_api_key grafana_password; do \
+	for f in jwt_secret postgres_password redis_password deepseek_api_key tavily_api_key grafana_password data_encryption_key checkpoint_encryption_key; do \
 		if [ ! -f "secrets/$$f" ]; then echo "ERROR: secrets/$$f missing"; missing=1; fi; \
 	done; \
 	if [ ! -f nginx/certs/server.crt ] || [ ! -f nginx/certs/server.key ]; then \

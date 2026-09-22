@@ -113,8 +113,8 @@
 ```json
 {
   "scenario_id": "generic_rag_demo",
-  "name": "Generic RAG Demo",
-  "description": "通用企业知识库问答助手示例，使用 default profile 和 default mock fixture。",
+  "name": "通用 RAG 知识库问答",
+  "description": "通用企业知识库问答助手示例，使用通用领域配置和通用模拟数据。",
   "input_sample_path": "examples/sample_project_input.md",
   "domain_profile": "default",
   "mock_fixture": "default",
@@ -293,75 +293,11 @@ uv run pytest tests/test_mock_llm_mode.py -q
 
 ---
 
-## 本地启动与验收步骤
+## 本地验收
 
-这一部分适合毕设答辩演示，也适合开发者自测。
+启动命令、环境模板和端口以 [startup.md](startup.md) 为准；推荐使用 `.env.demo` 对应的 Mock + SQLite 模式。工作台选择内置场景后会创建场景会话并把样例输入送入 INIT；“新建空白会话”则保持无场景、无默认消息。
 
-### 1. 使用 `.env.demo`
-
-```bash
-cp .env.demo .env
-uv sync --all-extras
-uv run uvicorn api.main:app --reload --port 8000
-```
-
-`.env.demo` 的关键配置是：
-
-- `LLM_MODE=mock`
-- `STORAGE_BACKEND=sqlite`
-- `DEFAULT_SCENARIO_ID=generic_rag_demo`
-- `JWT_SECRET=<demo-only local secret>`
-
-这意味着：
-
-- 不依赖真实 DeepSeek / Tavily
-- 不依赖 PostgreSQL / Redis
-- 不依赖任何私钥证书
-- 新建 session 时默认可挂载一个可演示场景
-
-### 2. 启动前端
-
-```bash
-uv run streamlit run frontend/app.py --server.port 8501
-```
-
-打开前端后：
-
-- 在左侧“新建会话”区域选择内置场景
-- 场景列表来自后端动态接口
-- 不需要在 UI 中额外写死某个 demo 名称
-
-### 3. 加载内置场景
-
-选择一个场景后：
-
-- 前端会展示场景描述
-- 可展开查看样例输入
-- 新建会话时可自动把样例输入送入 INIT
-
-这一步是验收重点：
-
-- 说明“前端只是消费注册表，不知道具体有哪些场景”
-- 说明“新增 manifest 后 UI 会自然出现新场景”
-
-### 4. 验证 INIT 到 Stage 4 跑通
-
-在 mock 模式下，建议按如下思路验收：
-
-1. 新建场景会话
-2. 观察 INIT 是否正确读取样例输入
-3. 进入 Stage 1，检查是否生成对应 profile 的结构化输出
-4. 继续推进到 Stage 2 / 3 / 4
-5. 在 Stage 3 注意 redteam / safety / evidence 等真实 gate 逻辑仍然生效
-
-当前测试层面已经验证了：
-
-- 场景可枚举
-- 场景可加载
-- 场景输入可进入工作流
-- mock 模式下从 INIT 到 Stage 4 的链路可完成
-
-对应测试：
+验收时确认场景列表来自后端注册表、样例输入进入 INIT、对应 profile 贯穿 Stage 1–4，且 Stage 3 的 redteam / safety / evidence 门禁仍然生效。相关自动化测试：
 
 ```bash
 uv run pytest tests/test_scenarios_registry.py tests/test_scenario_session_flow.py tests/test_api.py tests/test_mock_llm_mode.py -q
@@ -424,16 +360,8 @@ manifest 中的 `input_sample_path` 必须指向仓库内真实存在的文件�
 
 ---
 
-## 验收视角总结
+## 验收边界
 
-从毕设验收角度，这套机制要证明的是：
-
-1. 场景不是硬编码在前端下拉框里的
-2. 场景不是硬编码在后端主流程里的
-3. 复用已有 domain profile 的新场景，只需“新增 manifest + 输入样例（+ 可选 mock fixture）”即可完成，无需改代码
-4. 默认无场景模式仍可用
-5. mock 模式下可以稳定演示完整阶段链路
-
-需要如实说明的边界：第 3 点仅对**复用已有 domain profile** 的场景成立。引入**新领域**时，domain profile 的分发仍是硬编码的，必须同步修改上文列出的 4 处分发点——这一层目前不是可插拔的。
-
-如果以上五点成立，那么这个“可插拔 Demo 场景机制”就不仅是一个演示功能，而是一个可复用、可扩展、可维护的系统设计点。
+- 前端和核心流程不硬编码具体场景；复用已有 domain profile 时，新增 manifest、输入样例和可选 fixture 即可扩展。
+- 不选择场景时仍可运行通用流程；Mock 模式可稳定覆盖 INIT 至 Stage 4。
+- 引入**新领域**仍须修改上文列出的 4 处分发点，domain profile 当前不是零改动扩展点。

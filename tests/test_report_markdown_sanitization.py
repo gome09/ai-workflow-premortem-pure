@@ -44,10 +44,10 @@ def test_sanitize_neutralizes_pseudo_protocol_links():
 
 
 def test_sanitize_keeps_fenced_code_block_verbatim():
-    text = "前文\n```json\n{\"a\": \"<b>&x\"}\n```\n后文"
+    text = '前文\n```json\n{"a": "<b>&x"}\n```\n后文'
     out = _sanitize_markdown(text)
     # 块内保留原样（维持 JSON 可复制性）
-    assert "{\"a\": \"<b>&x\"}" in out
+    assert '{"a": "<b>&x"}' in out
     # 块外不受影响（无危险字符时原样）
     assert "前文" in out and "后文" in out
 

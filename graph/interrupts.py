@@ -11,6 +11,7 @@ from core.models import (
     PendingHumanAction,
     ProjectContext,
 )
+from graph.checkpoint_manager import checkpoint_namespace, checkpoint_thread_id
 
 
 def _policy_effect_dump(policy_effect: Any | None) -> dict[str, Any]:
@@ -37,8 +38,8 @@ def _node_name_for_action(action: PendingHumanAction) -> str:
 
 
 def _default_thread_id(ctx: ProjectContext) -> str:
-    """Use session_id as the stable LangGraph thread_id for this adapter stage."""
-    return ctx.session_id
+    """Use a tenant-scoped stable LangGraph thread_id."""
+    return checkpoint_thread_id(ctx)
 
 
 def _action_allows_resume(action: PendingHumanAction, policy_effect: Any | None = None) -> bool:
@@ -118,6 +119,7 @@ def _ensure_record_for_action(
             stage_output_version=action.stage_output_version,
             thread_id=_default_thread_id(ctx),
             node_name=_node_name_for_action(action),
+            checkpoint_ns=checkpoint_namespace(),
         )
         ctx.interrupt_records.append(record)
         append_audit_event(
@@ -133,11 +135,9 @@ def _ensure_record_for_action(
                 "stage_output_version": action.stage_output_version,
             },
         )
-    else:
-        record.thread_id = record.thread_id or _default_thread_id(ctx)
-        record.node_name = record.node_name or _node_name_for_action(action)
-        record.stage_id = action.stage_id
-        record.stage_output_version = action.stage_output_version
+    # Execution locators and stage versions are immutable once created. A
+    # mismatch represents stale checkpoint state and must be rejected by the
+    # resume path, never silently rewritten to make validation self-fulfilling.
 
     record.interrupt_payload = build_interrupt_payload(ctx, record)
     return record
@@ -173,26 +173,28 @@ def sync_interrupt_records(ctx: ProjectContext) -> list[InterruptRecord]:
         if record.status != "pending":
             continue
 
-        before = record.model_dump(mode="json")
-        record.resume_value = _resume_value_for_action(action)
-        record.resolved_at = datetime.utcnow()
-        if _action_allows_resume(action):
-            record.status = "resumed"
-            event_type = "interrupt_record_resumed_from_action"
-        else:
+        # Generic synchronization may safely cancel terminal actions, but it
+        # must never infer allow_continue from a resolved decision. Approval,
+        # edit and escalation semantics are determined by transition policy in
+        # mark_interrupt_resumed_from_action().
+        if (
+            action.status != HumanActionStatus.RESOLVED.value
+            or action.reviewer_decision == "reject"
+        ):
+            before = record.model_dump(mode="json")
+            record.resume_value = _resume_value_for_action(action)
+            record.resolved_at = datetime.utcnow()
             record.status = "cancelled"
-            event_type = "interrupt_record_cancelled_from_action"
-
-        append_audit_event(
-            ctx,
-            actor="system",
-            event_type=event_type,
-            target_type="interrupt_record",
-            target_id=record.interrupt_id,
-            before=before,
-            after=record,
-            metadata={"action_id": action.action_id, "action_status": action.status},
-        )
+            append_audit_event(
+                ctx,
+                actor="system",
+                event_type="interrupt_record_cancelled_from_action",
+                target_type="interrupt_record",
+                target_id=record.interrupt_id,
+                before=before,
+                after=record,
+                metadata={"action_id": action.action_id, "action_status": action.status},
+            )
 
     return created
 

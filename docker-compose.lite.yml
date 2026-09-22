@@ -9,7 +9,7 @@ services:
     environment:
       - STORAGE_BACKEND=sqlite
       - LLM_MODE=mock
-      - DEFAULT_SCENARIO_ID=generic_rag_demo
+      - CHECKPOINT_BACKEND=memory
       - UVICORN_WORKERS=1
     ports:
       - "8000:8000"

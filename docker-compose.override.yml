@@ -16,10 +16,12 @@ services:
       - .:/app
     ports:
       - "8501:8501"
+    environment:
+      DEMO_AUTO_AUTH: "true"
 
   postgres:
     ports:
-      - "5432:5432"
+      - "5433:5432"
 
   redis:
     ports:

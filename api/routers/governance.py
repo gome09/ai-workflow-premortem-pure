@@ -20,7 +20,7 @@ router = APIRouter(prefix="/governance", tags=["governance"])
 def governance_overview(
     tenant: TenantContext = require_roles(Role.viewer, Role.editor, Role.admin),
 ) -> dict:
-    """租户内：会话总数/状态分布/风险分布/open 发现/pending 动作/报告数。"""
+    """租户内真实业务：会话/风险/open 发现/pending 动作/报告聚合。"""
     return session_store.governance_overview(tenant_id=tenant.tenant_id)
 
 
@@ -29,7 +29,7 @@ def gate_trends(
     weeks: int = Query(8, ge=1, le=52),
     tenant: TenantContext = require_roles(Role.viewer, Role.editor, Role.admin),
 ) -> list[dict]:
-    """按周的评估次数/通过率/Top 阻断规则（基于 gate_evaluation_records）。"""
+    """真实业务会话按周的评估次数/通过率/Top 阻断规则。"""
     return session_store.gate_trends(tenant_id=tenant.tenant_id, weeks=weeks)
 
 
@@ -38,5 +38,5 @@ def actions_backlog(
     limit: int = Query(50, ge=1, le=200),
     tenant: TenantContext = require_roles(Role.viewer, Role.editor, Role.admin),
 ) -> list[dict]:
-    """待处理人工动作明细，按 risk_level 与等待时长排序。"""
+    """真实业务会话待处理动作，按 risk_level 与等待时长排序。"""
     return session_store.actions_backlog(tenant_id=tenant.tenant_id, limit=limit)

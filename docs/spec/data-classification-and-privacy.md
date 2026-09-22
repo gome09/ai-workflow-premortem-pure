@@ -1,7 +1,7 @@
 # 数据分类分级与隐私保护设计规格
 
 > Status: Implemented（自 v1.0.3 起落地 T1.1–T1.9：数据分级 / 字段加密 / PII 掩码 / AI 生成标识 / PIA，沿用至今。落地任务见 [../archive/plan/phase-1-security-compliance.md](../archive/plan/phase-1-security-compliance.md)）
-> Last updated: 2026-07-27
+> Last updated: 2026-09-21
 > 合规依据：PIPL 第 28/51/55/56/57 条、DSL 第 21 条、《人工智能生成合成内容标识办法》（2025-09-01 施行）、EU AI Act Art.50 透明度义务（2026-08-02 生效）、GB/T 22239-2019 日志留存要求
 
 ---
@@ -76,6 +76,13 @@
 - 新增配置 `PII_MASK_BEFORE_LLM`（默认 `false`，避免破坏现有演示行为）：开启后 `core/evidence_service.py:format_evidence_for_prompt` 对 evidence summary 与 `user_materials` 注入文本中的命中项做模式保留掩码（`110***********1234`）。
 - **当前边界**：直接 `user_message`、INIT 输入和 `conversation_history` 仍可能原文进入阶段 prompt，不受该开关覆盖。因此它不是统一的“所有 LLM 输入脱敏”开关；真实 PII 场景应避免在聊天消息中提交原文，或由部署侧增加入口级脱敏。落库的材料原文仅在 4.1 所列字段范围且配置有效密钥时加密。
 
+### 4.3 LangGraph checkpoint 数据副本
+
+- 默认 `single_step` 不写 LangGraph checkpoint。显式启用 `langgraph_interrupt` 后，checkpoint 会保存完整 `ProjectContext` 执行快照，因而可能包含用户材料、证据、对话历史及其他个人信息；它属于与业务表并列的数据副本，必须纳入数据清单、备份、泄露响应和删除流程。
+- PostgreSQL checkpoint 只允许使用持久后端，并由独立 `CHECKPOINT_ENCRYPTION_KEY` 通过 Fernet 加密 payload。该 key 不由 `make setup` 生成，不得复用 `DATA_ENCRYPTION_KEY`，也不能替代业务字段加密。
+- SQLite/local 可使用 memory checkpoint，但它不持久化、进程重启后不可恢复，不得用于生产。
+- 删除会话时先按 tenant-scoped thread ID 清理 checkpoint；清理失败则保留权威业务会话并返回失败，避免出现“业务记录已删除但敏感执行快照残留”的假性成功。
+
 ## 5. 子系统③：AI 生成内容标识（《标识办法》+ EU AI Act Art.50）
 
 - **Markdown 报告**：标题后首屏插入双语显式标识块（现有"## 19. Disclaimer"保留不动，保证向后兼容）：
@@ -107,9 +114,10 @@
 用户粘贴材料
   → 四类正则 PII 扫描 → sensitive_info finding + 命中时自动数据升级（其他敏感语义需人工标级）
   → 落库：business_internal 及以上字段级加密（新）
+  → 可选中断执行：完整 ProjectContext 写入独立 Fernet 加密的 PostgreSQL checkpoint
   → 进 prompt：evidence/user_materials 路径可选 PII 掩码；直接消息/历史当前不覆盖 → DeepSeek API
   → 报告导出：首屏双语 AI 标识（新）+ 分级标签展示
-  → 生命周期：留存策略声明 / admin 删除 + 审计痕迹（新）
+  → 生命周期：留存策略声明 / admin 删除 + checkpoint 清理 + 审计痕迹（新）
 ```
 
 ## 9. 兼容性与验证

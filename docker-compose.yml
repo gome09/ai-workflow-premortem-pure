@@ -12,6 +12,10 @@ secrets:
     file: ./secrets/tavily_api_key
   grafana_password:
     file: ./secrets/grafana_password
+  data_encryption_key:
+    file: ./secrets/data_encryption_key
+  checkpoint_encryption_key:
+    file: ./secrets/checkpoint_encryption_key
 
 services:
 
@@ -71,6 +75,8 @@ services:
       - redis_password
       - deepseek_api_key
       - tavily_api_key
+      - data_encryption_key
+      - checkpoint_encryption_key
     env_file: .env
     environment:
       POSTGRES_HOST: postgres
@@ -82,7 +88,7 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c",
-             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live', timeout=5)"]
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -108,6 +114,7 @@ services:
       POSTGRES_HOST: postgres
       REDIS_HOST: redis
       API_BASE: http://api:8000
+      DEMO_AUTO_AUTH: "false"
     depends_on:
       - api
     deploy:

@@ -200,14 +200,37 @@ def test_sqlite_store_governance_metrics_all_tenants(tmp_path) -> None:
                 (session_id, tenant_id, "stage_1_review", json.dumps(ctx), "", ""),
             )
 
-    _insert("s1", str(uuid.uuid4()), {"pending_actions": [
-        {"action_id": "a1", "status": "pending", "risk_level": "high"},
-        {"action_id": "a2", "status": "resolved", "risk_level": "critical"},
-    ]})
-    _insert("s2", str(uuid.uuid4()), {"pending_actions": [
-        {"action_id": "a3", "status": "pending", "risk_level": "high"},
-        {"action_id": "a4", "status": "pending", "risk_level": "medium"},
-    ]})
+    _insert(
+        "s1",
+        str(uuid.uuid4()),
+        {
+            "pending_actions": [
+                {"action_id": "a1", "status": "pending", "risk_level": "high"},
+                {"action_id": "a2", "status": "resolved", "risk_level": "critical"},
+            ]
+        },
+    )
+    _insert(
+        "s2",
+        str(uuid.uuid4()),
+        {
+            "pending_actions": [
+                {"action_id": "a3", "status": "pending", "risk_level": "high"},
+                {"action_id": "a4", "status": "pending", "risk_level": "medium"},
+            ]
+        },
+    )
+    _insert(
+        "demo",
+        str(uuid.uuid4()),
+        {
+            "data_classification": "public_demo",
+            "selected_scenario_id": "generic_rag_demo",
+            "pending_actions": [
+                {"action_id": "demo-a", "status": "pending", "risk_level": "critical"}
+            ],
+        },
+    )
 
     result = store.governance_metrics_all_tenants()
     assert result["state_distribution"].get("stage_1_review") == 2

@@ -14,6 +14,98 @@ from graph.runner import run_one_step
 logger = logging.getLogger(__name__)
 
 
+def reconcile_pending_interrupt_resumes(limit: int = 100) -> dict[str, int]:
+    """Retry durable interrupt resumes left incomplete by a crash or outage."""
+    from storage import cache as cache_module
+    from storage import session_store as session_store_module
+
+    session_store = session_store_module.session_store
+    context_cache = cache_module.context_cache
+    mode = WorkflowExecutionMode.normalize(settings.workflow_execution_mode)
+    summary = {"found": 0, "claimed": 0, "completed": 0, "failed": 0}
+    if mode != WorkflowExecutionMode.LANGGRAPH_INTERRUPT:
+        return summary
+    if not all(
+        callable(getattr(session_store, name, None))
+        for name in (
+            "list_pending_interrupt_resumes",
+            "claim_interrupt_resume",
+            "complete_interrupt_resume",
+        )
+    ):
+        return summary
+
+    items = session_store.list_pending_interrupt_resumes(limit=limit)
+    summary["found"] = len(items)
+    for item in items:
+        interrupt_id = item["interrupt_id"]
+        if not session_store.claim_interrupt_resume(interrupt_id):
+            continue
+        summary["claimed"] += 1
+        try:
+            ctx = session_store.load(item["session_id"], item.get("tenant_id") or "")
+            if ctx is None:
+                raise ValueError(f"Session not found: {item['session_id']}")
+            from graph.langgraph_interrupt_runner import consume_resumable_interrupt_if_needed
+
+            updated = consume_resumable_interrupt_if_needed(ctx, item["action_id"])
+            record = next(
+                (
+                    record
+                    for record in updated.interrupt_records
+                    if record.interrupt_id == interrupt_id
+                ),
+                None,
+            )
+            if record is None or record.resume_consumed_at is None:
+                raise RuntimeError("LangGraph interrupt resume was not consumed")
+            session_store.save(updated)
+            context_cache.set(updated)
+            session_store.complete_interrupt_resume(interrupt_id)
+            summary["completed"] += 1
+        except Exception as exc:  # noqa: BLE001 - durable failure is recorded for retry
+            session_store.complete_interrupt_resume(interrupt_id, error=str(exc))
+            summary["failed"] += 1
+            logger.exception("Interrupt resume reconciliation failed: %s", interrupt_id)
+    return summary
+
+
+def prepare_execution_after_action_resolutions(
+    ctx: ProjectContext, action_ids: list[str]
+) -> ProjectContext:
+    """Materialize policy-approved resume records before the atomic store save."""
+    if (
+        WorkflowExecutionMode.normalize(settings.workflow_execution_mode)
+        != WorkflowExecutionMode.LANGGRAPH_INTERRUPT
+    ):
+        return ctx
+    from graph.interrupts import (
+        mark_interrupt_cancelled_from_action,
+        mark_interrupt_resumed_from_action,
+    )
+    from graph.transition_policy import evaluate_action_resolution
+
+    for action_id in action_ids:
+        action = next((item for item in ctx.pending_actions if item.action_id == action_id), None)
+        if action is None or not action.reviewer_decision:
+            continue
+        effect = evaluate_action_resolution(
+            action,
+            action.reviewer_decision,
+            payload_after=action.payload_after,
+        )
+        if effect.allow_continue:
+            mark_interrupt_resumed_from_action(ctx, action_id, policy_effect=effect)
+        else:
+            mark_interrupt_cancelled_from_action(
+                ctx,
+                action_id,
+                reason=effect.message,
+                policy_effect=effect,
+            )
+    return ctx
+
+
 def execute_one_turn(ctx: ProjectContext) -> ProjectContext:
     """Run exactly one user turn through the configured execution mode."""
     ctx.llm_call_count = getattr(ctx, "llm_call_count", 0) + 1
@@ -116,8 +208,29 @@ def sync_execution_after_action_resolution(
 
         allow_continue = bool(getattr(policy_effect, "allow_continue", False))
         if allow_continue:
-            mark_interrupt_resumed_from_action(ctx, action_id, policy_effect=policy_effect)
-            return consume_resumable_interrupt_if_needed(ctx, action_id)
+            from storage import session_store as session_store_module
+
+            session_store = session_store_module.session_store
+            record = mark_interrupt_resumed_from_action(ctx, action_id, policy_effect=policy_effect)
+            if record is None:
+                return ctx
+            session_store.enqueue_interrupt_resume(ctx, record)
+            if not session_store.claim_interrupt_resume(record.interrupt_id):
+                return ctx
+            updated = consume_resumable_interrupt_if_needed(ctx, action_id)
+            consumed = next(
+                (
+                    item.resume_consumed_at is not None
+                    for item in updated.interrupt_records
+                    if item.interrupt_id == record.interrupt_id
+                ),
+                False,
+            )
+            session_store.complete_interrupt_resume(
+                record.interrupt_id,
+                error="" if consumed else "LangGraph interrupt resume was not consumed",
+            )
+            return updated
 
         mark_interrupt_cancelled_from_action(
             ctx,
@@ -166,7 +279,7 @@ def sync_execution_after_stage_revision(
     """Synchronize execution-layer records after a stage is revised/backed.
 
     This does not advance the workflow and does not run LangGraph. It only gives
-    the experimental interrupt adapter one coordination point for action records
+    the guarded interrupt adapter one coordination point for action records
     that were superseded by a new stage_output_version.
     """
     mode = WorkflowExecutionMode.normalize(settings.workflow_execution_mode)

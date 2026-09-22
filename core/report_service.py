@@ -132,6 +132,9 @@ def build_execution_summary(ctx: ProjectContext) -> dict:
     consumed = [record for record in resumed if record.resume_consumed_at is not None]
     pending_resume = [record for record in resumed if record.resume_consumed_at is None]
     mode = WorkflowExecutionMode.normalize(settings.workflow_execution_mode)
+    from graph.checkpoint_manager import get_interrupt_adapter_health
+
+    adapter_health = get_interrupt_adapter_health()
     adapter_level = (
         "checkpoint_interrupt"
         if mode == WorkflowExecutionMode.LANGGRAPH_INTERRUPT
@@ -145,11 +148,8 @@ def build_execution_summary(ctx: ProjectContext) -> dict:
     return {
         "execution_mode": mode.value,
         "adapter_level": adapter_level,
-        "interrupt_adapter_status": (
-            "LangGraph interrupt/checkpoint path is enabled by WORKFLOW_EXECUTION_MODE."
-            if mode == WorkflowExecutionMode.LANGGRAPH_INTERRUPT
-            else "single_step is the stable default; interrupt records remain an auditable mapping layer."
-        ),
+        "interrupt_adapter_status": adapter_health["status"],
+        "interrupt_adapter": adapter_health,
         "interrupt_records_total": len(records),
         "pending_interrupts": len(pending),
         "resumed_interrupts": len(resumed),
@@ -907,11 +907,7 @@ def _sanitize_markdown(text: str) -> str:
         if part.startswith("```"):
             result.append(_DANGEROUS_URL_RE.sub("](blocked:", part))
         else:
-            escaped = (
-                part.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-            )
+            escaped = part.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             result.append(_DANGEROUS_URL_RE.sub("](blocked:", escaped))
     text = "".join(result)
 

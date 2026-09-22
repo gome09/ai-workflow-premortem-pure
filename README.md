@@ -15,17 +15,9 @@
 
 ---
 
-## 项目背景
+## 工作方式
 
-随着 AI 系统在教育、医疗、金融等行业的快速落地，在项目立项阶段系统性识别 AI 风险成为工程实践中的关键挑战。现有 AI 应用构建工具（如 Dify、Flowise、Langflow）专注于 AI 应用的编排与部署，但缺乏对 AI 系统本身进行结构化风险预评估的机制——团队往往在系统上线后才发现失败模式，此时修复成本极高。
-
-本项目借鉴软件工程中的**预验尸（Pre-mortem）**方法论，将其应用于 AI 项目立项阶段，构建了一套**对话式、结构化、带人机监督的 AI 风险分析平台**。
-
-### 核心问题
-
-> 如何在 AI 系统部署之前，系统性地发现它可能在哪里失败？
-
-### 解决方案
+项目把软件工程的预验尸方法用于 AI 立项阶段，以对话式、结构化分析补足应用编排工具通常不覆盖的部署前风险评估。
 
 通过四个阶段的引导式分析，结合大语言模型的推理能力与人机监督机制，帮助团队在立项阶段完成：
 
@@ -69,6 +61,7 @@
 | Red Team | 对抗测试用例生成、管理与转化 |
 | 报告导出 | JSON / Markdown ReportArtifact，含 readiness 与 governance 摘要 |
 | 审计追踪 | 完整审计事件记录 + Streamlit Review Workbench 的审计历史视图 |
+| 治理总览 | 仅聚合真实业务会话的状态、风险、门禁趋势和积压动作；四个内置场景及其他 `public_demo` 演示数据明确隔离 |
 
 ---
 
@@ -101,23 +94,17 @@ make demo-ui
 
 > ⚠️ `make demo-api` / `make demo-ui` 会覆盖现有 `.env`。如果此前运行过 `make setup`，请先备份 `.env`；`secrets/` 下的文件不受影响。
 
-浏览器访问 `http://localhost:8501`，选择内置场景并新建会话即可体验四阶段流程。完整启动、环境变量和部署说明统一见 [`docs/startup.md`](docs/startup.md)。
+浏览器访问 `http://localhost:8501`：选择内置场景会立即加载对应样例并开始会话；点击“新建空白会话”则从完全空白的 INIT 状态开始。完整启动、环境变量和部署说明统一见 [`docs/startup.md`](docs/startup.md)。
+
+“治理总览”采用真实业务口径：只统计 `business_internal` / `sensitive_personal` 会话，不把四个内置场景或其他 `public_demo` 演示数据计入项目数、风险分布、门禁趋势和积压动作。页面会显示已隔离的演示会话数量；真实业务数据为零时显示空数据提示，接口异常则显示加载失败。
 
 Docker 入口：`make lite-up` 启动 SQLite + Mock 轻量模式；`make setup` 后执行 `make prod-up` 启动 PostgreSQL + Redis 生产栈。请按启动指南完成 secrets、证书和生产健康检查配置。
 
 ---
 
-## 答辩演示模式
+## 离线演示
 
-> 推荐使用 **离线 Mock + SQLite** 模式进行答辩演示，零外部依赖，确定性输出。
-
-### 特点
-
-- **无需 API Key**：使用 Mock LLM，返回确定性 fixture JSON
-- **无需数据库**：SQLite 本地文件，无需 PostgreSQL / Redis
-- **无需 Docker**：直接 `uv run` 启动
-- **内置 4 个场景**：通用 RAG、高校课程问答、高校心理健康、学生选课管理
-- **完整功能覆盖**：四阶段工作流、人机监督、证据核验、Eval、Red Team、报告导出
+快速开始中的 Mock + SQLite 模式无需 API Key、PostgreSQL、Redis 或 Docker，并提供四个确定性内置场景。场景机制与扩展方式见 [`docs/demo-scenarios.md`](docs/demo-scenarios.md)。
 
 ### 零依赖单文件 Demo（浏览器直接打开）
 

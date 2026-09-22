@@ -67,7 +67,7 @@ requires-dist = [
     { name = "langchain-community", specifier = ">=0.3.0" },
     { name = "langchain-openai", specifier = ">=0.2.0" },
     { name = "langgraph", specifier = ">=1.1,<2" },
-    { name = "langgraph-checkpoint-postgres", specifier = ">=2.0.0" },
+    { name = "langgraph-checkpoint-postgres", specifier = "==3.0.5" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.14,<3" },
     { name = "passlib", extras = ["bcrypt"], specifier = ">=1.7.4" },
     { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.7.0" },

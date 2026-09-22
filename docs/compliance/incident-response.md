@@ -9,6 +9,7 @@
 - [ ] 记录发现时间、发现人、初步现象
 - [ ] 判断泄露类型：
   - [ ] DATA_ENCRYPTION_KEY 泄露 → 加密字段可被解密
+  - [ ] CHECKPOINT_ENCRYPTION_KEY 泄露 → PostgreSQL checkpoint 中的完整执行快照可被解密
   - [ ] JWT_SECRET 泄露 → 任意用户可伪造
   - [ ] 数据库未授权访问 → 业务数据泄露
   - [ ] LLM API Key 泄露 → 第三方 API 滥用
@@ -19,6 +20,7 @@
 
 - [ ] **吊销密钥**：
   - DATA_ENCRYPTION_KEY 泄露：生成新 key，但**旧密文不可读**（需先用旧 key 解密再用新 key 加密，若无旧 key 则数据不可恢复）
+  - CHECKPOINT_ENCRYPTION_KEY 泄露：停止中断模式新请求并保全证据；在旧 key 仍可控时完成 checkpoint 读取/迁移或清理，再配置独立新 key。直接替换 key 会使现有 checkpoint 无法恢复
   - JWT_SECRET 泄露：更换 JWT_SECRET，所有现有 token 失效，强制重新登录
 - [ ] **下线端点**：
   - 数据库泄露：暂停 API 服务（`docker compose down`），断开数据库网络
@@ -54,10 +56,10 @@
 
 | 概念 | 本项目对应 |
 |------|------------|
-| "敏感数据存储位置" | PostgreSQL / SQLite 的 `sessions.context_json`；仅配置有效 `DATA_ENCRYPTION_KEY` 时相关字段为 `enc:v1:` 密文 |
+| "敏感数据存储位置" | PostgreSQL / SQLite 的 `sessions.context_json`；仅配置有效 `DATA_ENCRYPTION_KEY` 时相关字段为 `enc:v1:` 密文。启用 PostgreSQL 中断模式后，checkpoint 三表还保存独立 Fernet 加密的完整执行快照 |
 | "审计日志位置" | `audit_events` 表 + `audit_events_archive` 表（删除会话后归档） |
-| "密钥存储位置" | setup 将 `JWT_SECRET` / PostgreSQL / Redis 密码同时写入文件型 secrets 与 `.env`；`DATA_ENCRYPTION_KEY` 仅由 `.env` 传入且不自动生成，事件排查与轮换必须覆盖两处 |
+| "密钥存储位置" | setup 将 `JWT_SECRET` / PostgreSQL / Redis 密码同时写入文件型 secrets 与 `.env`；`DATA_ENCRYPTION_KEY` 与 `CHECKPOINT_ENCRYPTION_KEY` 均仅由 `.env` 传入且不自动生成，两者不得复用，事件排查与轮换必须分别覆盖 |
 | "外部数据流" | evidence/user_materials、直接用户消息与会话历史均可能进入 DeepSeek prompt |
 | "PII 掩码开关" | `PII_MASK_BEFORE_LLM` 仅覆盖 evidence/user_materials 格式化路径，直接消息/历史不覆盖 |
 | "会话删除端点" | `DELETE /sessions/{id}`（admin only，归档审计后级联删除） |
-| "/health 暴露项" | `data_encryption` / `audit_retention_days` / `session_retention_days` |
+| "/health 暴露项" | `data_encryption` / `interrupt_adapter`（含 backend、persistent、encrypted）/ `audit_retention_days` / `session_retention_days` |

@@ -108,6 +108,19 @@ def _insert_eval(
     record_id = str(uuid.uuid4())[:8]
     with store._get_conn() as conn:
         conn.execute(
+            "INSERT OR IGNORE INTO sessions "
+            "(session_id, tenant_id, current_state, context_json, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                session_id,
+                tenant_id,
+                "init",
+                json.dumps({"data_classification": "business_internal"}),
+                evaluated_at,
+                evaluated_at,
+            ),
+        )
+        conn.execute(
             "INSERT INTO gate_evaluation_records "
             "(record_id, session_id, tenant_id, stage_id, risk_tier, passed, "
             " blocking_rule_ids, rule_versions, evaluated_at) "
@@ -157,6 +170,7 @@ class TestGovernanceOverviewEndpoint:
             "open_safety_findings",
             "pending_actions",
             "reports_exported",
+            "excluded_demo_sessions",
         }
         assert set(data.keys()) == expected_keys
 
@@ -200,6 +214,36 @@ class TestGovernanceOverviewEndpoint:
         assert data["open_safety_findings"] == 0
         assert data["pending_actions"] == 0
         assert data["reports_exported"] == 0
+        assert data["excluded_demo_sessions"] == 0
+
+    def test_builtin_demo_sessions_are_excluded(self, client, governance_store, auth_headers):
+        _insert_session(
+            governance_store,
+            session_id="real-session",
+            tenant_id="test-tenant",
+            current_state="s1_running",
+            context_json={"data_classification": "business_internal"},
+        )
+        _insert_session(
+            governance_store,
+            session_id="demo-session",
+            tenant_id="test-tenant",
+            current_state="complete",
+            context_json={
+                "data_classification": "public_demo",
+                "selected_scenario_id": "generic_rag_demo",
+                "pending_actions": [{"status": "pending"}],
+                "report_artifacts": [{"report_id": "demo-report"}],
+            },
+        )
+
+        data = client.get("/governance/overview", headers=auth_headers).json()
+
+        assert data["sessions_total"] == 1
+        assert data["state_distribution"] == {"s1_running": 1}
+        assert data["pending_actions"] == 0
+        assert data["reports_exported"] == 0
+        assert data["excluded_demo_sessions"] == 1
 
 
 # ─────────────────────────────────────────────────────────
@@ -272,6 +316,31 @@ class TestGateTrendsEndpoint:
         total_passed = sum(b["passed"] for b in data)
         assert total_passed == 1
 
+    def test_demo_session_evaluations_are_excluded(self, client, governance_store, auth_headers):
+        now = datetime.utcnow().isoformat()
+        _insert_session(
+            governance_store,
+            session_id="demo-trend",
+            tenant_id="test-tenant",
+            current_state="s1_running",
+            context_json={
+                "data_classification": "public_demo",
+                "selected_scenario_id": "student_course_selection",
+            },
+        )
+        _insert_eval(
+            governance_store,
+            session_id="demo-trend",
+            tenant_id="test-tenant",
+            stage_id=1,
+            risk_tier="high",
+            passed=False,
+            blocking_rule_ids=["demo-only"],
+            evaluated_at=now,
+        )
+
+        assert client.get("/governance/gate-trends", headers=auth_headers).json() == []
+
 
 # ─────────────────────────────────────────────────────────
 # 3. /governance/actions-backlog
@@ -331,6 +400,28 @@ class TestActionsBacklogEndpoint:
         assert len(data) == 1
         assert data[0]["action_id"] == "act-1"
         assert data[0]["risk_level"] == "high"
+
+    def test_demo_session_actions_are_excluded(self, client, governance_store, auth_headers):
+        _insert_session(
+            governance_store,
+            session_id="demo-action",
+            tenant_id="test-tenant",
+            current_state="s1_running",
+            context_json={
+                "data_classification": "public_demo",
+                "selected_scenario_id": "university_course_qa",
+                "pending_actions": [
+                    {
+                        "action_id": "demo-action-1",
+                        "title": "演示动作",
+                        "risk_level": "critical",
+                        "status": "pending",
+                    }
+                ],
+            },
+        )
+
+        assert client.get("/governance/actions-backlog", headers=auth_headers).json() == []
 
 
 # ─────────────────────────────────────────────────────────

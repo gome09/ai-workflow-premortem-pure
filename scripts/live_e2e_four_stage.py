@@ -619,9 +619,7 @@ def main() -> int:
         log(f"FAIL: /health did not return 200 (got {r.status_code if r else 'None'})")
         return 1
     health = r.json()
-    log(
-        f"Health OK: mode={health.get('workflow_execution_mode')} scenario={health.get('default_scenario_id')}"
-    )
+    log(f"Health OK: mode={health.get('workflow_execution_mode')}")
 
     # Step 1: Auth
     headers = auth_headers()

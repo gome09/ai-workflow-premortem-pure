@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.models import PendingHumanAction, ProjectContext
+from graph.checkpoint_manager import checkpoint_thread_id
 from graph.interrupts import (
     mark_interrupt_cancelled_from_action,
     mark_interrupt_resumed_from_action,
@@ -43,7 +44,7 @@ def test_sync_creates_pending_interrupt_for_blocking_action():
     assert len(created) == 1
     assert ctx.interrupt_records[0].status == "pending"
     assert ctx.interrupt_records[0].action_id == ctx.pending_actions[0].action_id
-    assert ctx.interrupt_records[0].thread_id == ctx.session_id
+    assert ctx.interrupt_records[0].thread_id == checkpoint_thread_id(ctx)
     assert (
         ctx.interrupt_records[0].interrupt_payload["action_id"] == ctx.pending_actions[0].action_id
     )

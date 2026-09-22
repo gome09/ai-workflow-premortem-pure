@@ -1,0 +1,22 @@
+{
+  "active_modules": [
+    "core",
+    "planning",
+    "phase",
+    "validation",
+    "reporting",
+    "review",
+    "lifecycle"
+  ],
+  "artifact_registry_sha256": "9436a6a9ddd13ca0a2ae7a47bf4748145518fb7d2177593f2cda514526a65c61",
+  "authority_registry_sha256": "aef0cb3215302fede53101102ccb36245fd63698e19195d1f29c7e9435ebb4cb",
+  "bootstrap_recommendation": null,
+  "created_at": "2026-09-21T15:28:07+00:00",
+  "initial_profile": "legacy-governed",
+  "last_synced_policy_version": 14,
+  "last_synced_skill_version": "18.0.0",
+  "managed_by": "project-upgrade-maintainer",
+  "schema_version": 2,
+  "selection_source": "legacy-adopted",
+  "updated_at": "2026-09-21T15:28:07+00:00"
+}

@@ -100,3 +100,73 @@ Before cleanup, classify each file as one of:
 | `release_manifest_v1.0.md` | `.upgrade/archive/release_manifest_v1.0.md` | v1.0 生产文件范围快照，属于一次性发布报告，非持续维护文档 | low (no refs found) | 2026-07-17 Mode 3 已再归档至 `.upgrade/archive/` |
 | `show.md` | `.upgrade/archive/show.md` | v1.0 时期项目展示/答辩文档，与 README 大量重叠且版本号落后（v1.0 vs v1.3.0），全仓无引用，已被 README.md 取代 | low (no refs found; git mv 保留历史) | 无（2026-07-17 Mode 4 扫描归档） |
 | `artifacts_live_e2e.log` | `.upgrade/logs/artifacts_live_e2e.log` | live E2E 四阶段实跑日志（RESULT: PASS），一次性运行产物，本就被 `.gitignore` `*.log` 忽略 | low (no refs; untracked) | 2026-07-20 Mode 3 清理已删除（结论早已固化进后续 E2E 报告） |
+
+<!-- project-upgrade-maintainer:manifest:start -->
+## Active Modules
+
+core, planning, phase, validation, reporting, review, lifecycle
+
+## Permanent
+
+- `.upgrade/AGENTS.md`
+- `.upgrade/CONFIG.json`
+- `.upgrade/ARTIFACTS.json`
+- `.upgrade/README.md`
+- `.upgrade/STATE.md`
+- `.upgrade/MANIFEST.md`
+- `.upgrade/AUTHORITY.json`
+- `.upgrade/AUTHORITY.md`
+- `.upgrade/docs/UPGRADE_REQUIREMENTS.md`
+- `.upgrade/docs/UPGRADE_PLAN.md`
+- `.upgrade/docs/IMPLEMENTATION_PLAN.md`
+- `.upgrade/reports/FINAL_REPORT.md`
+- `.upgrade/reviews/POST_UPGRADE_REVIEW.md`
+- `.upgrade/validation/`
+- `.upgrade/decisions/`
+- `.upgrade/risks/`
+- `.upgrade/exceptions/`
+- `.upgrade/delivery/`
+- `.upgrade/reviews/`
+
+## Registered Artifact Policies
+
+- None.
+
+## Stage Retained
+
+- `.upgrade/stages/phase-4.md`
+
+## Archive
+
+- `.upgrade/archive/`
+
+## Recoverable Trash
+
+- `.upgrade/tmp/.trash/`
+
+## Collected Files
+
+| Original Path | New Path | Action | Classification | Reason | References Checked | User Confirmation Required | Timestamp |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| artifacts/live_e2e_four_stage/01_bootstrap.json | .upgrade/archive/01_bootstrap.json | archive | archive | exact user decision | true | false | 2026-09-21T15:46:03+00:00 |
+| artifacts/live_e2e_four_stage/e2e_result.json | .upgrade/archive/e2e_result.json | archive | archive | exact user decision | true | false | 2026-09-21T15:46:03+00:00 |
+| artifacts/live_e2e_four_stage/final_panels.json | .upgrade/archive/final_panels.json | archive | archive | exact user decision | true | false | 2026-09-21T15:46:03+00:00 |
+| artifacts/live_e2e_four_stage/report.json | .upgrade/archive/report.json | archive | archive | exact user decision | true | false | 2026-09-21T15:46:03+00:00 |
+| artifacts/live_e2e_four_stage/report_detail.json | .upgrade/archive/report_detail.json | archive | archive | exact user decision | true | false | 2026-09-21T15:46:03+00:00 |
+| artifacts/live_e2e_four_stage/session_export.json | .upgrade/archive/session_export.json | archive | archive | exact user decision | true | false | 2026-09-21T15:46:03+00:00 |
+| artifacts/live_e2e_four_stage/stage_1_panels.json | .upgrade/archive/stage_1_panels.json | archive | archive | exact user decision | true | false | 2026-09-21T15:46:03+00:00 |
+| artifacts/live_e2e_four_stage/stage_1_result.json | .upgrade/archive/stage_1_result.json | archive | archive | exact user decision | true | false | 2026-09-21T15:46:03+00:00 |
+| artifacts/live_e2e_four_stage/stage_2_panels.json | .upgrade/archive/stage_2_panels.json | archive | archive | exact user decision | true | false | 2026-09-21T15:46:03+00:00 |
+| artifacts/live_e2e_four_stage/stage_2_result.json | .upgrade/archive/stage_2_result.json | archive | archive | exact user decision | true | false | 2026-09-21T15:46:03+00:00 |
+| artifacts/live_e2e_four_stage/stage_3_panels.json | .upgrade/archive/stage_3_panels.json | archive | archive | exact user decision | true | false | 2026-09-21T15:46:03+00:00 |
+| artifacts/live_e2e_four_stage/stage_3_result.json | .upgrade/archive/stage_3_result.json | archive | archive | exact user decision | true | false | 2026-09-21T15:46:03+00:00 |
+| artifacts/live_e2e_four_stage/stage_4_panels.json | .upgrade/archive/stage_4_panels.json | archive | archive | exact user decision | true | false | 2026-09-21T15:46:03+00:00 |
+| artifacts/live_e2e_four_stage/stage_4_result.json | .upgrade/archive/stage_4_result.json | archive | archive | exact user decision | true | false | 2026-09-21T15:46:03+00:00 |
+
+## Last Maintenance Report
+
+- Action type: phase-update
+- Timestamp: 2026-09-22T00:48:40+00:00
+- Changed: 2
+- Skipped: 0
+<!-- project-upgrade-maintainer:manifest:end -->

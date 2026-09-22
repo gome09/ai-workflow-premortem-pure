@@ -26,6 +26,19 @@ gen() {
   fi
 }
 
+# Fernet keys are URL-safe base64-encoded 32-byte values, not hex strings.
+gen_fernet() {
+  local name="$1"
+  local path="$SECRETS_DIR/$name"
+  if [ -f "$path" ] && ! grep -q '^CHANGE_ME' "$path"; then
+    echo "[keep] $name already set"
+  else
+    openssl rand -base64 32 | tr '+/' '-_' | tr -d '\r\n' > "$path"
+    chmod 600 "$path"
+    echo "[gen]  $name (Fernet)"
+  fi
+}
+
 # API keys cannot be generated — seed placeholder files so docker compose
 # secret mounts do not fail; the user fills real values (mock mode needs none).
 seed_placeholder() {
@@ -69,6 +82,8 @@ gen jwt_secret
 gen postgres_password
 gen redis_password
 gen grafana_password
+gen_fernet data_encryption_key
+gen_fernet checkpoint_encryption_key
 seed_placeholder deepseek_api_key
 seed_placeholder tavily_api_key
 

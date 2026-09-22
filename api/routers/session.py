@@ -7,6 +7,7 @@ from api.schemas import (
     AddMaterialsRequest,
     CreateSessionRequest,
     CreateSessionResponse,
+    RenameSessionRequest,
     ResolveFlagRequest,
     ScenarioSummaryResponse,
     SessionListItem,
@@ -87,6 +88,26 @@ def get_session(session_id: str, ctx: TenantContext = Depends(get_current_tenant
     if not project_ctx:
         raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
     return project_ctx.model_dump(mode="json")
+
+
+@router.patch(
+    "/{session_id}/name",
+    dependencies=[require_roles(Role.editor, Role.admin)],
+)
+def rename_session(
+    session_id: str,
+    body: RenameSessionRequest,
+    ctx: TenantContext = Depends(get_current_tenant),
+) -> dict:
+    """修改当前 tenant 下的会话名称。"""
+    try:
+        return session_service.rename_session(
+            session_id,
+            body.name,
+            tenant_id=ctx.tenant_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.patch(

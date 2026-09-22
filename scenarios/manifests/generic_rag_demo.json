@@ -1,7 +1,7 @@
 {
   "scenario_id": "generic_rag_demo",
-  "name": "Generic RAG Demo",
-  "description": "通用企业知识库问答助手示例，使用 default profile 和 default mock fixture。",
+  "name": "通用 RAG 知识库问答",
+  "description": "通用企业知识库问答助手示例，使用通用领域配置和通用模拟数据。",
   "input_sample_path": "examples/sample_project_input.md",
   "domain_profile": "default",
   "mock_fixture": "default",

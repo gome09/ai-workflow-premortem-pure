@@ -55,8 +55,8 @@ bash scripts/gen_secrets.sh
 
 What it does, precisely:
 
-1. Generates four random values (`openssl rand -hex 32`) into `secrets/`: `jwt_secret`,
-   `postgres_password`, `redis_password`, `grafana_password` — each `chmod 600`.
+1. Generates four random service values plus two independent Fernet-compatible values
+   (`data_encryption_key`, `checkpoint_encryption_key`) into `secrets/` — each `chmod 600`.
 2. Syncs **three** of them (`JWT_SECRET`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`) back into the
    matching `CHANGE_ME` lines in `.env`. This is required because `.env` values shadow
    `/run/secrets` in the settings precedence order. `grafana_password` is *not* synced — Grafana
@@ -64,8 +64,9 @@ What it does, precisely:
 3. Comments out the `CHANGE_ME` placeholder lines for `DEEPSEEK_API_KEY` / `TAVILY_API_KEY`,
    which cannot be generated and must be filled in manually when `LLM_MODE=real`.
 
-It does **not** generate `DATA_ENCRYPTION_KEY`. Field-level encryption stays disabled (plaintext
-storage with a warning) until that key is provisioned by hand — see `.env.example`.
+Docker Full reads the two encryption values from file secrets. Non-Docker deployments can instead
+set the matching environment variables; they have higher precedence. The values must remain
+different — see `.env.example` and `docs/startup.md`.
 
 ### live_e2e_four_stage.py
 

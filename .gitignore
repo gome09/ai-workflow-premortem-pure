@@ -123,6 +123,7 @@ docs/internal/
 !.upgrade/archive/.gitkeep
 .upgrade/checkpoints/*.tmp
 .upgrade/checkpoints/*.bak
+.upgrade/backup/
 .upgrade/reports/*.tmp
 .upgrade/reports/*.bak
 .upgrade/transactions/*

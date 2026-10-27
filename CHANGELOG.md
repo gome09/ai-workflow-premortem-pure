@@ -10,6 +10,7 @@
 - **多租户写入正确性**：PostgreSQL `save()` 在事务内 `SELECT ... FOR UPDATE` 校验租户一致性与版本号，不一致分别抛 `TenantIsolationError` / `StaleContextError`，API 映射为 404 / 409；`load` / `delete` / `list_sessions` 在 tenant 为空时拒绝，`system=True` 作为启动补偿与审计的内部通道。新增 `storage/errors.py`；缓存层（Redis / 内存）往返携带存储版本，避免命中缓存被误判为陈旧。
 - **查询与写入性能**：会话列表与治理总览/趋势/积压改读生成列，治理聚合下推为针对 `safety_findings` / `human_actions` / `report_artifacts` 的 SQL 计数；`_sync_*` 由逐行 `execute` 改为 `executemany`；PostgreSQL 连接改为惰性初始化的 `psycopg_pool.ConnectionPool`，新增 `DB_POOL_MIN_SIZE` / `DB_POOL_MAX_SIZE` / `DB_STATEMENT_TIMEOUT_MS`，池初始化失败自动降级为单连接。
 - **可观测性**：新增 `premortem_db_operation_seconds` Histogram（save / load / list / governance），打点失败不影响请求路径。
+- **旧库升级路径**：本机 `ai_workflow` 是 Alembic 之前手工创建的库（无 `alembic_version`，`sessions` 缺 `tenant_id`），直接 `upgrade head` 会在 V001 租户索引处失败。处理顺序为 `pg_dump` 备份 → 对照 V001–V008 标准结构补齐 30 个缺失列 → `alembic upgrade head`；升级后 20 会话、90 人工动作、144 审计事件无损，历史行 `tenant_id` 仍为 NULL，需按实际归属回填后才进入租户作用域查询与治理统计。
 - **测试验证**：项目 `.venv` 全量 `750 passed, 1 skipped`（`sqlite` + `memory` checkpoint 环境）；工作树中仍有 4 条来自未提交 `frontend/app.py` WIP 的前端契约测试失败（缺 `api_delete` / `_role_from_token`），与本次改动无关。新增 `tests/test_alembic_v008_query_write_optimization.py`、`tests/test_storage_tenant_and_locking.py`；Ruff、mypy（116 文件）、版本一致性与文档一致性检查通过。
 
 ## 未发布维护记录 (2026-09-21)

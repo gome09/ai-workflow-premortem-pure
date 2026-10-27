@@ -62,6 +62,7 @@ make version-check
 - 高风险推进必须经过风险自适应门禁和必要的 `PendingHumanAction`。
 - API 路由只做协议适配，核心逻辑应位于 `core/`、`graph/`、`stages/` 或 `storage/`。
 - PostgreSQL schema 迁移只通过 Alembic；`core/migrations/` 仅用于历史 `ProjectContext` JSON 升级，二者不得混用。
+- 早于 Alembic 手工创建的旧库不能直接 `alembic upgrade head`：V001 的租户索引依赖 `sessions.tenant_id`，而 `CREATE TABLE IF NOT EXISTS` 不会为已存在表补列。必须先备份、按 V001 基线补齐缺失列、写入 `alembic_version` 后再升级。
 - 门禁规则新增/删除时必须同步 `core/gates/rules/manifest.py`、相关测试与规格文档。
 - 新增场景时同步 `scenarios/manifests/`、example input、domain profile/mock fixture（如需要）及场景测试。
 

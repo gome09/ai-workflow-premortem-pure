@@ -4,6 +4,14 @@
 > 远程 `origin`（github.com/gome09/ai-workflow-premortem-pure）与本地共享同一根提交，**不包含更早的历史**，无法用于追溯 v1.0 之前的开发过程。
 > 截至 2026-09-01，本地 `main` 已与 `origin/main` 同步（当日推送 10 次提交，至 `08f8a99`）。
 
+## 未发布维护记录 (2026-10-27)
+
+- **数据库查询与读写优化**：新增 Alembic V008——`sessions.version` 乐观锁版本、六个 JSONB 生成列（`data_classification` / `selected_scenario_id` / `session_name` / `scenario_name` / `research_target` / `domain`）、租户复合索引、`human_actions.tenant_id` 历史回填、`interrupt_records.stage_id` 由 TEXT 转 INTEGER，以及 NOT VALID 状态 CHECK 与 `sessions.tenant_id` 外键（避免历史数据阻塞迁移）。
+- **多租户写入正确性**：PostgreSQL `save()` 在事务内 `SELECT ... FOR UPDATE` 校验租户一致性与版本号，不一致分别抛 `TenantIsolationError` / `StaleContextError`，API 映射为 404 / 409；`load` / `delete` / `list_sessions` 在 tenant 为空时拒绝，`system=True` 作为启动补偿与审计的内部通道。新增 `storage/errors.py`；缓存层（Redis / 内存）往返携带存储版本，避免命中缓存被误判为陈旧。
+- **查询与写入性能**：会话列表与治理总览/趋势/积压改读生成列，治理聚合下推为针对 `safety_findings` / `human_actions` / `report_artifacts` 的 SQL 计数；`_sync_*` 由逐行 `execute` 改为 `executemany`；PostgreSQL 连接改为惰性初始化的 `psycopg_pool.ConnectionPool`，新增 `DB_POOL_MIN_SIZE` / `DB_POOL_MAX_SIZE` / `DB_STATEMENT_TIMEOUT_MS`，池初始化失败自动降级为单连接。
+- **可观测性**：新增 `premortem_db_operation_seconds` Histogram（save / load / list / governance），打点失败不影响请求路径。
+- **测试验证**：项目 `.venv` 全量 `750 passed, 1 skipped`（`sqlite` + `memory` checkpoint 环境）；工作树中仍有 4 条来自未提交 `frontend/app.py` WIP 的前端契约测试失败（缺 `api_delete` / `_role_from_token`），与本次改动无关。新增 `tests/test_alembic_v008_query_write_optimization.py`、`tests/test_storage_tenant_and_locking.py`；Ruff、mypy（116 文件）、版本一致性与文档一致性检查通过。
+
 ## 未发布维护记录 (2026-09-21)
 
 - **会话工作台交互**：四个内置场景的用户可见名称统一中文化；场景下拉只允许展开和选择，不支持输入、新增选项或关键词查询。选择场景后显式创建绑定场景的会话并加载样例对话；“新建空白会话”保持无场景、无默认消息。最近会话支持右键重命名，Enter 或失焦保存；名称框与删除按钮采用独立灰色样式。

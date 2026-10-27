@@ -8,10 +8,11 @@ The current database schema migration mechanism is **Alembic**.
 
 1. `api/main.py` initializes the session store in the `lifespan` context manager.
 2. `storage/backends/postgres.py::PostgresSessionStore.initialize()` runs `alembic upgrade head`.
-3. Alembic migrations are under `alembic/versions/` (currently V001 → V007).
+3. Alembic migrations are under `alembic/versions/` (currently V001 → V008).
    V006 adds the LangGraph PostgreSQL checkpoint schema; V007 adds the durable
-   interrupt-resume outbox. Runtime code validates these tables but does not
-   create or upgrade them ad hoc.
+   interrupt-resume outbox; V008 adds `sessions.version` (optimistic locking),
+   JSONB generated columns, tenant indexes and `human_actions.tenant_id`.
+   Runtime code validates these tables but does not create or upgrade them ad hoc.
 
 ### SQLite (lite mode)
 

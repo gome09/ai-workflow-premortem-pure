@@ -16,7 +16,7 @@
 | 治理接口实测 | ✅ PostgreSQL 环境 `/governance/overview`、`/gate-trends`、`/actions-backlog` 均返回 HTTP 200；实测总览统计 2 个真实业务会话并隔离 2 个演示会话 |
 | 前端实测 | ✅ Streamlit HTTP 200；治理页明确真实数据口径，柱状图显示横向参考网格，单周门禁数据使用固定 0%–100% 轴并提示不足以形成趋势线 |
 | 文档一致性检查 | ✅ 扫描 37 份当前项目 Markdown（排除 `.upgrade/`、archive、运行时产物和缓存），0 处违规（2026-09-21） |
-| 数据库迁移链 | ✅ Alembic V001 → V007（V006：LangGraph checkpoint；V007：durable resume outbox） |
+| 数据库迁移链 | ✅ Alembic V001 → V008（V006：LangGraph checkpoint；V007：durable resume outbox；V008：租户索引、乐观锁与生成列） |
 | ProjectContext 迁移链 | ✅ 0.6.0-alpha.8 → 0.7.0 → 0.8.0 → 0.9.0 |
 
 ## v1.3.0 回归验证（2026-07-17）

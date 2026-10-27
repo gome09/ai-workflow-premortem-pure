@@ -70,7 +70,7 @@
 | 数据分类分级（T1.1） | 适配性控制 | DSL 21 条 / PIPL 51 条 | ✅ 已实现 |
 | 字段级加密（T1.3） | 存储泄露 | PIPL 51 条 | ⚠️ 代码已实现，部署时需显式配置密钥并验证 `/health.data_encryption` |
 | PII 检测与掩码（T1.4） | 跨境传输 | PIPL 38/39 条 | ⚠️ 部分实现：四类正则 + 材料注入路径；默认关闭，直接消息/历史不覆盖 |
-| 加密持久 checkpoint | 中断恢复与执行快照泄露 | PIPL 51 条 | ⚠️ 仅在显式启用 `langgraph_interrupt` 时使用；PostgreSQL 强制独立 key，`make setup` 不生成该 key，需部署方配置并验证 `/health/ready` |
+| 加密持久 checkpoint | 中断恢复与执行快照泄露 | PIPL 51 条 | ⚠️ 仅在显式启用 `langgraph_interrupt` 时使用；PostgreSQL 强制独立 key，`make setup` 生成 `secrets/checkpoint_encryption_key`，非 Docker 部署需部署方显式配置并验证 `/health/ready` |
 | 会话删除与审计归档（T1.6） | 留存过度 | PIPL 47 条 | ✅ 已实现 |
 | 应急响应（T1.9） | 事件响应 | PIPL 57 条 | ✅ 已实现 |
 

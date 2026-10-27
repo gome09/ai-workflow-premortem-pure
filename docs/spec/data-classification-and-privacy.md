@@ -65,7 +65,7 @@
 - **加密范围**：`data_classification ∈ {business_internal, sensitive_personal}` 会话的用户材料字段——`user_materials`、`evidence_sources.summary/claims`（source_type=user_material 的记录）。`public_demo` 保持明文（保住"零配置离线演示"这一核心亮点）。
 - **实现位置**：`storage/backends/` 的 `_build_context_json_for_storage`（写侧）与 `load()`（读侧）各加一层 encode/decode 钩子，密文带 `enc:v1:` 前缀以便识别与将来轮换；PostgreSQL 与 SQLite 两个后端行为一致。
 - **降级行为**：未配置密钥时——demo/lite 模式静默明文（现状不回退）；生产模式（postgres backend）启动时打 WARNING 并在 `/health` 暴露 `data_encryption: disabled`。
-- **当前部署事实（2026-07-25）**：`.env.example` 的 `DATA_ENCRYPTION_KEY` 默认为空，`make setup` / `scripts/gen_secrets.sh` 不生成该值，Docker Compose 仅通过 `.env` 传入。因此“代码已实现”不等于“默认生产部署已启用”；上线前必须生成 Fernet key、写入 `.env`，并确认 `/health` 返回 `data_encryption=enabled`。
+- **当前部署事实（2026-10-27）**：`.env.example` 的 `DATA_ENCRYPTION_KEY` 默认为空，但 `make setup` / `scripts/gen_secrets.sh` 会生成 `secrets/data_encryption_key` 并以 Docker secrets 注入；环境变量仍然优先于 secret 文件。非 Docker 部署仍需显式设置 `DATA_ENCRYPTION_KEY`，并在启动后确认 `/health` 返回 `data_encryption=enabled`。
 - **不做**：全库透明加密（TDE 属部署层，不属应用层）、可搜索加密（当前无按材料内容检索的需求）。
 
 ### 4.2 PII 检测与出境前掩码
@@ -79,7 +79,7 @@
 ### 4.3 LangGraph checkpoint 数据副本
 
 - 默认 `single_step` 不写 LangGraph checkpoint。显式启用 `langgraph_interrupt` 后，checkpoint 会保存完整 `ProjectContext` 执行快照，因而可能包含用户材料、证据、对话历史及其他个人信息；它属于与业务表并列的数据副本，必须纳入数据清单、备份、泄露响应和删除流程。
-- PostgreSQL checkpoint 只允许使用持久后端，并由独立 `CHECKPOINT_ENCRYPTION_KEY` 通过 Fernet 加密 payload。该 key 不由 `make setup` 生成，不得复用 `DATA_ENCRYPTION_KEY`，也不能替代业务字段加密。
+- PostgreSQL checkpoint 只允许使用持久后端，并由独立 `CHECKPOINT_ENCRYPTION_KEY` 通过 Fernet 加密 payload。`make setup` 会单独生成 `secrets/checkpoint_encryption_key`，该 key 不得复用 `DATA_ENCRYPTION_KEY`，也不能替代业务字段加密。
 - SQLite/local 可使用 memory checkpoint，但它不持久化、进程重启后不可恢复，不得用于生产。
 - 删除会话时先按 tenant-scoped thread ID 清理 checkpoint；清理失败则保留权威业务会话并返回失败，避免出现“业务记录已删除但敏感执行快照残留”的假性成功。
 

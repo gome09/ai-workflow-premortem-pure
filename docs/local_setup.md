@@ -48,6 +48,7 @@
 | `DOMAIN_PROFILE` | 领域配置 | 使用中，支持 `default` / `university_ai` / `medical_ai`；其他值会回落 default 并打 WARNING |
 | `LLM_MODE` | 真实或 mock | 使用中，支持 `real` / `mock`，默认 `real` |
 | `STORAGE_BACKEND` | 存储后端 | 使用中，支持 `postgres` / `sqlite`，默认 `postgres` |
+| `POSTGRES_PORT` | 应用连接 PostgreSQL 的端口 | 使用中；容器内与本机原生 PG 用 `5432`，宿主进程连 Docker DB 用 `5433`（override 映射） |
 | `SQLITE_PATH` | SQLite 文件路径 | 仅 SQLite 模式使用，默认 `data/workflow.db` |
 | `WORKFLOW_EXECUTION_MODE` | 执行模式 | 使用中，默认 `single_step`；`langgraph_interrupt` 为显式 opt-in，非生产默认 |
 | `CHECKPOINT_BACKEND` | LangGraph checkpoint 后端 | `postgres` 为持久化后端；`memory` 仅限 SQLite/本地开发，重启不可恢复 |

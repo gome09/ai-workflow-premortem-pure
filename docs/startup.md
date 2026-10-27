@@ -54,6 +54,8 @@ uv run streamlit run frontend/app.py --server.port 8501
 
 `postgres` / `redis` compose 服务读取 `secrets/postgres_password` 与 `secrets/redis_password`，因此仅复制 `.env.example` 不足以启动它们。`make setup` 会创建文件型 secrets，并把 PostgreSQL、Redis 和 JWT 的同值配置同步进 `.env`；本机运行 API 时仍需在 `.env` 设置真实 DeepSeek/Tavily key。
 
+`POSTGRES_PORT` 表示"应用连接数据库的端口"，需按运行位置取值：API 容器内与本机原生 PostgreSQL 都是 `5432`；宿主进程连 Docker 提供的数据库时必须改为 `5433`（`docker-compose.override.yml` 的 `5433:5432` 映射）。同一份 `.env` 无法同时满足这两种宿主机场景，切换时只改这一行。
+
 ---
 
 ## Docker 生产样式启动

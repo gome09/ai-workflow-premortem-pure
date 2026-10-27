@@ -117,7 +117,7 @@ Phase 1（T1.1–T1.4，自 v1.0.3 起落地并沿用至今）的数据安全能
 | 能力 | 实现 | 位置 |
 |------|------|------|
 | 数据分类分级 | `ProjectContext` 落库数据打三级标签（公开示例 / 客户业务材料 / 敏感个人信息），支持覆写并留审计 | `core/models.py` `data_classification` 字段；`PATCH /sessions/{id}/data-classification` |
-| 字段级加密 | 存储层支持 Fernet 对称加密；仅在配置有效 `DATA_ENCRYPTION_KEY` 时启用。当前 `make setup`/Docker secrets 不自动生成该密钥，未配置时 PostgreSQL 会告警并明文存储 | `storage/field_security.py`；`/health.data_encryption` |
+| 字段级加密 | 存储层支持 Fernet 对称加密；仅在配置有效 `DATA_ENCRYPTION_KEY` 时启用。`make setup` / `scripts/gen_secrets.sh` 会生成 `secrets/data_encryption_key` 并以 Docker secrets 注入；未配置时 PostgreSQL 会告警并明文存储 | `storage/field_security.py`；`/health.data_encryption` |
 | PII 掩码 | `PII_MASK_BEFORE_LLM` 开启后，仅在 evidence summary / `user_materials` 格式化路径做四类正则检测与掩码并产出 finding；直接用户消息和会话历史当前不覆盖 | `tools/safety_classifier.py`（`PII_PATTERNS`）；`core/evidence_service.py` |
 | 中断 checkpoint | `langgraph_interrupt` + PostgreSQL 使用独立 Fernet key 加密完整 `ProjectContext` checkpoint；要求持久 PostgreSQL 后端、单 worker，并在初始化或健康异常时 fail closed。SQLite 的 memory checkpoint 仅供本地调试且进程重启即丢失 | `graph/checkpoint_manager.py`；Alembic V006/V007；`/health/ready` |
 | AI 生成标识 | 报告导出首屏中文免责声明，对齐《生成合成内容标识办法》 | `core/report_service.py` |

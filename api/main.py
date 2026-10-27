@@ -5,7 +5,7 @@ import sys
 from contextlib import asynccontextmanager
 
 import redis as redis_lib
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
@@ -40,6 +40,7 @@ from graph.checkpoint_manager import (
     initialize_interrupt_runtime,
 )
 from scenarios import list_scenarios
+from storage.errors import StaleContextError, TenantIsolationError
 from storage.field_security import is_encryption_enabled
 from storage.session_store import session_store
 
@@ -98,6 +99,7 @@ async def lifespan(app: FastAPI):
     logger.info("App started.")
     yield
     close_interrupt_runtime()
+    session_store.close()
     logger.info("App shutting down.")
 
 
@@ -122,7 +124,7 @@ def _rate_limit_audit_handler(request, exc):
     try:
         session_id = (request.path_params or {}).get("session_id") or ""
         if session_id:
-            ctx = session_store.load(session_id)
+            ctx = session_store.load(session_id, system=True)
             if ctx is not None:
                 append_audit_event(
                     ctx,
@@ -144,6 +146,27 @@ def _rate_limit_audit_handler(request, exc):
 
 
 app.add_exception_handler(RateLimitExceeded, _rate_limit_audit_handler)
+
+
+async def _stale_context_handler(request: Request, exc: Exception) -> JSONResponse:
+    """并发保存冲突：客户端需重新加载最新上下文后再重试。"""
+    stale = exc if isinstance(exc, StaleContextError) else None
+    return JSONResponse(
+        status_code=409,
+        content={
+            "detail": "Session context is stale; reload before saving again",
+            "session_id": stale.session_id if stale else "",
+        },
+    )
+
+
+async def _tenant_isolation_handler(request: Request, exc: Exception) -> JSONResponse:
+    """租户边界失败：统一返回 404，避免泄露跨租户资源是否存在。"""
+    return JSONResponse(status_code=404, content={"detail": "Session not found"})
+
+
+app.add_exception_handler(StaleContextError, _stale_context_handler)
+app.add_exception_handler(TenantIsolationError, _tenant_isolation_handler)
 
 origins = [o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()]
 app.add_middleware(

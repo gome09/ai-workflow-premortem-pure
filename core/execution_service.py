@@ -43,7 +43,12 @@ def reconcile_pending_interrupt_resumes(limit: int = 100) -> dict[str, int]:
             continue
         summary["claimed"] += 1
         try:
-            ctx = session_store.load(item["session_id"], item.get("tenant_id") or "")
+            tenant_id = item.get("tenant_id") or ""
+            ctx = (
+                session_store.load(item["session_id"], tenant_id)
+                if tenant_id
+                else session_store.load(item["session_id"], system=True)
+            )
             if ctx is None:
                 raise ValueError(f"Session not found: {item['session_id']}")
             from graph.langgraph_interrupt_runner import consume_resumable_interrupt_if_needed

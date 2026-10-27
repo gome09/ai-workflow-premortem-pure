@@ -14,7 +14,9 @@ NOTE: `redis` is imported at module level so that existing tests can patch
 
 from __future__ import annotations
 
+import json
 import logging
+from typing import Any
 
 import redis
 
@@ -24,6 +26,34 @@ from core.models import ProjectContext
 logger = logging.getLogger(__name__)
 
 CONTEXT_TTL = settings.session_ttl_hours * 3600
+
+
+def _serialize(ctx: ProjectContext) -> str:
+    """Serialize context plus its storage version.
+
+    `_storage_version` is a Pydantic PrivateAttr and is intentionally excluded
+    from `model_dump_json()`. The optimistic-lock version must survive a cache
+    round-trip, otherwise a cache hit would look like version 0 and every save
+    would be rejected as stale.
+    """
+    version = int(getattr(ctx, "_storage_version", 0))
+    return json.dumps(
+        {"context": ctx.model_dump(mode="json"), "storage_version": version},
+        default=str,
+    )
+
+
+def _deserialize(raw: str) -> ProjectContext | None:
+    try:
+        payload: Any = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if isinstance(payload, dict) and isinstance(payload.get("context"), dict):
+        ctx = ProjectContext.model_validate(payload["context"])
+        ctx._storage_version = int(payload.get("storage_version") or 0)
+        return ctx
+    # Legacy payloads written before V008 have no version; treat as version 0.
+    return ProjectContext.model_validate(payload)
 
 
 class ContextCache:
@@ -47,7 +77,7 @@ class ContextCache:
             self._client.setex(
                 self._key(ctx.session_id, ctx.tenant_id),
                 CONTEXT_TTL,
-                ctx.model_dump_json(),
+                _serialize(ctx),
             )
         except redis.RedisError as e:
             logger.warning(f"Redis set failed, degrading to PG-only: {e}")
@@ -57,7 +87,7 @@ class ContextCache:
             raw = self._client.get(self._key(session_id, tenant_id))
             if not raw:
                 return None
-            return ProjectContext.model_validate_json(raw)
+            return _deserialize(raw)
         except redis.RedisError as e:
             logger.warning(f"Redis get failed: {e}")
             return None

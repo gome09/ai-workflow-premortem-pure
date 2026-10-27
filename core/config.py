@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     postgres_db: str = "ai_workflow"
     postgres_user: str = "postgres"
     postgres_password: str = ""
+    # Connection pool (psycopg_pool); the pool is created lazily on first query.
+    db_pool_min_size: int = 2
+    db_pool_max_size: int = 10
+    # Per-statement server-side timeout; 0 disables the timeout.
+    db_statement_timeout_ms: int = 5000
 
     # Redis
     redis_host: str = "localhost"
@@ -131,6 +136,12 @@ class Settings(BaseSettings):
                 raise ValueError("TAVILY_API_KEY must be set when LLM_MODE=real")
         if self.storage_backend != "sqlite" and not self.postgres_password:
             raise ValueError("POSTGRES_PASSWORD must be set when STORAGE_BACKEND is not sqlite")
+        if self.db_pool_min_size < 0:
+            raise ValueError("DB_POOL_MIN_SIZE must be >= 0")
+        if self.db_pool_max_size < 1 or self.db_pool_max_size < self.db_pool_min_size:
+            raise ValueError("DB_POOL_MAX_SIZE must be >= 1 and >= DB_POOL_MIN_SIZE")
+        if self.db_statement_timeout_ms < 0:
+            raise ValueError("DB_STATEMENT_TIMEOUT_MS must be >= 0")
 
         execution_mode = WorkflowExecutionMode.normalize(self.workflow_execution_mode)
         if execution_mode == WorkflowExecutionMode.LANGGRAPH_INTERRUPT:

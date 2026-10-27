@@ -22,7 +22,8 @@ class MemoryCache:
 
     def __init__(self, ttl_seconds: int = 72 * 3600):
         self._ttl = ttl_seconds
-        self._store: dict[str, tuple[str, float]] = {}  # key -> (json_str, insert_time)
+        # key -> (json_str, storage_version, insert_time)
+        self._store: dict[str, tuple[str, int, float]] = {}
         self._lock = threading.Lock()
 
     def _key(self, session_id: str, tenant_id: str = "") -> str:
@@ -32,8 +33,9 @@ class MemoryCache:
         try:
             key = self._key(ctx.session_id, ctx.tenant_id or "")
             value = ctx.model_dump_json()
+            version = int(getattr(ctx, "_storage_version", 0))
             with self._lock:
-                self._store[key] = (value, time.monotonic())
+                self._store[key] = (value, version, time.monotonic())
         except Exception as e:  # noqa: BLE001
             logger.warning("MemoryCache set failed: %s", e)
 
@@ -44,12 +46,14 @@ class MemoryCache:
                 entry = self._store.get(key)
             if entry is None:
                 return None
-            value, insert_time = entry
+            value, version, insert_time = entry
             if time.monotonic() - insert_time > self._ttl:
                 with self._lock:
                     self._store.pop(key, None)
                 return None
-            return ProjectContext.model_validate_json(value)
+            ctx = ProjectContext.model_validate_json(value)
+            ctx._storage_version = version
+            return ctx
         except Exception as e:  # noqa: BLE001
             logger.warning("MemoryCache get failed: %s", e)
             return None
@@ -68,6 +72,6 @@ class MemoryCache:
             with self._lock:
                 entry = self._store.get(key)
                 if entry is not None:
-                    self._store[key] = (entry[0], time.monotonic())
+                    self._store[key] = (entry[0], entry[1], time.monotonic())
         except Exception as e:  # noqa: BLE001
             logger.warning("MemoryCache refresh_ttl failed: %s", e)

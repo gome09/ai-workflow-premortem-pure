@@ -222,9 +222,9 @@ class SessionService:
         )
         return summary
 
-    def list_sessions(self, limit: int = 20, tenant_id: str = "") -> list[dict]:
+    def list_sessions(self, limit: int = 20, tenant_id: str = "", offset: int = 0) -> list[dict]:
         """列出最近会话，供前端历史列表使用。"""
-        rows = session_store.list_sessions(limit=limit, tenant_id=tenant_id)
+        rows = session_store.list_sessions(limit=limit, tenant_id=tenant_id, offset=offset)
         items: list[dict] = []
         for row in rows:
             updated_at = row.get("updated_at", "")

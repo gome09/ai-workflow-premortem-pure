@@ -5,21 +5,137 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import time
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import datetime
-from typing import Any, TypeAlias, cast
+from functools import wraps
+from typing import Any, ParamSpec, TypeAlias, TypeVar, cast
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 
 from core.config import settings
 from core.migrations import migrate_context
 from core.models import ProjectContext
+from storage.errors import StaleContextError, TenantIsolationError
 from storage.field_security import decrypt_fields_after_load, encrypt_fields_for_storage
 
 logger = logging.getLogger(__name__)
 
 # 连接固定使用 dict_row 行工厂，行对象按列名索引；所有查询/_sync_* 方法均依赖此形状。
 DictConnection: TypeAlias = psycopg.Connection[dict[str, Any]]
+
+# 治理统计口径：真实业务会话参与聚合，内置场景演示会话一律排除。
+# 依赖 V008 生成列（data_classification / selected_scenario_id），避免 JSONB 全表求值。
+# 谓词显式内联在每条常量 SQL 中；租户值只通过参数绑定传入。
+_GOV_STATE_SQL = """
+    SELECT s.current_state, COUNT(*) AS n FROM sessions AS s
+    WHERE s.tenant_id = %s::uuid
+      AND COALESCE(s.data_classification, 'business_internal') <> 'public_demo'
+      AND NULLIF(s.selected_scenario_id, '') IS NULL
+    GROUP BY s.current_state
+"""
+_GOV_EVAL_SQL = """
+    SELECT ger.session_id, ger.risk_tier, ger.evaluated_at
+    FROM gate_evaluation_records AS ger
+    JOIN sessions AS s ON s.session_id = ger.session_id
+    WHERE ger.tenant_id = %s AND s.tenant_id = %s::uuid
+      AND COALESCE(s.data_classification, 'business_internal') <> 'public_demo'
+      AND NULLIF(s.selected_scenario_id, '') IS NULL
+"""
+_GOV_FINDING_SQL = """
+    SELECT COUNT(*) AS n
+    FROM safety_findings AS sf
+    JOIN sessions AS s ON s.session_id = sf.session_id
+    WHERE s.tenant_id = %s::uuid
+      AND sf.status = 'open'
+      AND COALESCE(s.data_classification, 'business_internal') <> 'public_demo'
+      AND NULLIF(s.selected_scenario_id, '') IS NULL
+"""
+_GOV_ACTION_SQL = """
+    SELECT COUNT(*) AS n
+    FROM human_actions AS ha
+    JOIN sessions AS s ON s.session_id = ha.session_id
+    WHERE s.tenant_id = %s::uuid
+      AND ha.status = 'pending'
+      AND COALESCE(s.data_classification, 'business_internal') <> 'public_demo'
+      AND NULLIF(s.selected_scenario_id, '') IS NULL
+"""
+_GOV_REPORT_SQL = """
+    SELECT COUNT(DISTINCT ra.session_id) AS n
+    FROM report_artifacts AS ra
+    JOIN sessions AS s ON s.session_id = ra.session_id
+    WHERE s.tenant_id = %s::uuid
+      AND COALESCE(s.data_classification, 'business_internal') <> 'public_demo'
+      AND NULLIF(s.selected_scenario_id, '') IS NULL
+"""
+_GOV_DEMO_SQL = """
+    SELECT COUNT(*) AS n FROM sessions AS s
+    WHERE s.tenant_id = %s::uuid
+      AND (
+          COALESCE(s.data_classification, 'business_internal') = 'public_demo'
+          OR NULLIF(s.selected_scenario_id, '') IS NOT NULL
+      )
+"""
+_GOV_BACKLOG_SQL = """
+    SELECT ha.session_id, ha.action_id, ha.title, ha.risk_level,
+           ha.stage_id, ha.created_at
+    FROM human_actions AS ha
+    JOIN sessions AS s ON s.session_id = ha.session_id
+    WHERE s.tenant_id = %s::uuid
+      AND ha.status = 'pending'
+      AND COALESCE(s.data_classification, 'business_internal') <> 'public_demo'
+      AND NULLIF(s.selected_scenario_id, '') IS NULL
+"""
+_GOV_METRICS_STATE_SQL = """
+    SELECT s.current_state, COUNT(*) AS n FROM sessions AS s
+    WHERE COALESCE(s.data_classification, 'business_internal') <> 'public_demo'
+      AND NULLIF(s.selected_scenario_id, '') IS NULL
+    GROUP BY s.current_state
+"""
+_GOV_METRICS_RISK_SQL = """
+    SELECT ha.risk_level, COUNT(*) AS n
+    FROM human_actions AS ha
+    JOIN sessions AS s ON s.session_id = ha.session_id
+    WHERE ha.status = 'pending'
+      AND COALESCE(s.data_classification, 'business_internal') <> 'public_demo'
+      AND NULLIF(s.selected_scenario_id, '') IS NULL
+    GROUP BY ha.risk_level
+"""
+
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+def _executemany(conn: DictConnection, sql: str, rows: list[tuple[Any, ...]]) -> None:
+    """psycopg3 的 executemany 位于 cursor 上，统一封装一次。"""
+    with conn.cursor() as cur:
+        cur.executemany(sql, rows)
+
+
+def _record_db_operation(operation: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    """记录存储层操作耗时；指标模块缺失或打点失败均不影响主路径。"""
+
+    def decorator(fn: Callable[P, R]) -> Callable[P, R]:
+        @wraps(fn)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            started = time.perf_counter()
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                try:
+                    from api.metrics import observe_db_operation
+
+                    observe_db_operation(operation, time.perf_counter() - started)
+                except Exception:
+                    logger.debug("db operation metric failed; non-fatal", exc_info=True)
+
+        return wrapper
+
+    return decorator
 
 
 class PostgresSessionStore:
@@ -30,11 +146,57 @@ class PostgresSessionStore:
 
     def __init__(self):
         self._dsn = settings.postgres_dsn_sync
+        self._pool: ConnectionPool[DictConnection] | None = None
+        self._pool_lock = threading.Lock()
 
-    def _get_conn(self) -> DictConnection:
-        # row_factory=dict_row 是关键约束：必须与 DictConnection（dict[str, Any]）参数化保持一致。
-        # 所有查询与 _sync_* 方法都按列名索引行对象。
-        return psycopg.connect(self._dsn, row_factory=dict_row)
+    def _connect_kwargs(self) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {"row_factory": dict_row}
+        timeout_ms = int(settings.db_statement_timeout_ms)
+        if timeout_ms > 0:
+            kwargs["options"] = f"-c statement_timeout={timeout_ms}"
+        return kwargs
+
+    def _get_pool(self) -> ConnectionPool[DictConnection] | None:
+        """惰性创建连接池；创建失败时降级为单连接模式并告警。"""
+        if self._pool is not None:
+            return self._pool
+        with self._pool_lock:
+            if self._pool is None:
+                try:
+                    self._pool = ConnectionPool(
+                        conninfo=self._dsn,
+                        min_size=int(settings.db_pool_min_size),
+                        max_size=int(settings.db_pool_max_size),
+                        kwargs=self._connect_kwargs(),
+                        open=True,
+                    )
+                except Exception:
+                    logger.warning(
+                        "PostgreSQL connection pool init failed; falling back to "
+                        "per-request connections",
+                        exc_info=True,
+                    )
+                    return None
+        return self._pool
+
+    @contextmanager
+    def _get_conn(self) -> Iterator[DictConnection]:
+        """Yield a pooled connection (committed on exit) or a single connection."""
+        pool = self._get_pool()
+        if pool is not None:
+            with pool.connection() as conn:
+                yield conn
+            return
+        # row_factory=dict_row 是关键约束：所有查询与 _sync_* 方法都按列名索引行对象。
+        with psycopg.connect(self._dsn, **self._connect_kwargs()) as conn:
+            yield conn
+
+    def close(self) -> None:
+        """Release pooled connections (called at application shutdown)."""
+        with self._pool_lock:
+            if self._pool is not None:
+                self._pool.close()
+                self._pool = None
 
     def initialize(self) -> None:
         """Run alembic migrations to head. Called once at app startup."""
@@ -134,29 +296,66 @@ class PostgresSessionStore:
 
         return json.dumps(data, default=str)
 
+    @_record_db_operation("save")
     def save(self, ctx: ProjectContext) -> None:
-        """创建或更新会话"""
-        ctx.updated_at = datetime.utcnow()
-        sql = """
-            INSERT INTO sessions (session_id, tenant_id, current_state, context_json, created_at, updated_at)
-            VALUES (%s, %s::uuid, %s, %s, %s, %s)
-            ON CONFLICT (session_id) DO UPDATE SET
-                current_state = EXCLUDED.current_state,
-                context_json  = EXCLUDED.context_json,
-                updated_at    = EXCLUDED.updated_at
+        """创建或更新会话。
+
+        PostgreSQL 下强制两项正确性约束：
+        - 租户一致：已有会话的 tenant_id 必须与待保存上下文一致，防止跨租户覆盖。
+        - 乐观锁：保存时校验 `_storage_version`，并发保存不会静默丢失更新。
         """
+        ctx.updated_at = datetime.utcnow()
+        context_json = self._build_context_json_for_storage(ctx)
+        expected_version = int(getattr(ctx, "_storage_version", 0))
+        incoming_tenant = ctx.tenant_id or ""
         with self._get_conn() as conn:
-            conn.execute(
-                sql,
-                (
-                    ctx.session_id,
-                    ctx.tenant_id or None,
-                    ctx.current_state.value,
-                    self._build_context_json_for_storage(ctx),
-                    ctx.created_at,
-                    ctx.updated_at,
-                ),
-            )
+            row = conn.execute(
+                "SELECT version, tenant_id::text FROM sessions WHERE session_id = %s FOR UPDATE",
+                (ctx.session_id,),
+            ).fetchone()
+            if row is None:
+                conn.execute(
+                    """
+                    INSERT INTO sessions (
+                        session_id, tenant_id, current_state, context_json,
+                        created_at, updated_at, version
+                    )
+                    VALUES (%s, %s::uuid, %s, %s, %s, %s, 0)
+                    """,
+                    (
+                        ctx.session_id,
+                        ctx.tenant_id or None,
+                        ctx.current_state.value,
+                        context_json,
+                        ctx.created_at,
+                        ctx.updated_at,
+                    ),
+                )
+                new_version = 0
+            else:
+                existing_tenant = row.get("tenant_id") or ""
+                if existing_tenant != incoming_tenant:
+                    raise TenantIsolationError(ctx.session_id, "save")
+                current_version = int(row.get("version") or 0)
+                if current_version != expected_version:
+                    raise StaleContextError(ctx.session_id, expected_version, current_version)
+                conn.execute(
+                    """
+                    UPDATE sessions
+                    SET current_state = %s,
+                        context_json  = %s,
+                        updated_at    = %s,
+                        version       = version + 1
+                    WHERE session_id = %s
+                    """,
+                    (
+                        ctx.current_state.value,
+                        context_json,
+                        ctx.updated_at,
+                        ctx.session_id,
+                    ),
+                )
+                new_version = current_version + 1
             self._sync_human_actions(conn, ctx)
             self._sync_action_resolution_logs(conn, ctx)
             self._sync_llm_traces(conn, ctx)
@@ -174,25 +373,15 @@ class PostgresSessionStore:
             self._sync_interrupt_records(conn, ctx)
             self._sync_interrupt_resume_outbox(conn, ctx)
             conn.commit()
+        # 只有事务提交成功后才回写版本，异常路径保持原版本以便调用方重试。
+        ctx._storage_version = new_version
 
     def _sync_interrupt_resume_outbox(self, conn: DictConnection, ctx: ProjectContext) -> None:
+        rows: list[tuple[Any, ...]] = []
         for record in getattr(ctx, "interrupt_records", []) or []:
             if record.status != "resumed" or record.resume_consumed_at is not None:
                 continue
-            conn.execute(
-                """
-                INSERT INTO interrupt_resume_outbox (
-                    interrupt_id, session_id, tenant_id, action_id, thread_id,
-                    checkpoint_ns, resume_payload, status, updated_at
-                ) VALUES (%s, %s, %s::uuid, %s, %s, %s, %s, 'pending', NOW())
-                ON CONFLICT (action_id) DO UPDATE SET
-                    resume_payload = EXCLUDED.resume_payload,
-                    updated_at = NOW(),
-                    status = CASE
-                        WHEN interrupt_resume_outbox.status = 'completed' THEN 'completed'
-                        ELSE interrupt_resume_outbox.status
-                    END
-                """,
+            rows.append(
                 (
                     record.interrupt_id,
                     ctx.session_id,
@@ -201,157 +390,198 @@ class PostgresSessionStore:
                     record.thread_id,
                     record.checkpoint_ns,
                     json.dumps(record.resume_value or {}, default=str),
-                ),
+                )
             )
+        if not rows:
+            return
+        _executemany(
+            conn,
+            """
+            INSERT INTO interrupt_resume_outbox (
+                interrupt_id, session_id, tenant_id, action_id, thread_id,
+                checkpoint_ns, resume_payload, status, updated_at
+            ) VALUES (%s, %s, %s::uuid, %s, %s, %s, %s, 'pending', NOW())
+            ON CONFLICT (action_id) DO UPDATE SET
+                interrupt_id = EXCLUDED.interrupt_id,
+                thread_id = EXCLUDED.thread_id,
+                checkpoint_ns = EXCLUDED.checkpoint_ns,
+                resume_payload = EXCLUDED.resume_payload,
+                updated_at = NOW(),
+                status = CASE
+                    WHEN interrupt_resume_outbox.status = 'completed' THEN 'completed'
+                    ELSE interrupt_resume_outbox.status
+                END
+            """,
+            rows,
+        )
 
     def _sync_human_actions(self, conn: DictConnection, ctx: ProjectContext) -> None:
         """同步 ProjectContext 中的人工动作到索引表。使用 upsert，避免删除历史。"""
-        for action in ctx.pending_actions:
-            conn.execute(
-                """
-                INSERT INTO human_actions (
-                    action_id, session_id, stage_id, node_id, source_type, source_id,
-                    action_type, status, risk_level, title, description, trigger_reason,
-                    blocking, payload_before, payload_after, reviewer_decision,
-                    reviewer_note, stage_output_version, superseded_by,
-                    action_contract_id, action_schema_version, idempotency_key,
-                    target_stage, target_stage_version, target_object_path,
-                    expected_before_hash, approved_payload_hash, resume_token, expires_at,
-                    resolution_attempts, last_resolution_error, created_at, resolved_at
-                )
-                VALUES (
-                    %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s,
-                    %s, %s, %s,
-                    %s, %s, %s,
-                    %s, %s, %s,
-                    %s, %s, %s, %s,
-                    %s, %s, %s, %s
-                )
-                ON CONFLICT (action_id) DO UPDATE SET
-                    status = EXCLUDED.status,
-                    payload_after = EXCLUDED.payload_after,
-                    reviewer_decision = EXCLUDED.reviewer_decision,
-                    reviewer_note = EXCLUDED.reviewer_note,
-                    stage_output_version = EXCLUDED.stage_output_version,
-                    superseded_by = EXCLUDED.superseded_by,
-                    idempotency_key = EXCLUDED.idempotency_key,
-                    target_stage = EXCLUDED.target_stage,
-                    target_stage_version = EXCLUDED.target_stage_version,
-                    target_object_path = EXCLUDED.target_object_path,
-                    expected_before_hash = EXCLUDED.expected_before_hash,
-                    approved_payload_hash = EXCLUDED.approved_payload_hash,
-                    resume_token = EXCLUDED.resume_token,
-                    expires_at = EXCLUDED.expires_at,
-                    resolution_attempts = EXCLUDED.resolution_attempts,
-                    last_resolution_error = EXCLUDED.last_resolution_error,
-                    resolved_at = EXCLUDED.resolved_at
-                """,
-                (
-                    action.action_id,
-                    ctx.session_id,
-                    action.stage_id,
-                    action.node_id,
-                    action.source_type,
-                    action.source_id,
-                    action.action_type,
-                    action.status,
-                    action.risk_level,
-                    action.title,
-                    action.description,
-                    action.trigger_reason,
-                    action.blocking,
-                    json.dumps(action.payload_before, default=str),
-                    json.dumps(action.payload_after, default=str)
-                    if action.payload_after is not None
-                    else None,
-                    action.reviewer_decision,
-                    action.reviewer_note,
-                    action.stage_output_version,
-                    action.superseded_by,
-                    action.action_contract_id,
-                    action.action_schema_version,
-                    action.idempotency_key,
-                    action.target_stage,
-                    action.target_stage_version,
-                    action.target_object_path,
-                    action.expected_before_hash,
-                    action.approved_payload_hash,
-                    action.resume_token,
-                    action.expires_at,
-                    action.resolution_attempts,
-                    action.last_resolution_error,
-                    action.created_at,
-                    action.resolved_at,
-                ),
+        rows = [
+            (
+                action.action_id,
+                ctx.session_id,
+                ctx.tenant_id or None,
+                action.stage_id,
+                action.node_id,
+                action.source_type,
+                action.source_id,
+                action.action_type,
+                action.status,
+                action.risk_level,
+                action.title,
+                action.description,
+                action.trigger_reason,
+                action.blocking,
+                json.dumps(action.payload_before, default=str),
+                json.dumps(action.payload_after, default=str)
+                if action.payload_after is not None
+                else None,
+                action.reviewer_decision,
+                action.reviewer_note,
+                action.stage_output_version,
+                action.superseded_by,
+                action.action_contract_id,
+                action.action_schema_version,
+                action.idempotency_key,
+                action.target_stage,
+                action.target_stage_version,
+                action.target_object_path,
+                action.expected_before_hash,
+                action.approved_payload_hash,
+                action.resume_token,
+                action.expires_at,
+                action.resolution_attempts,
+                action.last_resolution_error,
+                action.created_at,
+                action.resolved_at,
             )
+            for action in ctx.pending_actions
+        ]
+        if not rows:
+            return
+        _executemany(
+            conn,
+            """
+            INSERT INTO human_actions (
+                action_id, session_id, tenant_id, stage_id, node_id, source_type, source_id,
+                action_type, status, risk_level, title, description, trigger_reason,
+                blocking, payload_before, payload_after, reviewer_decision,
+                reviewer_note, stage_output_version, superseded_by,
+                action_contract_id, action_schema_version, idempotency_key,
+                target_stage, target_stage_version, target_object_path,
+                expected_before_hash, approved_payload_hash, resume_token, expires_at,
+                resolution_attempts, last_resolution_error, created_at, resolved_at
+            )
+            VALUES (
+                %s, %s, %s::uuid, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s,
+                %s, %s, %s,
+                %s, %s, %s,
+                %s, %s, %s,
+                %s, %s, %s, %s,
+                %s, %s, %s, %s
+            )
+            ON CONFLICT (action_id) DO UPDATE SET
+                status = EXCLUDED.status,
+                payload_after = EXCLUDED.payload_after,
+                reviewer_decision = EXCLUDED.reviewer_decision,
+                reviewer_note = EXCLUDED.reviewer_note,
+                stage_output_version = EXCLUDED.stage_output_version,
+                superseded_by = EXCLUDED.superseded_by,
+                idempotency_key = EXCLUDED.idempotency_key,
+                target_stage = EXCLUDED.target_stage,
+                target_stage_version = EXCLUDED.target_stage_version,
+                target_object_path = EXCLUDED.target_object_path,
+                expected_before_hash = EXCLUDED.expected_before_hash,
+                approved_payload_hash = EXCLUDED.approved_payload_hash,
+                resume_token = EXCLUDED.resume_token,
+                expires_at = EXCLUDED.expires_at,
+                resolution_attempts = EXCLUDED.resolution_attempts,
+                last_resolution_error = EXCLUDED.last_resolution_error,
+                resolved_at = EXCLUDED.resolved_at
+            """,
+            rows,
+        )
 
     def _sync_action_resolution_logs(self, conn: DictConnection, ctx: ProjectContext) -> None:
         """同步 action resolution logs。append-only：已存在 log_id 不覆盖。"""
-        for log in getattr(ctx, "action_resolution_logs", []) or []:
-            conn.execute(
-                """
-                INSERT INTO action_resolution_logs (
-                    log_id, session_id, action_id, idempotency_key, requested_status,
-                    result_status, before_hash, after_hash, error_message, created_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (log_id) DO NOTHING
-                """,
-                (
-                    log.log_id,
-                    ctx.session_id,
-                    log.action_id,
-                    log.idempotency_key,
-                    log.requested_status,
-                    log.result_status,
-                    log.before_hash,
-                    log.after_hash,
-                    log.error_message,
-                    log.created_at,
-                ),
+        rows = [
+            (
+                log.log_id,
+                ctx.session_id,
+                log.action_id,
+                log.idempotency_key,
+                log.requested_status,
+                log.result_status,
+                log.before_hash,
+                log.after_hash,
+                log.error_message,
+                log.created_at,
             )
+            for log in getattr(ctx, "action_resolution_logs", []) or []
+        ]
+        if not rows:
+            return
+        _executemany(
+            conn,
+            """
+            INSERT INTO action_resolution_logs (
+                log_id, session_id, action_id, idempotency_key, requested_status,
+                result_status, before_hash, after_hash, error_message, created_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (log_id) DO NOTHING
+            """,
+            rows,
+        )
 
     def _sync_llm_traces(self, conn: DictConnection, ctx: ProjectContext) -> None:
         """同步 LLM traces。append-only：已存在 trace_id 不覆盖。"""
-        for trace in getattr(ctx, "llm_traces", []) or []:
-            conn.execute(
-                """
-                INSERT INTO llm_traces (
-                    trace_id, session_id, stage, node_name, trace_type, provider, model,
-                    prompt_template_id, prompt_template_version, input_token_count,
-                    output_token_count, estimated_cost, latency_ms, retry_count,
-                    parser_status, safety_status, evidence_count, error_type,
-                    error_message, metadata, created_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (trace_id) DO NOTHING
-                """,
-                (
-                    trace.trace_id,
-                    ctx.session_id,
-                    trace.stage,
-                    trace.node_name,
-                    trace.trace_type,
-                    trace.provider,
-                    trace.model,
-                    trace.prompt_template_id,
-                    trace.prompt_template_version,
-                    trace.input_token_count,
-                    trace.output_token_count,
-                    trace.estimated_cost,
-                    trace.latency_ms,
-                    trace.retry_count,
-                    trace.parser_status,
-                    trace.safety_status,
-                    trace.evidence_count,
-                    trace.error_type,
-                    trace.error_message,
-                    json.dumps(trace.metadata, default=str),
-                    trace.created_at,
-                ),
+        rows = [
+            (
+                trace.trace_id,
+                ctx.session_id,
+                trace.stage,
+                trace.node_name,
+                trace.trace_type,
+                trace.provider,
+                trace.model,
+                trace.prompt_template_id,
+                trace.prompt_template_version,
+                trace.input_token_count,
+                trace.output_token_count,
+                trace.estimated_cost,
+                trace.latency_ms,
+                trace.retry_count,
+                trace.parser_status,
+                trace.safety_status,
+                trace.evidence_count,
+                trace.error_type,
+                trace.error_message,
+                json.dumps(trace.metadata, default=str),
+                trace.created_at,
             )
+            for trace in getattr(ctx, "llm_traces", []) or []
+        ]
+        if not rows:
+            return
+        _executemany(
+            conn,
+            """
+            INSERT INTO llm_traces (
+                trace_id, session_id, stage, node_name, trace_type, provider, model,
+                prompt_template_id, prompt_template_version, input_token_count,
+                output_token_count, estimated_cost, latency_ms, retry_count,
+                parser_status, safety_status, evidence_count, error_type,
+                error_message, metadata, created_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (trace_id) DO NOTHING
+            """,
+            rows,
+        )
 
     @staticmethod
     def _truncate_snapshot(snapshot: dict | None, max_bytes: int = 50_000) -> dict | None:
@@ -374,119 +604,137 @@ class PostgresSessionStore:
 
     def _sync_audit_events(self, conn: DictConnection, ctx: ProjectContext) -> None:
         """同步审计事件。append-only：已存在 event_id 不覆盖、不删除。"""
-        for event in ctx.audit_events:
-            conn.execute(
-                """
-                INSERT INTO audit_events (
-                    event_id, session_id, actor, event_type, target_type, target_id,
-                    before_hash, after_hash, before_snapshot, after_snapshot, metadata, created_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (event_id) DO NOTHING
-                """,
-                (
-                    event.event_id,
-                    ctx.session_id,
-                    event.actor,
-                    event.event_type,
-                    event.target_type,
-                    event.target_id,
-                    event.before_hash,
-                    event.after_hash,
-                    json.dumps(self._truncate_snapshot(event.before_snapshot), default=str)
-                    if event.before_snapshot is not None
-                    else None,
-                    json.dumps(self._truncate_snapshot(event.after_snapshot), default=str)
-                    if event.after_snapshot is not None
-                    else None,
-                    json.dumps(event.metadata, default=str),
-                    event.created_at,
-                ),
+        rows = [
+            (
+                event.event_id,
+                ctx.session_id,
+                event.actor,
+                event.event_type,
+                event.target_type,
+                event.target_id,
+                event.before_hash,
+                event.after_hash,
+                json.dumps(self._truncate_snapshot(event.before_snapshot), default=str)
+                if event.before_snapshot is not None
+                else None,
+                json.dumps(self._truncate_snapshot(event.after_snapshot), default=str)
+                if event.after_snapshot is not None
+                else None,
+                json.dumps(event.metadata, default=str),
+                event.created_at,
             )
+            for event in ctx.audit_events
+        ]
+        if not rows:
+            return
+        _executemany(
+            conn,
+            """
+            INSERT INTO audit_events (
+                event_id, session_id, actor, event_type, target_type, target_id,
+                before_hash, after_hash, before_snapshot, after_snapshot, metadata, created_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (event_id) DO NOTHING
+            """,
+            rows,
+        )
 
     def _sync_evidence_sources(self, conn: DictConnection, ctx: ProjectContext) -> None:
-        for ev in ctx.evidence_sources:
-            conn.execute(
-                """
-                INSERT INTO evidence_sources (
-                    evidence_id, session_id, title, url, source_type, credibility_score,
-                    summary, claims, used_by_failure_mode_ids, verified, verified_by,
-                    verified_at, verification_note, retrieved_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (evidence_id) DO UPDATE SET
-                    title = EXCLUDED.title,
-                    url = EXCLUDED.url,
-                    source_type = EXCLUDED.source_type,
-                    credibility_score = EXCLUDED.credibility_score,
-                    summary = EXCLUDED.summary,
-                    claims = EXCLUDED.claims,
-                    used_by_failure_mode_ids = EXCLUDED.used_by_failure_mode_ids,
-                    verified = EXCLUDED.verified,
-                    verified_by = EXCLUDED.verified_by,
-                    verified_at = EXCLUDED.verified_at,
-                    verification_note = EXCLUDED.verification_note
-                """,
-                (
-                    ev.evidence_id,
-                    ctx.session_id,
-                    ev.title,
-                    ev.url,
-                    ev.source_type,
-                    ev.credibility_score,
-                    ev.summary,
-                    json.dumps(ev.claims, default=str),
-                    json.dumps(ev.used_by_failure_mode_ids, default=str),
-                    ev.verified,
-                    ev.verified_by,
-                    ev.verified_at,
-                    ev.verification_note,
-                    ev.retrieved_at,
-                ),
+        rows = [
+            (
+                ev.evidence_id,
+                ctx.session_id,
+                ev.title,
+                ev.url,
+                ev.source_type,
+                ev.credibility_score,
+                ev.summary,
+                json.dumps(ev.claims, default=str),
+                json.dumps(ev.used_by_failure_mode_ids, default=str),
+                ev.verified,
+                ev.verified_by,
+                ev.verified_at,
+                ev.verification_note,
+                ev.retrieved_at,
             )
+            for ev in ctx.evidence_sources
+        ]
+        if not rows:
+            return
+        _executemany(
+            conn,
+            """
+            INSERT INTO evidence_sources (
+                evidence_id, session_id, title, url, source_type, credibility_score,
+                summary, claims, used_by_failure_mode_ids, verified, verified_by,
+                verified_at, verification_note, retrieved_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (evidence_id) DO UPDATE SET
+                title = EXCLUDED.title,
+                url = EXCLUDED.url,
+                source_type = EXCLUDED.source_type,
+                credibility_score = EXCLUDED.credibility_score,
+                summary = EXCLUDED.summary,
+                claims = EXCLUDED.claims,
+                used_by_failure_mode_ids = EXCLUDED.used_by_failure_mode_ids,
+                verified = EXCLUDED.verified,
+                verified_by = EXCLUDED.verified_by,
+                verified_at = EXCLUDED.verified_at,
+                verification_note = EXCLUDED.verification_note
+            """,
+            rows,
+        )
 
     def _sync_safety_findings(self, conn: DictConnection, ctx: ProjectContext) -> None:
-        for finding in ctx.safety_findings:
-            conn.execute(
-                """
-                INSERT INTO safety_findings (
-                    finding_id, session_id, stage_id, risk_type, severity, location,
-                    description, recommended_action, requires_human_review, status,
-                    taxonomy_refs, control_refs, mitigation_status, residual_risk,
-                    resolution_note, resolved_at, created_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (finding_id) DO UPDATE SET
-                    status = EXCLUDED.status,
-                    recommended_action = EXCLUDED.recommended_action,
-                    requires_human_review = EXCLUDED.requires_human_review,
-                    taxonomy_refs = EXCLUDED.taxonomy_refs,
-                    control_refs = EXCLUDED.control_refs,
-                    mitigation_status = EXCLUDED.mitigation_status,
-                    residual_risk = EXCLUDED.residual_risk,
-                    resolution_note = EXCLUDED.resolution_note,
-                    resolved_at = EXCLUDED.resolved_at
-                """,
-                (
-                    finding.finding_id,
-                    ctx.session_id,
-                    finding.stage_id,
-                    finding.risk_type,
-                    finding.severity,
-                    finding.location,
-                    finding.description,
-                    finding.recommended_action,
-                    finding.requires_human_review,
-                    finding.status,
-                    json.dumps(getattr(finding, "taxonomy_refs", []), default=str),
-                    json.dumps(getattr(finding, "control_refs", []), default=str),
-                    getattr(finding, "mitigation_status", "open"),
-                    getattr(finding, "residual_risk", "unknown"),
-                    finding.resolution_note,
-                    finding.resolved_at,
-                    finding.created_at,
-                ),
+        rows = [
+            (
+                finding.finding_id,
+                ctx.session_id,
+                finding.stage_id,
+                finding.risk_type,
+                finding.severity,
+                finding.location,
+                finding.description,
+                finding.recommended_action,
+                finding.requires_human_review,
+                finding.status,
+                json.dumps(getattr(finding, "taxonomy_refs", []), default=str),
+                json.dumps(getattr(finding, "control_refs", []), default=str),
+                getattr(finding, "mitigation_status", "open"),
+                getattr(finding, "residual_risk", "unknown"),
+                finding.resolution_note,
+                finding.resolved_at,
+                finding.created_at,
             )
+            for finding in ctx.safety_findings
+        ]
+        if not rows:
+            return
+        _executemany(
+            conn,
+            """
+            INSERT INTO safety_findings (
+                finding_id, session_id, stage_id, risk_type, severity, location,
+                description, recommended_action, requires_human_review, status,
+                taxonomy_refs, control_refs, mitigation_status, residual_risk,
+                resolution_note, resolved_at, created_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (finding_id) DO UPDATE SET
+                status = EXCLUDED.status,
+                recommended_action = EXCLUDED.recommended_action,
+                requires_human_review = EXCLUDED.requires_human_review,
+                taxonomy_refs = EXCLUDED.taxonomy_refs,
+                control_refs = EXCLUDED.control_refs,
+                mitigation_status = EXCLUDED.mitigation_status,
+                residual_risk = EXCLUDED.residual_risk,
+                resolution_note = EXCLUDED.resolution_note,
+                resolved_at = EXCLUDED.resolved_at
+            """,
+            rows,
+        )
 
     @staticmethod
     def _truncate_report_content_json(content_json: dict) -> dict:
@@ -507,373 +755,426 @@ class PostgresSessionStore:
         return truncated
 
     def _sync_report_artifacts(self, conn: DictConnection, ctx: ProjectContext) -> None:
-        for artifact in ctx.report_artifacts:
-            truncated_content = self._truncate_report_content_json(artifact.content_json)
-            conn.execute(
-                """
-                INSERT INTO report_artifacts (
-                    report_id, session_id, version, content_json, content_markdown, generated_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (report_id) DO UPDATE SET
-                    version = EXCLUDED.version,
-                    content_json = EXCLUDED.content_json,
-                    content_markdown = EXCLUDED.content_markdown
-                """,
-                (
-                    artifact.report_id,
-                    ctx.session_id,
-                    artifact.version,
-                    json.dumps(truncated_content, default=str),
-                    artifact.content_markdown,
-                    artifact.generated_at,
-                ),
+        rows = [
+            (
+                artifact.report_id,
+                ctx.session_id,
+                artifact.version,
+                json.dumps(self._truncate_report_content_json(artifact.content_json), default=str),
+                artifact.content_markdown,
+                artifact.generated_at,
             )
+            for artifact in ctx.report_artifacts
+        ]
+        if not rows:
+            return
+        _executemany(
+            conn,
+            """
+            INSERT INTO report_artifacts (
+                report_id, session_id, version, content_json, content_markdown, generated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (report_id) DO UPDATE SET
+                version = EXCLUDED.version,
+                content_json = EXCLUDED.content_json,
+                content_markdown = EXCLUDED.content_markdown
+            """,
+            rows,
+        )
 
     def _sync_eval_cases(self, conn: DictConnection, ctx: ProjectContext) -> None:
-        for case in ctx.eval_cases:
-            conn.execute(
-                """
-                INSERT INTO eval_cases (
-                    eval_id, session_id, stage_id, target_node_id, covered_failure_mode_ids,
-                    scenario_type, source_type, source_trace_id, source_ref_id, metadata,
-                    input_payload, expected_behavior, pass_criteria, actual_output, human_score,
-                    human_comment, passed, created_at, scored_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (eval_id) DO UPDATE SET
-                    covered_failure_mode_ids = EXCLUDED.covered_failure_mode_ids,
-                    source_type = EXCLUDED.source_type,
-                    source_trace_id = EXCLUDED.source_trace_id,
-                    source_ref_id = EXCLUDED.source_ref_id,
-                    metadata = EXCLUDED.metadata,
-                    pass_criteria = EXCLUDED.pass_criteria,
-                    actual_output = EXCLUDED.actual_output,
-                    human_score = EXCLUDED.human_score,
-                    human_comment = EXCLUDED.human_comment,
-                    passed = EXCLUDED.passed,
-                    scored_at = EXCLUDED.scored_at
-                """,
-                (
-                    case.eval_id,
-                    ctx.session_id,
-                    case.stage_id,
-                    case.target_node_id,
-                    json.dumps(case.covered_failure_mode_ids, default=str),
-                    case.scenario_type,
-                    getattr(case, "source_type", "stage3_generated"),
-                    getattr(case, "source_trace_id", None),
-                    getattr(case, "source_ref_id", None),
-                    json.dumps(getattr(case, "metadata", {}), default=str),
-                    case.input_payload,
-                    case.expected_behavior,
-                    json.dumps(case.pass_criteria, default=str),
-                    case.actual_output,
-                    case.human_score,
-                    case.human_comment,
-                    case.passed,
-                    case.created_at,
-                    case.scored_at,
-                ),
+        rows = [
+            (
+                case.eval_id,
+                ctx.session_id,
+                case.stage_id,
+                case.target_node_id,
+                json.dumps(case.covered_failure_mode_ids, default=str),
+                case.scenario_type,
+                getattr(case, "source_type", "stage3_generated"),
+                getattr(case, "source_trace_id", None),
+                getattr(case, "source_ref_id", None),
+                json.dumps(getattr(case, "metadata", {}), default=str),
+                case.input_payload,
+                case.expected_behavior,
+                json.dumps(case.pass_criteria, default=str),
+                case.actual_output,
+                case.human_score,
+                case.human_comment,
+                case.passed,
+                case.created_at,
+                case.scored_at,
             )
+            for case in ctx.eval_cases
+        ]
+        if not rows:
+            return
+        _executemany(
+            conn,
+            """
+            INSERT INTO eval_cases (
+                eval_id, session_id, stage_id, target_node_id, covered_failure_mode_ids,
+                scenario_type, source_type, source_trace_id, source_ref_id, metadata,
+                input_payload, expected_behavior, pass_criteria, actual_output, human_score,
+                human_comment, passed, created_at, scored_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (eval_id) DO UPDATE SET
+                covered_failure_mode_ids = EXCLUDED.covered_failure_mode_ids,
+                source_type = EXCLUDED.source_type,
+                source_trace_id = EXCLUDED.source_trace_id,
+                source_ref_id = EXCLUDED.source_ref_id,
+                metadata = EXCLUDED.metadata,
+                pass_criteria = EXCLUDED.pass_criteria,
+                actual_output = EXCLUDED.actual_output,
+                human_score = EXCLUDED.human_score,
+                human_comment = EXCLUDED.human_comment,
+                passed = EXCLUDED.passed,
+                scored_at = EXCLUDED.scored_at
+            """,
+            rows,
+        )
 
     def _sync_eval_runs(self, conn: DictConnection, ctx: ProjectContext) -> None:
-        for run in ctx.eval_runs:
-            conn.execute(
-                """
-                INSERT INTO eval_runs (
-                    run_id, session_id, eval_id, dataset_id, experiment_id, run_index,
-                    target_node_id, covered_failure_mode_ids,
-                    stage_output_version, run_mode, input_payload, expected_behavior,
-                    actual_output, judge_result, judge_reason, judge_mode, violated_criteria,
-                    status, error_message, trace_id, latency_ms, estimated_cost, created_at, completed_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (run_id) DO UPDATE SET
-                    dataset_id = EXCLUDED.dataset_id,
-                    experiment_id = EXCLUDED.experiment_id,
-                    run_index = EXCLUDED.run_index,
-                    actual_output = EXCLUDED.actual_output,
-                    judge_result = EXCLUDED.judge_result,
-                    judge_reason = EXCLUDED.judge_reason,
-                    judge_mode = EXCLUDED.judge_mode,
-                    violated_criteria = EXCLUDED.violated_criteria,
-                    status = EXCLUDED.status,
-                    error_message = EXCLUDED.error_message,
-                    trace_id = EXCLUDED.trace_id,
-                    latency_ms = EXCLUDED.latency_ms,
-                    estimated_cost = EXCLUDED.estimated_cost,
-                    completed_at = EXCLUDED.completed_at
-                """,
-                (
-                    run.run_id,
-                    ctx.session_id,
-                    run.eval_id,
-                    run.dataset_id,
-                    run.experiment_id,
-                    run.run_index,
-                    run.target_node_id,
-                    json.dumps(run.covered_failure_mode_ids, default=str),
-                    run.stage_output_version,
-                    run.run_mode,
-                    run.input_payload,
-                    run.expected_behavior,
-                    run.actual_output,
-                    run.judge_result,
-                    run.judge_reason,
-                    run.judge_mode,
-                    json.dumps(run.violated_criteria, default=str),
-                    run.status,
-                    run.error_message,
-                    run.trace_id,
-                    run.latency_ms,
-                    run.estimated_cost,
-                    run.created_at,
-                    run.completed_at,
-                ),
+        rows = [
+            (
+                run.run_id,
+                ctx.session_id,
+                run.eval_id,
+                run.dataset_id,
+                run.experiment_id,
+                run.run_index,
+                run.target_node_id,
+                json.dumps(run.covered_failure_mode_ids, default=str),
+                run.stage_output_version,
+                run.run_mode,
+                run.input_payload,
+                run.expected_behavior,
+                run.actual_output,
+                run.judge_result,
+                run.judge_reason,
+                run.judge_mode,
+                json.dumps(run.violated_criteria, default=str),
+                run.status,
+                run.error_message,
+                run.trace_id,
+                run.latency_ms,
+                run.estimated_cost,
+                run.created_at,
+                run.completed_at,
             )
+            for run in ctx.eval_runs
+        ]
+        if not rows:
+            return
+        _executemany(
+            conn,
+            """
+            INSERT INTO eval_runs (
+                run_id, session_id, eval_id, dataset_id, experiment_id, run_index,
+                target_node_id, covered_failure_mode_ids,
+                stage_output_version, run_mode, input_payload, expected_behavior,
+                actual_output, judge_result, judge_reason, judge_mode, violated_criteria,
+                status, error_message, trace_id, latency_ms, estimated_cost, created_at, completed_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (run_id) DO UPDATE SET
+                dataset_id = EXCLUDED.dataset_id,
+                experiment_id = EXCLUDED.experiment_id,
+                run_index = EXCLUDED.run_index,
+                actual_output = EXCLUDED.actual_output,
+                judge_result = EXCLUDED.judge_result,
+                judge_reason = EXCLUDED.judge_reason,
+                judge_mode = EXCLUDED.judge_mode,
+                violated_criteria = EXCLUDED.violated_criteria,
+                status = EXCLUDED.status,
+                error_message = EXCLUDED.error_message,
+                trace_id = EXCLUDED.trace_id,
+                latency_ms = EXCLUDED.latency_ms,
+                estimated_cost = EXCLUDED.estimated_cost,
+                completed_at = EXCLUDED.completed_at
+            """,
+            rows,
+        )
 
     def _sync_eval_judgments(self, conn: DictConnection, ctx: ProjectContext) -> None:
-        for judgment in getattr(ctx, "eval_judgments", []) or []:
-            conn.execute(
-                """
-                INSERT INTO eval_judgments (
-                    judgment_id, session_id, eval_run_id, eval_id, experiment_id, judge_type,
-                    judge_model, score, label, rationale, uncertainty, cited_rules, payload_json, created_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (judgment_id) DO UPDATE SET
-                    label = EXCLUDED.label,
-                    rationale = EXCLUDED.rationale,
-                    uncertainty = EXCLUDED.uncertainty,
-                    cited_rules = EXCLUDED.cited_rules,
-                    payload_json = EXCLUDED.payload_json
-                """,
-                (
-                    judgment.judgment_id,
-                    ctx.session_id,
-                    judgment.eval_run_id,
-                    judgment.eval_id,
-                    judgment.experiment_id,
-                    judgment.judge_type,
-                    judgment.judge_model,
-                    judgment.score,
-                    judgment.label,
-                    judgment.rationale,
-                    judgment.uncertainty,
-                    json.dumps(judgment.cited_rules, default=str),
-                    json.dumps(judgment.model_dump(mode="json"), default=str),
-                    judgment.created_at,
-                ),
+        rows = [
+            (
+                judgment.judgment_id,
+                ctx.session_id,
+                judgment.eval_run_id,
+                judgment.eval_id,
+                judgment.experiment_id,
+                judgment.judge_type,
+                judgment.judge_model,
+                judgment.score,
+                judgment.label,
+                judgment.rationale,
+                judgment.uncertainty,
+                json.dumps(judgment.cited_rules, default=str),
+                json.dumps(judgment.model_dump(mode="json"), default=str),
+                judgment.created_at,
             )
+            for judgment in getattr(ctx, "eval_judgments", []) or []
+        ]
+        if not rows:
+            return
+        _executemany(
+            conn,
+            """
+            INSERT INTO eval_judgments (
+                judgment_id, session_id, eval_run_id, eval_id, experiment_id, judge_type,
+                judge_model, score, label, rationale, uncertainty, cited_rules, payload_json, created_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (judgment_id) DO UPDATE SET
+                label = EXCLUDED.label,
+                rationale = EXCLUDED.rationale,
+                uncertainty = EXCLUDED.uncertainty,
+                cited_rules = EXCLUDED.cited_rules,
+                payload_json = EXCLUDED.payload_json
+            """,
+            rows,
+        )
 
     def _sync_human_calibrations(self, conn: DictConnection, ctx: ProjectContext) -> None:
-        for calibration in getattr(ctx, "human_calibrations", []) or []:
-            conn.execute(
-                """
-                INSERT INTO human_calibrations (
-                    calibration_id, session_id, eval_run_id, eval_id, experiment_id, human_label,
-                    human_comment, judge_label, agreement, disagreement_reason, reviewer_id,
-                    payload_json, created_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (calibration_id) DO UPDATE SET
-                    human_label = EXCLUDED.human_label,
-                    human_comment = EXCLUDED.human_comment,
-                    judge_label = EXCLUDED.judge_label,
-                    agreement = EXCLUDED.agreement,
-                    disagreement_reason = EXCLUDED.disagreement_reason,
-                    reviewer_id = EXCLUDED.reviewer_id,
-                    payload_json = EXCLUDED.payload_json
-                """,
-                (
-                    calibration.calibration_id,
-                    ctx.session_id,
-                    calibration.eval_run_id,
-                    calibration.eval_id,
-                    calibration.experiment_id,
-                    calibration.human_label,
-                    calibration.human_comment,
-                    calibration.judge_label,
-                    calibration.agreement,
-                    calibration.disagreement_reason,
-                    calibration.reviewer_id,
-                    json.dumps(calibration.model_dump(mode="json"), default=str),
-                    calibration.created_at,
-                ),
+        rows = [
+            (
+                calibration.calibration_id,
+                ctx.session_id,
+                calibration.eval_run_id,
+                calibration.eval_id,
+                calibration.experiment_id,
+                calibration.human_label,
+                calibration.human_comment,
+                calibration.judge_label,
+                calibration.agreement,
+                calibration.disagreement_reason,
+                calibration.reviewer_id,
+                json.dumps(calibration.model_dump(mode="json"), default=str),
+                calibration.created_at,
             )
+            for calibration in getattr(ctx, "human_calibrations", []) or []
+        ]
+        if not rows:
+            return
+        _executemany(
+            conn,
+            """
+            INSERT INTO human_calibrations (
+                calibration_id, session_id, eval_run_id, eval_id, experiment_id, human_label,
+                human_comment, judge_label, agreement, disagreement_reason, reviewer_id,
+                payload_json, created_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (calibration_id) DO UPDATE SET
+                human_label = EXCLUDED.human_label,
+                human_comment = EXCLUDED.human_comment,
+                judge_label = EXCLUDED.judge_label,
+                agreement = EXCLUDED.agreement,
+                disagreement_reason = EXCLUDED.disagreement_reason,
+                reviewer_id = EXCLUDED.reviewer_id,
+                payload_json = EXCLUDED.payload_json
+            """,
+            rows,
+        )
 
     def _sync_eval_datasets(self, conn: DictConnection, ctx: ProjectContext) -> None:
-        for dataset in getattr(ctx, "eval_datasets", []) or []:
-            conn.execute(
-                """
-                INSERT INTO eval_datasets (
-                    dataset_id, session_id, name, version, source, stage, scenario_type,
-                    case_ids, payload_json, created_at, updated_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (dataset_id) DO UPDATE SET
-                    name = EXCLUDED.name,
-                    version = EXCLUDED.version,
-                    source = EXCLUDED.source,
-                    stage = EXCLUDED.stage,
-                    scenario_type = EXCLUDED.scenario_type,
-                    case_ids = EXCLUDED.case_ids,
-                    payload_json = EXCLUDED.payload_json,
-                    updated_at = EXCLUDED.updated_at
-                """,
-                (
-                    dataset.dataset_id,
-                    ctx.session_id,
-                    dataset.name,
-                    dataset.version,
-                    dataset.source,
-                    dataset.stage,
-                    dataset.scenario_type,
-                    json.dumps(dataset.case_ids, default=str),
-                    json.dumps(dataset.model_dump(mode="json"), default=str),
-                    dataset.created_at,
-                    dataset.updated_at,
-                ),
+        rows = [
+            (
+                dataset.dataset_id,
+                ctx.session_id,
+                dataset.name,
+                dataset.version,
+                dataset.source,
+                dataset.stage,
+                dataset.scenario_type,
+                json.dumps(dataset.case_ids, default=str),
+                json.dumps(dataset.model_dump(mode="json"), default=str),
+                dataset.created_at,
+                dataset.updated_at,
             )
+            for dataset in getattr(ctx, "eval_datasets", []) or []
+        ]
+        if not rows:
+            return
+        _executemany(
+            conn,
+            """
+            INSERT INTO eval_datasets (
+                dataset_id, session_id, name, version, source, stage, scenario_type,
+                case_ids, payload_json, created_at, updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (dataset_id) DO UPDATE SET
+                name = EXCLUDED.name,
+                version = EXCLUDED.version,
+                source = EXCLUDED.source,
+                stage = EXCLUDED.stage,
+                scenario_type = EXCLUDED.scenario_type,
+                case_ids = EXCLUDED.case_ids,
+                payload_json = EXCLUDED.payload_json,
+                updated_at = EXCLUDED.updated_at
+            """,
+            rows,
+        )
 
     def _sync_eval_experiments(self, conn: DictConnection, ctx: ProjectContext) -> None:
-        for experiment in getattr(ctx, "eval_experiments", []) or []:
-            conn.execute(
-                """
-                INSERT INTO eval_experiments (
-                    experiment_id, session_id, dataset_id, name, status, run_mode, provider,
-                    model, baseline_experiment_id, eval_ids, run_ids, aggregate_metrics,
-                    comparison_summary, payload_json, created_at, started_at, completed_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (experiment_id) DO UPDATE SET
-                    name = EXCLUDED.name,
-                    status = EXCLUDED.status,
-                    run_mode = EXCLUDED.run_mode,
-                    provider = EXCLUDED.provider,
-                    model = EXCLUDED.model,
-                    baseline_experiment_id = EXCLUDED.baseline_experiment_id,
-                    eval_ids = EXCLUDED.eval_ids,
-                    run_ids = EXCLUDED.run_ids,
-                    aggregate_metrics = EXCLUDED.aggregate_metrics,
-                    comparison_summary = EXCLUDED.comparison_summary,
-                    payload_json = EXCLUDED.payload_json,
-                    started_at = EXCLUDED.started_at,
-                    completed_at = EXCLUDED.completed_at
-                """,
-                (
-                    experiment.experiment_id,
-                    ctx.session_id,
-                    experiment.dataset_id,
-                    experiment.name,
-                    experiment.status,
-                    experiment.run_mode,
-                    experiment.provider,
-                    experiment.model,
-                    experiment.baseline_experiment_id,
-                    json.dumps(experiment.eval_ids, default=str),
-                    json.dumps(experiment.run_ids, default=str),
-                    json.dumps(experiment.aggregate_metrics.model_dump(mode="json"), default=str),
-                    json.dumps(experiment.comparison_summary, default=str),
-                    json.dumps(experiment.model_dump(mode="json"), default=str),
-                    experiment.created_at,
-                    experiment.started_at,
-                    experiment.completed_at,
-                ),
+        rows = [
+            (
+                experiment.experiment_id,
+                ctx.session_id,
+                experiment.dataset_id,
+                experiment.name,
+                experiment.status,
+                experiment.run_mode,
+                experiment.provider,
+                experiment.model,
+                experiment.baseline_experiment_id,
+                json.dumps(experiment.eval_ids, default=str),
+                json.dumps(experiment.run_ids, default=str),
+                json.dumps(experiment.aggregate_metrics.model_dump(mode="json"), default=str),
+                json.dumps(experiment.comparison_summary, default=str),
+                json.dumps(experiment.model_dump(mode="json"), default=str),
+                experiment.created_at,
+                experiment.started_at,
+                experiment.completed_at,
             )
+            for experiment in getattr(ctx, "eval_experiments", []) or []
+        ]
+        if not rows:
+            return
+        _executemany(
+            conn,
+            """
+            INSERT INTO eval_experiments (
+                experiment_id, session_id, dataset_id, name, status, run_mode, provider,
+                model, baseline_experiment_id, eval_ids, run_ids, aggregate_metrics,
+                comparison_summary, payload_json, created_at, started_at, completed_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (experiment_id) DO UPDATE SET
+                name = EXCLUDED.name,
+                status = EXCLUDED.status,
+                run_mode = EXCLUDED.run_mode,
+                provider = EXCLUDED.provider,
+                model = EXCLUDED.model,
+                baseline_experiment_id = EXCLUDED.baseline_experiment_id,
+                eval_ids = EXCLUDED.eval_ids,
+                run_ids = EXCLUDED.run_ids,
+                aggregate_metrics = EXCLUDED.aggregate_metrics,
+                comparison_summary = EXCLUDED.comparison_summary,
+                payload_json = EXCLUDED.payload_json,
+                started_at = EXCLUDED.started_at,
+                completed_at = EXCLUDED.completed_at
+            """,
+            rows,
+        )
 
     def _sync_redteam_cases(self, conn: DictConnection, ctx: ProjectContext) -> None:
-        for case in getattr(ctx, "redteam_cases", []) or []:
-            conn.execute(
-                """
-                INSERT INTO redteam_cases (
-                    redteam_case_id, session_id, target_stage, target_node_id,
-                    source_finding_id, source_failure_mode_id, attack_type, severity,
-                    status, linked_eval_case_id, taxonomy_refs, control_refs,
-                    payload_json, created_at, approved_at, updated_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (redteam_case_id) DO UPDATE SET
-                    target_stage = EXCLUDED.target_stage,
-                    target_node_id = EXCLUDED.target_node_id,
-                    source_finding_id = EXCLUDED.source_finding_id,
-                    source_failure_mode_id = EXCLUDED.source_failure_mode_id,
-                    attack_type = EXCLUDED.attack_type,
-                    severity = EXCLUDED.severity,
-                    status = EXCLUDED.status,
-                    linked_eval_case_id = EXCLUDED.linked_eval_case_id,
-                    taxonomy_refs = EXCLUDED.taxonomy_refs,
-                    control_refs = EXCLUDED.control_refs,
-                    payload_json = EXCLUDED.payload_json,
-                    approved_at = EXCLUDED.approved_at,
-                    updated_at = EXCLUDED.updated_at
-                """,
-                (
-                    case.redteam_case_id,
-                    ctx.session_id,
-                    case.target_stage,
-                    case.target_node_id,
-                    case.source_finding_id,
-                    case.source_failure_mode_id,
-                    case.attack_type,
-                    case.severity,
-                    case.status,
-                    case.linked_eval_case_id,
-                    json.dumps(getattr(case, "taxonomy_refs", []), default=str),
-                    json.dumps(getattr(case, "control_refs", []), default=str),
-                    json.dumps(case.model_dump(mode="json"), default=str),
-                    case.created_at,
-                    case.approved_at,
-                    case.updated_at,
-                ),
+        rows = [
+            (
+                case.redteam_case_id,
+                ctx.session_id,
+                case.target_stage,
+                case.target_node_id,
+                case.source_finding_id,
+                case.source_failure_mode_id,
+                case.attack_type,
+                case.severity,
+                case.status,
+                case.linked_eval_case_id,
+                json.dumps(getattr(case, "taxonomy_refs", []), default=str),
+                json.dumps(getattr(case, "control_refs", []), default=str),
+                json.dumps(case.model_dump(mode="json"), default=str),
+                case.created_at,
+                case.approved_at,
+                case.updated_at,
             )
+            for case in getattr(ctx, "redteam_cases", []) or []
+        ]
+        if not rows:
+            return
+        _executemany(
+            conn,
+            """
+            INSERT INTO redteam_cases (
+                redteam_case_id, session_id, target_stage, target_node_id,
+                source_finding_id, source_failure_mode_id, attack_type, severity,
+                status, linked_eval_case_id, taxonomy_refs, control_refs,
+                payload_json, created_at, approved_at, updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (redteam_case_id) DO UPDATE SET
+                target_stage = EXCLUDED.target_stage,
+                target_node_id = EXCLUDED.target_node_id,
+                source_finding_id = EXCLUDED.source_finding_id,
+                source_failure_mode_id = EXCLUDED.source_failure_mode_id,
+                attack_type = EXCLUDED.attack_type,
+                severity = EXCLUDED.severity,
+                status = EXCLUDED.status,
+                linked_eval_case_id = EXCLUDED.linked_eval_case_id,
+                taxonomy_refs = EXCLUDED.taxonomy_refs,
+                control_refs = EXCLUDED.control_refs,
+                payload_json = EXCLUDED.payload_json,
+                approved_at = EXCLUDED.approved_at,
+                updated_at = EXCLUDED.updated_at
+            """,
+            rows,
+        )
 
     def _sync_interrupt_records(self, conn: DictConnection, ctx: ProjectContext) -> None:
         """同步业务中断记录。"""
-        for record in getattr(ctx, "interrupt_records", []) or []:
-            conn.execute(
-                """
-                INSERT INTO interrupt_records (
-                    interrupt_id, session_id, action_id, stage_id, stage_output_version,
-                    status, resume_value, thread_id, node_name, checkpoint_ns,
-                    interrupt_payload, resume_consumed_at, created_at, resolved_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (interrupt_id) DO UPDATE SET
-                    action_id = EXCLUDED.action_id,
-                    stage_id = EXCLUDED.stage_id,
-                    stage_output_version = EXCLUDED.stage_output_version,
-                    status = EXCLUDED.status,
-                    resume_value = EXCLUDED.resume_value,
-                    thread_id = EXCLUDED.thread_id,
-                    node_name = EXCLUDED.node_name,
-                    checkpoint_ns = EXCLUDED.checkpoint_ns,
-                    interrupt_payload = EXCLUDED.interrupt_payload,
-                    resume_consumed_at = EXCLUDED.resume_consumed_at,
-                    resolved_at = EXCLUDED.resolved_at
-                """,
-                (
-                    record.interrupt_id,
-                    ctx.session_id,
-                    record.action_id,
-                    record.stage_id,
-                    record.stage_output_version,
-                    record.status,
-                    json.dumps(record.resume_value, default=str)
-                    if record.resume_value is not None
-                    else None,
-                    record.thread_id,
-                    record.node_name,
-                    record.checkpoint_ns,
-                    json.dumps(record.interrupt_payload, default=str)
-                    if record.interrupt_payload is not None
-                    else None,
-                    record.resume_consumed_at,
-                    record.created_at,
-                    record.resolved_at,
-                ),
+        rows = [
+            (
+                record.interrupt_id,
+                ctx.session_id,
+                record.action_id,
+                record.stage_id,
+                record.stage_output_version,
+                record.status,
+                json.dumps(record.resume_value, default=str)
+                if record.resume_value is not None
+                else None,
+                record.thread_id,
+                record.node_name,
+                record.checkpoint_ns,
+                json.dumps(record.interrupt_payload, default=str)
+                if record.interrupt_payload is not None
+                else None,
+                record.resume_consumed_at,
+                record.created_at,
+                record.resolved_at,
             )
+            for record in getattr(ctx, "interrupt_records", []) or []
+        ]
+        if not rows:
+            return
+        _executemany(
+            conn,
+            """
+            INSERT INTO interrupt_records (
+                interrupt_id, session_id, action_id, stage_id, stage_output_version,
+                status, resume_value, thread_id, node_name, checkpoint_ns,
+                interrupt_payload, resume_consumed_at, created_at, resolved_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (interrupt_id) DO UPDATE SET
+                action_id = EXCLUDED.action_id,
+                stage_id = EXCLUDED.stage_id,
+                stage_output_version = EXCLUDED.stage_output_version,
+                status = EXCLUDED.status,
+                resume_value = EXCLUDED.resume_value,
+                thread_id = EXCLUDED.thread_id,
+                node_name = EXCLUDED.node_name,
+                checkpoint_ns = EXCLUDED.checkpoint_ns,
+                interrupt_payload = EXCLUDED.interrupt_payload,
+                resume_consumed_at = EXCLUDED.resume_consumed_at,
+                resolved_at = EXCLUDED.resolved_at
+            """,
+            rows,
+        )
 
     def list_interrupt_records(self, session_id: str) -> list[dict]:
         """从独立 interrupt_records 表读取执行中断记录。"""
@@ -976,14 +1277,28 @@ class PostgresSessionStore:
             "failed_eval_runs": content.get("failed_eval_runs", []),
         }
 
-    def load(self, session_id: str, tenant_id: str = "") -> ProjectContext | None:
-        """加载会话，不存在或 tenant 不匹配则返回 None"""
+    @_record_db_operation("load")
+    def load(
+        self, session_id: str, tenant_id: str = "", *, system: bool = False
+    ) -> ProjectContext | None:
+        """加载会话，不存在或 tenant 不匹配则返回 None。
+
+        生产路径必须显式携带 tenant；`system=True` 仅供启动补偿、审计等无请求
+        上下文的内部通道使用。
+        """
+        if not tenant_id and not system:
+            raise TenantIsolationError(session_id, "load")
         params: tuple[Any, ...]
         if tenant_id:
-            sql = "SELECT context_json, tenant_id::text FROM sessions WHERE session_id = %s AND tenant_id = %s::uuid"
+            sql = (
+                "SELECT context_json, tenant_id::text, version FROM sessions "
+                "WHERE session_id = %s AND tenant_id = %s::uuid"
+            )
             params = (session_id, tenant_id)
         else:
-            sql = "SELECT context_json, tenant_id::text FROM sessions WHERE session_id = %s"
+            sql = (
+                "SELECT context_json, tenant_id::text, version FROM sessions WHERE session_id = %s"
+            )
             params = (session_id,)
         with self._get_conn() as conn:
             row = conn.execute(sql, params).fetchone()
@@ -994,6 +1309,7 @@ class PostgresSessionStore:
             decrypt_fields_after_load(ctx)
             if row.get("tenant_id"):
                 ctx.tenant_id = row["tenant_id"]
+            ctx._storage_version = int(row.get("version") or 0)
         return ctx
 
     def archive_audit_events(self, session_id: str, purged_by: str, summary: dict) -> int:
@@ -1221,8 +1537,10 @@ class PostgresSessionStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def delete(self, session_id: str, tenant_id: str = "") -> bool:
+    def delete(self, session_id: str, tenant_id: str = "", *, system: bool = False) -> bool:
         """Delete a session row. Returns True if a row was deleted."""
+        if not tenant_id and not system:
+            raise TenantIsolationError(session_id, "delete")
         with self._get_conn() as conn:
             if tenant_id:
                 cur = conn.execute(
@@ -1237,34 +1555,38 @@ class PostgresSessionStore:
             conn.commit()
             return cur.rowcount > 0
 
-    def list_sessions(self, limit: int = 20, tenant_id: str = "") -> list[dict]:
-        """列出最近的会话（用于前端历史列表）"""
+    @_record_db_operation("list")
+    def list_sessions(
+        self, limit: int = 20, tenant_id: str = "", *, system: bool = False, offset: int = 0
+    ) -> list[dict]:
+        """列出最近的会话（用于前端历史列表）。生产路径必须携带 tenant。
+
+        读取 V008 生成列，避免为列表页解析整份 context_json。
+        """
+        if not tenant_id and not system:
+            raise TenantIsolationError("", "list_sessions")
+        columns = (
+            "session_id, current_state, created_at, updated_at, "
+            "session_name, scenario_name, research_target, domain"
+        )
         params: tuple[Any, ...]
         if tenant_id:
-            sql = """
-                SELECT session_id, current_state, created_at, updated_at,
-                       context_json->>'session_name' AS session_name,
-                       context_json->>'scenario_name' AS scenario_name,
-                       context_json->>'research_target' AS research_target,
-                       context_json->>'domain' AS domain
+            sql = f"""
+                SELECT {columns}
                 FROM sessions
                 WHERE tenant_id = %s::uuid
                 ORDER BY updated_at DESC
-                LIMIT %s
-            """
-            params = (tenant_id, limit)
+                LIMIT %s OFFSET %s
+            """  # noqa: S608  # column list is a module-level constant
+            params = (tenant_id, limit, offset)
         else:
-            sql = """
-                SELECT session_id, current_state, created_at, updated_at,
-                       context_json->>'session_name' AS session_name,
-                       context_json->>'scenario_name' AS scenario_name,
-                       context_json->>'research_target' AS research_target,
-                       context_json->>'domain' AS domain
+            sql = f"""
+                SELECT {columns}
                 FROM sessions
                 ORDER BY updated_at DESC
-                LIMIT %s
-            """
-            params = (limit,)
+                LIMIT %s OFFSET %s
+            """  # noqa: S608  # column list is a module-level constant
+            params = (limit, offset)
         with self._get_conn() as conn:
             rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
@@ -1276,13 +1598,21 @@ class PostgresSessionStore:
         stage: int | None,
         payload: dict,
     ) -> None:
-        """记录会话事件（用于审计和调试）"""
+        """记录会话事件（用于审计和调试）。
+
+        tenant_id 通过 INSERT ... SELECT 从 sessions 回填，避免修改所有调用点。
+        """
         sql = """
-            INSERT INTO session_events (session_id, event_type, stage, payload)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO session_events (session_id, event_type, stage, payload, tenant_id)
+            SELECT session_id, %s, %s, %s, tenant_id
+            FROM sessions
+            WHERE session_id = %s
         """
         with self._get_conn() as conn:
-            conn.execute(sql, (session_id, event_type, stage, json.dumps(payload, default=str)))
+            conn.execute(
+                sql,
+                (event_type, stage, json.dumps(payload, default=str), session_id),
+            )
             conn.commit()
 
     # ── Auth methods ──────────────────────────────────────────────────────────
@@ -1383,6 +1713,7 @@ class PostgresSessionStore:
             )
             conn.commit()
 
+    @_record_db_operation("governance")
     def gate_trends(self, tenant_id: str, weeks: int = 8) -> list[dict]:
         """按周聚合真实业务会话的门禁趋势；空 tenant_id 不跨租户查询。"""
         if not tenant_id:
@@ -1395,9 +1726,9 @@ class PostgresSessionStore:
             JOIN sessions AS s ON s.session_id = ger.session_id
             WHERE ger.tenant_id = %s
               AND s.tenant_id = %s::uuid
-              AND COALESCE(s.context_json->>'data_classification', 'business_internal')
+              AND COALESCE(s.data_classification, 'business_internal')
                   <> 'public_demo'
-              AND NULLIF(s.context_json->>'selected_scenario_id', '') IS NULL
+              AND NULLIF(s.selected_scenario_id, '') IS NULL
               AND ger.evaluated_at >= NOW() - (%s || ' weeks')::INTERVAL
             ORDER BY week DESC
         """
@@ -1405,6 +1736,7 @@ class PostgresSessionStore:
             rows = conn.execute(sql, (tenant_id, tenant_id, str(weeks))).fetchall()
         return _aggregate_gate_trends(rows)
 
+    @_record_db_operation("governance")
     def governance_overview(self, tenant_id: str) -> dict:
         """租户内真实业务治理总览；内置场景演示会话不参与聚合。"""
         zero = {
@@ -1419,57 +1751,34 @@ class PostgresSessionStore:
         if not tenant_id:
             return zero
         with self._get_conn() as conn:
-            state_rows = conn.execute(
-                "SELECT current_state, COUNT(*) AS n FROM sessions "
-                "WHERE tenant_id = %s::uuid "
-                "AND COALESCE(context_json->>'data_classification', 'business_internal') "
-                "<> 'public_demo' "
-                "AND NULLIF(context_json->>'selected_scenario_id', '') IS NULL "
-                "GROUP BY current_state",
-                (tenant_id,),
-            ).fetchall()
-            ctx_rows = conn.execute(
-                "SELECT session_id, context_json FROM sessions WHERE tenant_id = %s::uuid "
-                "AND COALESCE(context_json->>'data_classification', 'business_internal') "
-                "<> 'public_demo' "
-                "AND NULLIF(context_json->>'selected_scenario_id', '') IS NULL",
-                (tenant_id,),
-            ).fetchall()
-            eval_rows = conn.execute(
-                "SELECT ger.session_id, ger.risk_tier, ger.evaluated_at "
-                "FROM gate_evaluation_records AS ger "
-                "JOIN sessions AS s ON s.session_id = ger.session_id "
-                "WHERE ger.tenant_id = %s AND s.tenant_id = %s::uuid "
-                "AND COALESCE(s.context_json->>'data_classification', 'business_internal') "
-                "<> 'public_demo' "
-                "AND NULLIF(s.context_json->>'selected_scenario_id', '') IS NULL",
-                (tenant_id, tenant_id),
-            ).fetchall()
-            demo_row = conn.execute(
-                "SELECT COUNT(*) AS n FROM sessions WHERE tenant_id = %s::uuid "
-                "AND (COALESCE(context_json->>'data_classification', 'business_internal') "
-                "= 'public_demo' "
-                "OR NULLIF(context_json->>'selected_scenario_id', '') IS NOT NULL)",
-                (tenant_id,),
-            ).fetchone()
-        overview = _aggregate_governance_overview(state_rows, ctx_rows, eval_rows, zero)
+            state_rows = conn.execute(_GOV_STATE_SQL, (tenant_id,)).fetchall()
+            eval_rows = conn.execute(_GOV_EVAL_SQL, (tenant_id, tenant_id)).fetchall()
+            finding_row = conn.execute(_GOV_FINDING_SQL, (tenant_id,)).fetchone()
+            action_row = conn.execute(_GOV_ACTION_SQL, (tenant_id,)).fetchone()
+            report_row = conn.execute(_GOV_REPORT_SQL, (tenant_id,)).fetchone()
+            demo_row = conn.execute(_GOV_DEMO_SQL, (tenant_id,)).fetchone()
+        overview = _aggregate_governance_overview(
+            state_rows,
+            eval_rows,
+            {
+                "open_safety_findings": finding_row["n"] if finding_row else 0,
+                "pending_actions": action_row["n"] if action_row else 0,
+                "reports_exported": report_row["n"] if report_row else 0,
+            },
+        )
         overview["excluded_demo_sessions"] = demo_row["n"] if demo_row else 0
         return overview
 
+    @_record_db_operation("governance")
     def actions_backlog(self, tenant_id: str, limit: int = 50) -> list[dict]:
         """真实业务会话的待处理动作；空 tenant_id 返回空列表。"""
         if not tenant_id:
             return []
         with self._get_conn() as conn:
-            rows = conn.execute(
-                "SELECT session_id, context_json FROM sessions WHERE tenant_id = %s::uuid "
-                "AND COALESCE(context_json->>'data_classification', 'business_internal') "
-                "<> 'public_demo' "
-                "AND NULLIF(context_json->>'selected_scenario_id', '') IS NULL",
-                (tenant_id,),
-            ).fetchall()
+            rows = conn.execute(_GOV_BACKLOG_SQL, (tenant_id,)).fetchall()
         return _aggregate_actions_backlog(rows, limit)
 
+    @_record_db_operation("governance")
     def governance_metrics_all_tenants(self) -> dict:
         """跨租户聚合的 Prometheus 指标数据（全局监控视角，2026-09-01 修复③）。
 
@@ -1480,28 +1789,12 @@ class PostgresSessionStore:
         state_distribution: dict[str, int] = {}
         pending_by_risk: dict[str, int] = {}
         with self._get_conn() as conn:
-            state_rows = conn.execute(
-                "SELECT current_state, COUNT(*) AS n FROM sessions "
-                "WHERE COALESCE(context_json->>'data_classification', 'business_internal') "
-                "<> 'public_demo' "
-                "AND NULLIF(context_json->>'selected_scenario_id', '') IS NULL "
-                "GROUP BY current_state"
-            ).fetchall()
-            ctx_rows = conn.execute(
-                "SELECT context_json FROM sessions "
-                "WHERE COALESCE(context_json->>'data_classification', 'business_internal') "
-                "<> 'public_demo' "
-                "AND NULLIF(context_json->>'selected_scenario_id', '') IS NULL"
-            ).fetchall()
+            state_rows = conn.execute(_GOV_METRICS_STATE_SQL).fetchall()
+            risk_rows = conn.execute(_GOV_METRICS_RISK_SQL).fetchall()
         for row in state_rows:
             state_distribution[row["current_state"]] = row["n"]
-        for row in ctx_rows:
-            raw = row.get("context_json") or "{}"
-            ctx_data = json.loads(raw) if isinstance(raw, str) else raw
-            for action in ctx_data.get("pending_actions", []) or []:
-                if action.get("status") == "pending":
-                    risk = action.get("risk_level", "unknown")
-                    pending_by_risk[risk] = pending_by_risk.get(risk, 0) + 1
+        for row in risk_rows:
+            pending_by_risk[row["risk_level"] or "unknown"] = row["n"]
         return {
             "state_distribution": state_distribution,
             "pending_actions_by_risk": pending_by_risk,
@@ -1542,9 +1835,15 @@ def _aggregate_gate_trends(rows: list[dict]) -> list[dict]:
 
 
 def _aggregate_governance_overview(
-    state_rows: list[dict], ctx_rows: list[dict], eval_rows: list[dict], zero: dict
+    state_rows: list[dict],
+    eval_rows: list[dict],
+    counts: dict[str, int],
 ) -> dict:
-    """Shared governance-overview aggregation."""
+    """Shared governance-overview aggregation.
+
+    `counts` carries the projection-table aggregates (safety findings, pending
+    actions, exported reports) so this helper never parses `context_json`.
+    """
     state_distribution: dict[str, int] = {}
     sessions_total = 0
     for row in state_rows:
@@ -1565,50 +1864,38 @@ def _aggregate_governance_overview(
     for _, tier in latest_by_session.values():
         risk_tier_distribution[tier] = risk_tier_distribution.get(tier, 0) + 1
 
-    open_safety_findings = 0
-    pending_actions = 0
-    reports_exported = 0
-    for row in ctx_rows:
-        raw = row.get("context_json") or "{}"
-        ctx_data = json.loads(raw) if isinstance(raw, str) else raw
-        for finding in ctx_data.get("safety_findings", []) or []:
-            if finding.get("status") == "open":
-                open_safety_findings += 1
-        for action in ctx_data.get("pending_actions", []) or []:
-            if action.get("status") == "pending":
-                pending_actions += 1
-        if ctx_data.get("report_artifacts"):
-            reports_exported += 1
-
     return {
         "sessions_total": sessions_total,
         "state_distribution": state_distribution,
         "risk_tier_distribution": risk_tier_distribution,
-        "open_safety_findings": open_safety_findings,
-        "pending_actions": pending_actions,
-        "reports_exported": reports_exported,
+        "open_safety_findings": counts.get("open_safety_findings", 0),
+        "pending_actions": counts.get("pending_actions", 0),
+        "reports_exported": counts.get("reports_exported", 0),
     }
+
+
+def _isoformat(value: Any) -> str:
+    """Normalize timestamps from JSON strings or DB datetimes to ISO strings."""
+    if value is None:
+        return ""
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
 
 
 def _aggregate_actions_backlog(rows: list[dict], limit: int) -> list[dict]:
     """Shared actions-backlog aggregation."""
     risk_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-    actions: list[dict] = []
-    for row in rows:
-        session_id = row["session_id"]
-        raw = row.get("context_json") or "{}"
-        ctx_data = json.loads(raw) if isinstance(raw, str) else raw
-        for action in ctx_data.get("pending_actions", []) or []:
-            if action.get("status") == "pending":
-                actions.append(
-                    {
-                        "session_id": session_id,
-                        "action_id": action.get("action_id"),
-                        "title": action.get("title"),
-                        "risk_level": action.get("risk_level", "medium"),
-                        "stage_id": action.get("stage_id"),
-                        "created_at": action.get("created_at"),
-                    }
-                )
-    actions.sort(key=lambda a: (risk_order.get(a["risk_level"], 4), a.get("created_at") or ""))
+    actions: list[dict] = [
+        {
+            "session_id": row["session_id"],
+            "action_id": row.get("action_id"),
+            "title": row.get("title"),
+            "risk_level": row.get("risk_level", "medium"),
+            "stage_id": row.get("stage_id"),
+            "created_at": _isoformat(row.get("created_at")),
+        }
+        for row in rows
+    ]
+    actions.sort(key=lambda a: (risk_order.get(a["risk_level"], 4), a["created_at"]))
     return actions[:limit]

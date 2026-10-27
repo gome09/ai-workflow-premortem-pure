@@ -448,6 +448,10 @@ class SQLiteSessionStore:
                 conn.commit()
         logger.info("SQLite schema initialized at %s", self._db_path)
 
+    def close(self) -> None:
+        """No-op: SQLite uses short-lived per-call connections."""
+        return None
+
     # ── Static helpers ──────────────────────────────────────────────────────
 
     @staticmethod
@@ -1083,6 +1087,9 @@ class SQLiteSessionStore:
                     checkpoint_ns, resume_payload, status, updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP)
                 ON CONFLICT(action_id) DO UPDATE SET
+                    interrupt_id=excluded.interrupt_id,
+                    thread_id=excluded.thread_id,
+                    checkpoint_ns=excluded.checkpoint_ns,
                     resume_payload=excluded.resume_payload,
                     updated_at=CURRENT_TIMESTAMP,
                     status=CASE WHEN status='completed' THEN 'completed' ELSE status END
@@ -1098,8 +1105,14 @@ class SQLiteSessionStore:
                 ),
             )
 
-    def load(self, session_id: str, tenant_id: str = "") -> ProjectContext | None:
-        """Load a session; return None if not found or tenant mismatch."""
+    def load(
+        self, session_id: str, tenant_id: str = "", *, system: bool = False
+    ) -> ProjectContext | None:
+        """Load a session; return None if not found or tenant mismatch.
+
+        SQLite demo mode keeps the tenant-optional behavior; `system` is accepted
+        for facade parity with the PostgreSQL backend and intentionally ignored.
+        """
         with self._lock:
             with self._get_conn() as conn:
                 if tenant_id:
@@ -1339,7 +1352,7 @@ class SQLiteSessionStore:
                 ).fetchall()
         return [dict(row) for row in rows]
 
-    def delete(self, session_id: str, tenant_id: str = "") -> bool:
+    def delete(self, session_id: str, tenant_id: str = "", *, system: bool = False) -> bool:
         """Delete a session row. Returns True if a row was deleted."""
         with self._lock:
             with self._get_conn() as conn:
@@ -1356,7 +1369,9 @@ class SQLiteSessionStore:
                 conn.commit()
                 return cur.rowcount > 0
 
-    def list_sessions(self, limit: int = 20, tenant_id: str = "") -> list[dict]:
+    def list_sessions(
+        self, limit: int = 20, tenant_id: str = "", *, system: bool = False, offset: int = 0
+    ) -> list[dict]:
         """Return recent sessions for the history list."""
         with self._lock:
             with self._get_conn() as conn:
@@ -1367,8 +1382,9 @@ class SQLiteSessionStore:
                         "json_extract(context_json,'$.scenario_name') AS scenario_name, "
                         "json_extract(context_json,'$.research_target') AS research_target, "
                         "json_extract(context_json,'$.domain') AS domain "
-                        "FROM sessions WHERE tenant_id=? ORDER BY updated_at DESC LIMIT ?",
-                        (tenant_id, limit),
+                        "FROM sessions WHERE tenant_id=? "
+                        "ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+                        (tenant_id, limit, offset),
                     ).fetchall()
                 else:
                     rows = conn.execute(
@@ -1377,8 +1393,8 @@ class SQLiteSessionStore:
                         "json_extract(context_json,'$.scenario_name') AS scenario_name, "
                         "json_extract(context_json,'$.research_target') AS research_target, "
                         "json_extract(context_json,'$.domain') AS domain "
-                        "FROM sessions ORDER BY updated_at DESC LIMIT ?",
-                        (limit,),
+                        "FROM sessions ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+                        (limit, offset),
                     ).fetchall()
         return [dict(r) for r in rows]
 

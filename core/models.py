@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 # FIXME: ProjectContext 这个模型字段太多了（890行），应该拆成子模型
 # 但因为 LangGraph state 需要是单一 dict，拆分会影响 graph 的状态传递
@@ -772,6 +772,9 @@ class ProjectContext(BaseModel):
     贯穿整个 LangGraph 流程的核心状态对象。
     所有节点只读取、增量更新此对象，不得引入外部状态。
     """
+
+    # 存储层乐观锁版本。PrivateAttr 不参与序列化，也不写入 context_json。
+    _storage_version: int = PrivateAttr(default=0)
 
     # 元信息
     session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))

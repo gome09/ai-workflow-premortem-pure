@@ -31,26 +31,40 @@ class InterruptGraphState(TypedDict):
 
 
 def _coerce_context(result: Any, fallback: ProjectContext) -> ProjectContext:
-    """Normalize LangGraph invoke output back into ProjectContext."""
+    """Normalize LangGraph invoke output back into ProjectContext.
+
+    Reconstructing via `model_validate` drops the Pydantic private attributes,
+    including the storage optimistic-lock version. Every rebuilt context adopts
+    the version of the context loaded from the store (`fallback`) so that a
+    subsequent save is not rejected as stale.
+    """
     if isinstance(result, ProjectContext):
-        return result
+        return _inherit_storage_version(result, fallback)
     if isinstance(result, dict):
         context = result.get("context")
         if isinstance(context, ProjectContext):
-            return context
+            return _inherit_storage_version(context, fallback)
         if isinstance(context, dict):
             try:
-                return ProjectContext.model_validate(context)
+                return _inherit_storage_version(
+                    ProjectContext.model_validate(context), fallback
+                )
             except Exception:
                 logger.exception("Could not validate context channel from LangGraph result.")
         try:
-            return ProjectContext.model_validate(result)
+            return _inherit_storage_version(ProjectContext.model_validate(result), fallback)
         except Exception:
             logger.exception(
                 "Could not coerce LangGraph result to ProjectContext; using fallback context."
             )
             return fallback
     return fallback
+
+
+def _inherit_storage_version(ctx: ProjectContext, fallback: ProjectContext) -> ProjectContext:
+    if ctx is not fallback:
+        ctx._storage_version = int(getattr(fallback, "_storage_version", 0))
+    return ctx
 
 
 def _langgraph_config(ctx: ProjectContext, thread_id: str | None = None) -> dict[str, Any]:

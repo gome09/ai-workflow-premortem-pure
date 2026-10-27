@@ -72,12 +72,15 @@ def get_builtin_scenario(scenario_id: str) -> ScenarioSummaryResponse:
 )
 def list_sessions(
     limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     ctx: TenantContext = Depends(get_current_tenant),
 ) -> list[SessionListItem]:
     """列出当前 tenant 的最近会话。"""
     return [
         SessionListItem(**item)
-        for item in session_service.list_sessions(limit=limit, tenant_id=ctx.tenant_id)
+        for item in session_service.list_sessions(
+            limit=limit, tenant_id=ctx.tenant_id, offset=offset
+        )
     ]
 
 

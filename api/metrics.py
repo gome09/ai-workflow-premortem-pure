@@ -14,9 +14,27 @@ from __future__ import annotations
 
 import logging
 
-from prometheus_client import Counter, Gauge
+from prometheus_client import Counter, Gauge, Histogram
 
 logger = logging.getLogger(__name__)
+
+# ─────────────────────────────────────────────────────────
+# 数据库操作耗时（Histogram，存储层打点）
+# ─────────────────────────────────────────────────────────
+premortem_db_operation_seconds = Histogram(
+    "premortem_db_operation_seconds",
+    "Session-store operation latency in seconds",
+    ["operation"],  # save | load | list | governance
+    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0),
+)
+
+
+def observe_db_operation(operation: str, elapsed_seconds: float) -> None:
+    """存储层打点——由 storage 后端在操作完成后调用，失败不阻断主路径。"""
+    try:
+        premortem_db_operation_seconds.labels(operation=operation).observe(elapsed_seconds)
+    except Exception:  # pragma: no cover - metrics must never break the request path
+        logger.debug("observe_db_operation failed; non-fatal", exc_info=True)
 
 # ─────────────────────────────────────────────────────────
 # 会话状态（Gauge，按需刷新）

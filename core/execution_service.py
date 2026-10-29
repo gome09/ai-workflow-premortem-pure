@@ -1,6 +1,8 @@
 # core/execution_service.py
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from typing import Any
 
@@ -74,6 +76,70 @@ def reconcile_pending_interrupt_resumes(limit: int = 100) -> dict[str, int]:
             summary["failed"] += 1
             logger.exception("Interrupt resume reconciliation failed: %s", interrupt_id)
     return summary
+
+
+_resume_scheduler_task: asyncio.Task[None] | None = None
+
+
+async def _resume_retry_loop(interval_seconds: int, limit: int) -> None:
+    while True:
+        await asyncio.sleep(interval_seconds)
+        try:
+            summary = await asyncio.to_thread(reconcile_pending_interrupt_resumes, limit)
+            if summary["found"]:
+                logger.info("Interrupt resume retry sweep finished: %s", summary)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Interrupt resume retry sweep failed; retrying next interval")
+
+
+def start_interrupt_resume_scheduler() -> None:
+    """Start periodic outbox retry; no-op outside langgraph_interrupt mode."""
+    global _resume_scheduler_task
+    mode = WorkflowExecutionMode.normalize(settings.workflow_execution_mode)
+    if mode != WorkflowExecutionMode.LANGGRAPH_INTERRUPT:
+        return
+    if settings.interrupt_resume_retry_interval_seconds <= 0:
+        return
+    if _resume_scheduler_task is not None and not _resume_scheduler_task.done():
+        return
+    _resume_scheduler_task = asyncio.create_task(
+        _resume_retry_loop(
+            settings.interrupt_resume_retry_interval_seconds,
+            settings.interrupt_resume_retry_batch_size,
+        ),
+        name="interrupt-resume-retry",
+    )
+    logger.info(
+        "Interrupt resume scheduler started: interval=%ss batch=%s",
+        settings.interrupt_resume_retry_interval_seconds,
+        settings.interrupt_resume_retry_batch_size,
+    )
+
+
+async def stop_interrupt_resume_scheduler() -> None:
+    """Cancel the retry task before the checkpoint runtime and pool shut down."""
+    global _resume_scheduler_task
+    task = _resume_scheduler_task
+    _resume_scheduler_task = None
+    if task is None:
+        return
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
+def interrupt_resume_scheduler_status() -> str:
+    """Scheduler state for /health; disabled outside langgraph_interrupt mode."""
+    if (
+        WorkflowExecutionMode.normalize(settings.workflow_execution_mode)
+        != WorkflowExecutionMode.LANGGRAPH_INTERRUPT
+    ):
+        return "disabled"
+    if _resume_scheduler_task is None:
+        return "not_started"
+    return "stopped" if _resume_scheduler_task.done() else "running"
 
 
 def prepare_execution_after_action_resolutions(

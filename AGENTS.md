@@ -12,7 +12,7 @@
 - 真实业务库 `ai_workflow` 已升级至 V008（20 会话 / 90 人工动作 / 144 审计事件保留）；历史行 `tenant_id` 仍为 NULL，回填前不会进入租户作用域查询与治理统计。旧库升级顺序与备份路径见 `storage/README.md` 与 `.upgrade/backup/`。
 - Phase 0–4 代码侧已完成；`docs/archive/plan/phase-*.md` 与 `phase-*-design.md` 是历史实施/设计基线（已归档），不得把其中旧版本、旧行号或未勾选项当作当前事实。
 - formal-project-uplift Wave A–E 已完成；剩余工作主要是仓库公开后的远端治理动作，如 CodeQL 转正、main 分支保护和发布设置。权威状态见 `.upgrade/STATE.md`。
-- 最近一次本地全量测试基线：`750 passed, 1 skipped`（2026-10-29 复核，与 2026-10-27 基线一致；项目 `.venv` pytest，`STORAGE_BACKEND=sqlite` + `CHECKPOINT_BACKEND=memory`）。该轮仍有 4 条失败来自工作树中未提交的 `frontend/app.py` WIP 前端契约测试（缺 `api_delete` / `_role_from_token`），与存储层改动无关；上一轮 2026-09-21 基线为 `731 passed, 1 skipped`。测试数量会随测试集合变化，不应硬编码为永久断言。
+- 最近一次本地全量测试基线：`786 passed, 1 skipped`（2026-10-29 复核；项目 `.venv` pytest，`STORAGE_BACKEND=sqlite` + `CHECKPOINT_BACKEND=memory`）。此前 `frontend/app.py` WIP 导致的 4 条前端契约失败已随 WIP 回退消失；上一轮 2026-09-21 基线为 `731 passed, 1 skipped`。测试数量会随测试集合变化，不应硬编码为永久断言。
 - 治理总览当前只聚合真实业务会话（`business_internal` / `sensitive_personal`）；四个内置场景及其他 `public_demo` 会话必须与总览、趋势、积压动作和对应业务 Gauge 隔离。前端必须明确展示该统计口径，正常零数据不得表述为加载失败。
 - 录制测试基线必须走 `uv run`（项目 `.venv`）。用系统 Python 直接跑 `python -m pytest` 会因缺少 `prometheus-fastapi-instrumentator` 等主依赖触发 7 处 `importorskip` 跳过，得到 `623 passed, 8 skipped` 的降级结果——该数字不是有效基线。
 
@@ -70,7 +70,7 @@ make version-check
 ## 当前安全与合规边界
 
 - `make setup` 会生成独立的字段加密与 checkpoint Fernet key，并通过 Docker secrets 注入；非 Docker 部署仍需显式配置。生产必须检查 `/health.data_encryption == enabled`，中断模式还必须确认 adapter 为 persistent/encrypted/healthy。
-- `AUDIT_RETENTION_DAYS` 与 `SESSION_RETENTION_DAYS` 当前仅是配置和健康检查展示，尚无自动清理调度器，不得宣称已自动执行留存策略。
+- 留存执行器已落地：`core/retention_service.py` 在应用启动后按 `RETENTION_SWEEP_INTERVAL_SECONDS` 周期执行，`RETENTION_ENABLED` 默认开启但 `RETENTION_DRY_RUN` 默认 `true`（只统计不删除）；只有显式设置 `RETENTION_DRY_RUN=false` 才会删除到期会话与审计行。`SESSION_RETENTION_DAYS=0` 表示永久保留，默认不清理会话；`AUDIT_RETENTION_DAYS` 到期清理同时覆盖活动审计与归档审计表。它是进程内调度，不依赖外部 cron，多 worker 部署时各 worker 各自扫描（事务与行数校验保证不会重复删除同一行）。
 - `PII_MASK_BEFORE_LLM` 默认关闭；涉及真实个人信息的场景必须明确部署侧启用责任。
 - main 分支保护是否已在 GitHub 后台开启，必须以远端实查为准；本地当前状态记录为待维护者执行。
 

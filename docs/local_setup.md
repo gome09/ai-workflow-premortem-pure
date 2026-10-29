@@ -53,12 +53,15 @@
 | `WORKFLOW_EXECUTION_MODE` | 执行模式 | 使用中，默认 `single_step`；`langgraph_interrupt` 为显式 opt-in，非生产默认 |
 | `CHECKPOINT_BACKEND` | LangGraph checkpoint 后端 | `postgres` 为持久化后端；`memory` 仅限 SQLite/本地开发，重启不可恢复 |
 | `CHECKPOINT_ENCRYPTION_KEY` | checkpoint 独立 Fernet key | PostgreSQL 中断模式必填；不得与 `DATA_ENCRYPTION_KEY` 共用 |
+| `INTERRUPT_RESUME_RETRY_INTERVAL_SECONDS` / `INTERRUPT_RESUME_RETRY_BATCH_SIZE` | 中断恢复 outbox 周期重试 | 仅 `langgraph_interrupt` 模式生效；默认 600 秒 / 100 行，设为 0 关闭周期重试 |
 | `CORS_ALLOW_ORIGINS` | CORS 白名单 | 使用中 |
 | `DEMO_AUTO_AUTH` | 固定演示账号自动认证 | 生产必须为 `false`；仅本地 demo/开发 override 可启用 |
 | `UVICORN_WORKERS` | worker 数 | 使用中；`langgraph_interrupt` 当前必须为 `1` |
 | `DATA_ENCRYPTION_KEY` | 字段级加密 Fernet key | 代码已支持，默认空；为空时 PostgreSQL 明文存储并告警 |
 | `PII_MASK_BEFORE_LLM` | 送 LLM 前掩码 PII | 使用中，**默认 `false`** |
-| `AUDIT_RETENTION_DAYS` / `SESSION_RETENTION_DAYS` | 留存天数 | 仅配置与 `/health` 展示，**无自动清理调度器** |
+| `AUDIT_RETENTION_DAYS` / `SESSION_RETENTION_DAYS` | 留存天数 | 使用中；到期数据由内置留存执行器按周期清理，`0` 表示永久保留 |
+| `RETENTION_ENABLED` / `RETENTION_DRY_RUN` | 留存执行器开关 | `RETENTION_ENABLED` 默认 `true`；`RETENTION_DRY_RUN` 默认 `true`，只统计候选不删除，生产需显式改为 `false` |
+| `RETENTION_SWEEP_INTERVAL_SECONDS` / `RETENTION_BATCH_SIZE` | 扫描周期与批次上限 | 默认 86400 秒、1000 行/会话；首次扫描在启动后一个周期执行 |
 | `GATE_RULES_DISABLED` | 禁用门禁规则 | 使用中；安全底线规则配置了也会被忽略 |
 | `EVAL_LLM_JUDGE` / `EVAL_LLM_JUDGE_AUTOFINAL` | LLM 建议判分 | 使用中，**默认均为 off** |
 

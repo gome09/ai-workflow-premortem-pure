@@ -144,8 +144,9 @@ Stage rerun, revise, rollback, and sync-review-actions are explicit stage operat
 - User materials are represented as `EvidenceSource(source_type="user_material")`.
 - Eval coverage and high-risk eval review are part of the Stage 3 gate.
 - `core/gates/rules/manifest.py` is the authoritative source for gate rule metadata (owner / version / changelog / safety_bottom_line).
-- `gate_evaluation_records` table (alembic V005) is the baseline data source for governance pass-rate trends.
+- `gate_evaluation_records` table (alembic V005) is the baseline data source for governance pass-rate trends. Its rows are projections of `sessions` and are deleted with the session on admin delete or retention purge; tenant backfill covers legacy NULL rows.
 - LangGraph checkpoint tables are owned by Alembic V006; the durable resume outbox is owned by V007; V008 adds `sessions.version` (optimistic locking), JSONB generated columns for list/governance queries, tenant indexes and `human_actions.tenant_id`.
+- The outbox is reconciled once on startup and then retried periodically by the in-process scheduler in `core/execution_service.py` (`INTERRUPT_RESUME_RETRY_INTERVAL_SECONDS`, default 600s, 0 = startup-only). The scheduler starts only in `langgraph_interrupt` mode and is stopped before the checkpoint runtime and pool close.
 - `core/eval_llm_judge.py` is the authoritative implementation of LLM Judge (suggestion only, never overrides final judgment directly).
 
 

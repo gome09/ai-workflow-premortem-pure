@@ -61,7 +61,7 @@
 | 审计日志含操作者信息 | 关联分析 | 中 | 审计事件仅记录角色（system/user/ai），不记录 PII |
 | 数据库泄露 | 批量泄露 | 高 | JWT 认证 + 租户隔离；Fernet 仅在 `DATA_ENCRYPTION_KEY` 有效时启用 |
 | checkpoint 或其密钥泄露 | 中断时的完整上下文副本可被读取 | 高 | PostgreSQL checkpoint 强制独立 `CHECKPOINT_ENCRYPTION_KEY` 加密、tenant-scoped thread、单 worker和 fail-closed readiness；密钥需由部署方独立备份与轮换 |
-| 会话长期留存 | 留存过度 | 中 | T1.6 DELETE 端点；留存天数目前只展示配置，尚无自动清理任务 |
+| 会话长期留存 | 留存过度 | 中 | T1.6 DELETE 端点 + 内置留存执行器；默认 `RETENTION_DRY_RUN=true`，需显式关闭 dry-run 才实际清理 |
 
 ### 2.3 保护措施与风险适配性
 
@@ -78,13 +78,13 @@
 
 | 数据 | 留存期 | 删除方式 |
 |------|--------|----------|
-| 审计事件 | 目标值 183 天（`AUDIT_RETENTION_DAYS`） | 当前无自动期限清理；删除会话时转入归档表 |
-| 会话数据 | 配置值默认 0=永久（`SESSION_RETENTION_DAYS`） | 当前无自动期限清理；管理员调用 `DELETE /sessions/{id}` 级联删除 |
-| 归档审计事件 | 未配置自动删除 | 当前不自动删除（合规留痕） |
+| 审计事件 | 目标值 183 天（`AUDIT_RETENTION_DAYS`） | 留存执行器按周期清理；删除会话时转入归档表 |
+| 会话数据 | 配置值默认 0=永久（`SESSION_RETENTION_DAYS`） | 配置非 0 时由留存执行器级联清理；管理员也可调用 `DELETE /sessions/{id}` |
+| 归档审计事件 | 跟随 `AUDIT_RETENTION_DAYS` | 超过留存期的归档行随活动审计一起分批删除 |
 | LLM traces | 跟随会话 | 级联删除 |
 | PostgreSQL checkpoint / resume outbox | 跟随会话 | admin 删除会话时清理 checkpoint；outbox 随 session 外键级联删除。checkpoint 清理失败时会话删除失败，不报告假性成功 |
 
-> **当前缺口**：`AUDIT_RETENTION_DAYS` 与 `SESSION_RETENTION_DAYS` 只由 `/health` 展示，尚无调度器消费。生产环境必须通过外部作业或人工流程执行留存策略，直至项目实现自动清理任务。
+> **执行边界**：留存执行器已内置于应用进程（`core/retention_service.py`），按 `RETENTION_SWEEP_INTERVAL_SECONDS` 周期运行。`RETENTION_DRY_RUN` 默认 `true`，只输出候选统计；生产环境必须显式设为 `false` 并确认 `/health.retention_scheduler` 为 `running`，否则留存策略仍不会真正删除数据。多 worker 部署时每个 worker 独立扫描，依靠事务与行数校验避免重复删除。
 
 ## 4. 复评计划
 

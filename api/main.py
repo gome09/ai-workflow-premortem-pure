@@ -33,7 +33,17 @@ from auth.router import router as auth_router
 from core.audit_service import append_audit_event
 from core.config import settings
 from core.execution_mode import WorkflowExecutionMode
-from core.execution_service import reconcile_pending_interrupt_resumes
+from core.execution_service import (
+    interrupt_resume_scheduler_status,
+    reconcile_pending_interrupt_resumes,
+    start_interrupt_resume_scheduler,
+    stop_interrupt_resume_scheduler,
+)
+from core.retention_service import (
+    retention_scheduler_status,
+    start_retention_scheduler,
+    stop_retention_scheduler,
+)
 from core.version import APP_STATUS, APP_VERSION
 from graph.checkpoint_manager import (
     close_interrupt_runtime,
@@ -90,6 +100,8 @@ async def lifespan(app: FastAPI):
     session_store.initialize()
     initialize_interrupt_runtime()
     reconcile_pending_interrupt_resumes()
+    start_interrupt_resume_scheduler()
+    start_retention_scheduler()
     _instrumentator.expose(app, endpoint="/metrics", include_in_schema=False)
     # T3.5 启动时刷新业务 Gauge 指标（prometheus_client 默认 REGISTRY 已通过
     # instrumentator 的 /metrics 端点一并暴露）
@@ -101,6 +113,8 @@ async def lifespan(app: FastAPI):
         logger.warning("refresh_gauge_metrics failed on startup; non-fatal", exc_info=True)
     logger.info("App started.")
     yield
+    await stop_interrupt_resume_scheduler()
+    await stop_retention_scheduler()
     close_interrupt_runtime()
     session_store.close()
     logger.info("App shutting down.")
@@ -278,11 +292,15 @@ def health():
         "workflow_execution_mode": mode.value,
         "interrupt_adapter_status": adapter["status"],
         "interrupt_adapter": adapter,
+        "interrupt_resume_scheduler": interrupt_resume_scheduler_status(),
         "default_domain_profile": settings.domain_profile,
         "builtin_scenarios": [item.scenario_id for item in list_scenarios()],
         "data_encryption": "enabled" if is_encryption_enabled() else "disabled",
         "audit_retention_days": settings.audit_retention_days,
         "session_retention_days": settings.session_retention_days,
+        "retention_enabled": settings.retention_enabled,
+        "retention_dry_run": settings.retention_dry_run,
+        "retention_scheduler": retention_scheduler_status(),
         "gate_rules_disabled": sorted(settings.gate_rules_disabled_set)
         if settings.gate_rules_disabled_set
         else [],

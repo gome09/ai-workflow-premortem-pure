@@ -4,6 +4,14 @@
 > 远程 `origin`（github.com/gome09/ai-workflow-premortem-pure）与本地共享同一根提交，**不包含更早的历史**，无法用于追溯 v1.0 之前的开发过程。
 > 截至 2026-09-01，本地 `main` 已与 `origin/main` 同步（当日推送 10 次提交，至 `08f8a99`）。
 
+## 未发布维护记录 (2026-10-29)
+
+- **中断恢复 outbox 周期重试**：`langgraph_interrupt` 模式下，启动对账之后新增进程内调度器，按 `INTERRUPT_RESUME_RETRY_INTERVAL_SECONDS`（默认 600 秒，0=只做启动对账）周期重试 pending/failed 行，批量上限 `INTERRUPT_RESUME_RETRY_BATCH_SIZE`（默认 100）。运行期瞬时失败不再依赖进程重启。`/health` 新增 `interrupt_resume_scheduler`；非中断模式该调度器不启动。
+- **chat 路由异常映射**：移除 `except Exception → 500` 兜底，`StaleContextError` / `TenantIsolationError` 恢复由全局处理器映射为 409 / 404，未预期异常交回默认 500 且不再泄露内部异常文本。
+- **留存执行器**：新增 `core/retention_service.py`，在应用 lifespan 启动后按 `RETENTION_SWEEP_INTERVAL_SECONDS`（默认 86400 秒）周期执行。到期会话复用管理员删除链路（checkpoint → 审计归档 → 投影表级联 → 缓存失效）；到期审计事件同时清理 `audit_events` 与 `audit_events_archive`，按 `RETENTION_BATCH_SIZE`（默认 1000）分批。`RETENTION_ENABLED` 默认 `true`，`RETENTION_DRY_RUN` 默认 `true`（只统计不删除）；`/health` 新增 `retention_enabled` / `retention_dry_run` / `retention_scheduler`。`SESSION_RETENTION_DAYS=0` 仍表示永久保留。
+- **门禁评估表生命周期**：`purge_session` 在 PostgreSQL/SQLite 双后端同步删除该会话的 `gate_evaluation_records`；`backfill_orphan_sessions` 与 CLI 回填脚本覆盖该表历史 `tenant_id IS NULL` 行；评估记录主键由 8 位 UUID 前缀改为完整 UUID，避免高评估量下的主键碰撞。
+- **测试验证**：新增 `tests/test_retention_service.py`（dry-run / 实际清理 / 审计留存 / 批次上限 / 0=永久）与 `tests/test_interrupt_resume_scheduler.py`（模式隔离 / 启停 / 失败后继续重试），扩展门禁评估、租户回填与 chat 异常映射测试；Ruff、mypy、`make doc-check`、`make version-check` 与全量 pytest 通过。
+
 ## 未发布维护记录 (2026-10-27)
 
 - **数据库查询与读写优化**：新增 Alembic V008——`sessions.version` 乐观锁版本、六个 JSONB 生成列（`data_classification` / `selected_scenario_id` / `session_name` / `scenario_name` / `research_target` / `domain`）、租户复合索引、`human_actions.tenant_id` 历史回填、`interrupt_records.stage_id` 由 TEXT 转 INTEGER，以及 NOT VALID 状态 CHECK 与 `sessions.tenant_id` 外键（避免历史数据阻塞迁移）。

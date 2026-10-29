@@ -1272,6 +1272,9 @@ class SQLiteSessionStore:
                     ),
                 )
                 archived += 1
+                conn.execute(
+                    "DELETE FROM gate_evaluation_records WHERE session_id = ?", (session_id,)
+                )
                 if tenant_id:
                     cursor = conn.execute(
                         "DELETE FROM sessions WHERE session_id = ? AND tenant_id = ?",
@@ -1285,6 +1288,68 @@ class SQLiteSessionStore:
                     raise ValueError(f"Session not found during purge: {session_id}")
                 conn.commit()
         return archived
+
+    def count_expired_sessions(self, cutoff: datetime) -> int:
+        """Count sessions whose last update predates the retention cutoff."""
+        with self._lock:
+            with self._get_conn() as conn:
+                row = conn.execute(
+                    "SELECT COUNT(*) AS n FROM sessions WHERE datetime(updated_at) < datetime(?)",
+                    (_dt(cutoff),),
+                ).fetchone()
+        return int(row["n"])
+
+    def list_expired_sessions(self, cutoff: datetime, limit: int = 1_000) -> list[dict]:
+        """List retention candidates oldest-first; legacy tenant_id may be NULL."""
+        with self._lock:
+            with self._get_conn() as conn:
+                rows = conn.execute(
+                    "SELECT session_id, tenant_id, current_state, created_at, updated_at "
+                    "FROM sessions WHERE datetime(updated_at) < datetime(?) "
+                    "ORDER BY datetime(updated_at) ASC LIMIT ?",
+                    (_dt(cutoff), limit),
+                ).fetchall()
+        return [dict(row) for row in rows]
+
+    def count_audit_events_before(self, cutoff: datetime) -> dict[str, int]:
+        """Count expired live and archived audit rows without deleting anything."""
+        with self._lock:
+            with self._get_conn() as conn:
+                live = conn.execute(
+                    "SELECT COUNT(*) AS n FROM audit_events "
+                    "WHERE datetime(created_at) < datetime(?)",
+                    (_dt(cutoff),),
+                ).fetchone()
+                archived = conn.execute(
+                    "SELECT COUNT(*) AS n FROM audit_events_archive "
+                    "WHERE datetime(original_created_at) < datetime(?)",
+                    (_dt(cutoff),),
+                ).fetchone()
+        return {"audit_events": int(live["n"]), "archived_events": int(archived["n"])}
+
+    def purge_audit_events_before(self, cutoff: datetime, limit: int = 1_000) -> dict[str, int]:
+        """Delete expired audit rows in bounded batches; never touches sessions."""
+        with self._lock:
+            with self._get_conn() as conn:
+                live_cursor = conn.execute(
+                    "DELETE FROM audit_events WHERE event_id IN ("
+                    "SELECT event_id FROM audit_events "
+                    "WHERE datetime(created_at) < datetime(?) "
+                    "ORDER BY datetime(created_at) ASC LIMIT ?)",
+                    (_dt(cutoff), limit),
+                )
+                archived_cursor = conn.execute(
+                    "DELETE FROM audit_events_archive WHERE archive_id IN ("
+                    "SELECT archive_id FROM audit_events_archive "
+                    "WHERE datetime(original_created_at) < datetime(?) "
+                    "ORDER BY datetime(original_created_at) ASC LIMIT ?)",
+                    (_dt(cutoff), limit),
+                )
+                conn.commit()
+        return {
+            "audit_events": max(live_cursor.rowcount, 0),
+            "archived_events": max(archived_cursor.rowcount, 0),
+        }
 
     def enqueue_interrupt_resume(self, ctx: ProjectContext, record: Any) -> None:
         with self._lock:
@@ -1602,7 +1667,8 @@ class SQLiteSessionStore:
         rule_versions: dict,
     ) -> None:
         """旁路写入单行评估记录——治理趋势数据源。"""
-        record_id = str(uuid.uuid4())[:8]
+        # 完整 UUID：评估量增长后 8 位前缀存在主键碰撞风险。
+        record_id = str(uuid.uuid4())
         with self._lock:
             with self._get_conn() as conn:
                 conn.execute(

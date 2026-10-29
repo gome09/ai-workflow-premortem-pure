@@ -1451,6 +1451,8 @@ class PostgresSessionStore:
                 ),
             )
             archived += 1
+            # 评估记录是旁路投影数据，不保留跨会话历史，随会话一并回收。
+            conn.execute("DELETE FROM gate_evaluation_records WHERE session_id = %s", (session_id,))
             if tenant_id:
                 cursor = conn.execute(
                     "DELETE FROM sessions WHERE session_id = %s AND tenant_id = %s::uuid",
@@ -1462,6 +1464,72 @@ class PostgresSessionStore:
                 raise ValueError(f"Session not found during purge: {session_id}")
             conn.commit()
         return archived
+
+    @_record_db_operation("retention")
+    def count_expired_sessions(self, cutoff: datetime) -> int:
+        """统计最后更新时间早于留存截止点的会话数。"""
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM sessions WHERE updated_at < %s", (cutoff,)
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("retention count query returned no row")
+        return int(row["n"])
+
+    @_record_db_operation("retention")
+    def list_expired_sessions(self, cutoff: datetime, limit: int = 1_000) -> list[dict]:
+        """按最旧优先列出留存候选；历史行 tenant_id 可能为 NULL。"""
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                "SELECT session_id, tenant_id::text AS tenant_id, current_state, "
+                "created_at, updated_at FROM sessions "
+                "WHERE updated_at < %s ORDER BY updated_at ASC LIMIT %s",
+                (cutoff, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    @_record_db_operation("retention")
+    def count_audit_events_before(self, cutoff: datetime) -> dict[str, int]:
+        """统计超过留存期的活动审计与归档审计行数，不做任何删除。"""
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT "
+                "(SELECT COUNT(*) FROM audit_events WHERE created_at < %s) AS audit_events, "
+                "(SELECT COUNT(*) FROM audit_events_archive "
+                " WHERE original_created_at < %s) AS archived_events",
+                (cutoff, cutoff),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("retention audit count query returned no row")
+        return {
+            "audit_events": int(row["audit_events"]),
+            "archived_events": int(row["archived_events"]),
+        }
+
+    @_record_db_operation("retention")
+    def purge_audit_events_before(self, cutoff: datetime, limit: int = 1_000) -> dict[str, int]:
+        """按批删除超过留存期的审计行；两批删除在同一事务内提交。"""
+        live_sql = (
+            "WITH stale AS ("
+            "SELECT event_id FROM audit_events WHERE created_at < %s "
+            "ORDER BY created_at ASC LIMIT %s) "
+            "DELETE FROM audit_events WHERE event_id IN (SELECT event_id FROM stale)"
+        )
+        archive_sql = (
+            "WITH stale AS ("
+            "SELECT archive_id FROM audit_events_archive WHERE original_created_at < %s "
+            "ORDER BY original_created_at ASC LIMIT %s) "
+            "DELETE FROM audit_events_archive WHERE archive_id IN "
+            "(SELECT archive_id FROM stale)"
+        )
+        with self._get_conn() as conn:
+            live_cursor = conn.execute(live_sql, (cutoff, limit))
+            archived_cursor = conn.execute(archive_sql, (cutoff, limit))
+            conn.commit()
+        return {
+            "audit_events": max(live_cursor.rowcount, 0),
+            "archived_events": max(archived_cursor.rowcount, 0),
+        }
 
     def enqueue_interrupt_resume(self, ctx: ProjectContext, record: Any) -> None:
         """Persist one idempotent resume delivery before invoking LangGraph."""
@@ -1623,8 +1691,8 @@ class PostgresSessionStore:
 
         - 默认 dry_run，只统计匹配行数，不写库；
         - 仅更新 tenant_id IS NULL 的行，已有归属的行永不覆盖，可重复执行；
-        - human_actions / interrupt_resume_outbox 按 session_id 联表回填，
-          同样只填 NULL 行；所有更新在同一事务内提交；
+        - human_actions / interrupt_resume_outbox / gate_evaluation_records
+          按 session_id 联表回填，同样只填 NULL 行；所有更新在同一事务内提交；
         - tenant 不存在时抛 ValueError，避免把会话挂到无效租户。
         """
         with self._get_conn() as conn:
@@ -1653,6 +1721,7 @@ class PostgresSessionStore:
                 "sessions_updated": 0,
                 "human_actions_updated": 0,
                 "interrupt_resume_outbox_updated": 0,
+                "gate_evaluation_records_updated": 0,
             }
             if dry_run or not target_ids:
                 return result
@@ -1677,10 +1746,18 @@ class PostgresSessionStore:
                 "AND s.session_id = ANY(%s)",
                 (target_ids,),
             )
+            gate_cursor = conn.execute(
+                "UPDATE gate_evaluation_records AS g SET tenant_id = s.tenant_id::text "
+                "FROM sessions AS s "
+                "WHERE g.session_id = s.session_id AND g.tenant_id IS NULL "
+                "AND s.session_id = ANY(%s)",
+                (target_ids,),
+            )
             conn.commit()
             result["sessions_updated"] = session_cursor.rowcount
             result["human_actions_updated"] = action_cursor.rowcount
             result["interrupt_resume_outbox_updated"] = outbox_cursor.rowcount
+            result["gate_evaluation_records_updated"] = gate_cursor.rowcount
             return result
 
     def log_event(
@@ -1782,7 +1859,8 @@ class PostgresSessionStore:
         """旁路写入单行评估记录——治理趋势数据源。"""
         import uuid
 
-        record_id = str(uuid.uuid4())[:8]
+        # 完整 UUID：评估量增长后 8 位前缀存在主键碰撞风险。
+        record_id = str(uuid.uuid4())
         sql = """
             INSERT INTO gate_evaluation_records (
                 record_id, session_id, tenant_id, stage_id, risk_tier, passed,

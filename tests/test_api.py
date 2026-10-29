@@ -133,6 +133,37 @@ class TestChatAPI:
         )
         assert response.status_code == 404
 
+    def test_send_message_stale_context_maps_to_409(
+        self, client, mock_session_service, auth_headers
+    ):
+        from storage.errors import StaleContextError
+
+        mock_chat_svc = mock_session_service["send_message"]
+        mock_chat_svc.side_effect = StaleContextError("sess-stale", 0, 1)
+
+        response = client.post(
+            "/chat/sess-stale",
+            json={"user_input": "测试"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 409
+        assert response.json()["detail"]
+
+    def test_send_message_tenant_isolation_maps_to_404(
+        self, client, mock_session_service, auth_headers
+    ):
+        from storage.errors import TenantIsolationError
+
+        mock_chat_svc = mock_session_service["send_message"]
+        mock_chat_svc.side_effect = TenantIsolationError("sess-tenant", operation="save")
+
+        response = client.post(
+            "/chat/sess-tenant",
+            json={"user_input": "测试"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 404
+
     def test_send_message_with_materials(self, client, mock_session_service, auth_headers):
         mock_chat_svc = mock_session_service["send_message"]
         ctx = ProjectContext()

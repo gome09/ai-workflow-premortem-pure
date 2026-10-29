@@ -71,7 +71,7 @@ RULE_MANIFEST = {
 ### 3.2 判定结果携带规则版本
 
 - `GateReport`/`RuleDetail`（`core/gates/report.py`）增加 `rule_version` 字段；`build_report_dict` 导出的报告随之携带——历史报告可回答"这份结论是哪个版本的规则判的"。
-- 新增轻量持久化表 `gate_evaluation_records`（alembic V005）：每次阶段推进评估落一行 `(session_id, tenant_id, stage_id, risk_tier, passed, blocking_rule_ids, rule_versions, evaluated_at)`。这是①中"门禁通过率趋势"的数据源；现有 evaluate 路径是纯计算无痕迹，趋势分析必须有这张表。
+- 新增轻量持久化表 `gate_evaluation_records`（alembic V005）：每次阶段推进评估落一行 `(session_id, tenant_id, stage_id, risk_tier, passed, blocking_rule_ids, rule_versions, evaluated_at)`。这是①中"门禁通过率趋势"的数据源；现有 evaluate 路径是纯计算无痕迹，趋势分析必须有这张表。该表是会话投影数据：会话被管理员删除或留存执行器清理时同步删除评估行；历史 `tenant_id IS NULL` 行由 `backfill_orphan_sessions` 随会话一并回填。
 
 ### 3.3 规则禁用的显式治理
 

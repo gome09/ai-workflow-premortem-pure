@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     storage_backend: Literal["postgres", "sqlite"] = "postgres"
     # single_step remains the stable default; langgraph_interrupt is an explicit opt-in.
     workflow_execution_mode: WorkflowExecutionMode = WorkflowExecutionMode.SINGLE_STEP
+    # Durable interrupt resume outbox: periodic retry after startup reconciliation.
+    # The manager reclaims abandoned "processing" rows after 5 minutes, so keep the
+    # default interval above that threshold for long-running resumes.
+    interrupt_resume_retry_interval_seconds: int = 600
+    interrupt_resume_retry_batch_size: int = 100
     # LangGraph checkpoint backend. Memory is non-persistent and limited to local SQLite/dev use.
     checkpoint_backend: Literal["postgres", "memory"] = "postgres"
     # Independent Fernet key for encrypting checkpoint payloads (do not reuse DATA_ENCRYPTION_KEY).
@@ -100,6 +105,12 @@ class Settings(BaseSettings):
     # Data lifecycle (T1.6) — retention in days
     audit_retention_days: int = 183  # 6 months, aligns with 等保
     session_retention_days: int = 0  # 0 = forever
+
+    # Retention executor: enabled by default, but dry-run unless explicitly disabled.
+    retention_enabled: bool = True
+    retention_dry_run: bool = True
+    retention_sweep_interval_seconds: int = 86_400
+    retention_batch_size: int = 1_000
 
     # LLM10 Unbounded Consumption thresholds (T2.1)
     # 单会话累计调用次数 / token 估算告警阈值；命中产出 medium finding（不阻断）
@@ -142,6 +153,18 @@ class Settings(BaseSettings):
             raise ValueError("DB_POOL_MAX_SIZE must be >= 1 and >= DB_POOL_MIN_SIZE")
         if self.db_statement_timeout_ms < 0:
             raise ValueError("DB_STATEMENT_TIMEOUT_MS must be >= 0")
+        if self.retention_sweep_interval_seconds < 0:
+            raise ValueError("RETENTION_SWEEP_INTERVAL_SECONDS must be >= 0")
+        if self.retention_batch_size < 1:
+            raise ValueError("RETENTION_BATCH_SIZE must be >= 1")
+        if self.interrupt_resume_retry_interval_seconds < 0:
+            raise ValueError("INTERRUPT_RESUME_RETRY_INTERVAL_SECONDS must be >= 0")
+        if self.interrupt_resume_retry_batch_size < 1:
+            raise ValueError("INTERRUPT_RESUME_RETRY_BATCH_SIZE must be >= 1")
+        if self.session_retention_days < 0:
+            raise ValueError("SESSION_RETENTION_DAYS must be >= 0")
+        if self.audit_retention_days < 0:
+            raise ValueError("AUDIT_RETENTION_DAYS must be >= 0")
 
         execution_mode = WorkflowExecutionMode.normalize(self.workflow_execution_mode)
         if execution_mode == WorkflowExecutionMode.LANGGRAPH_INTERRUPT:

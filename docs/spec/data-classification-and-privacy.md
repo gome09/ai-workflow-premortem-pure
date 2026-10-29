@@ -97,7 +97,7 @@
 
 ## 6. 子系统④：数据生命周期
 
-- **留存策略配置化**：`core/config.py` 新增 `audit_retention_days`（默认 **183**）与 `session_retention_days`（默认 0=永久）。当前只做**声明与健康检查展示**；代码中没有定时清理器，配置值不会自动删除数据，不应视为已经执行的留存控制。
+- **留存策略执行化**：`core/config.py` 提供 `audit_retention_days`（默认 **183**）与 `session_retention_days`（默认 0=永久）。`core/retention_service.py` 在应用 lifespan 启动后按 `RETENTION_SWEEP_INTERVAL_SECONDS`（默认 86400 秒）周期扫描，首次扫描在启动后一个周期执行。`RETENTION_DRY_RUN` 默认 `true`，只统计候选不写库；显式设为 `false` 才实际删除。到期会话走与管理员删除一致的链路（checkpoint → 审计归档 → 投影表级联 → 缓存失效）；到期审计事件同时删除活动表与归档表，按 `RETENTION_BATCH_SIZE`（默认 1000）分批。`/health` 暴露 `retention_enabled`、`retention_dry_run` 与 `retention_scheduler` 状态。
 - **删除能力**：新增 `DELETE /sessions/{id}`（admin），级联删除各独立表记录，但**审计事件不删除**（改为写入一条 `session_purged` 审计事件保留处置痕迹）——PIPL 删除权与审计完整性的平衡点。
 - **备份指引**：`docs/` 补充生产部署备份章节（`pg_dump` 定时 + volume 快照 + 恢复演练清单），属文档交付，不写代码。
 

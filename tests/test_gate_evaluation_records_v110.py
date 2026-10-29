@@ -206,6 +206,55 @@ class TestBypassPersist:
             row = conn.execute("SELECT COUNT(*) AS n FROM gate_evaluation_records").fetchone()
         assert row["n"] == 0
 
+    def test_record_id_is_full_uuid(self, sqlite_store):
+        """评估记录主键使用完整 UUID，避免高评估量下的前缀碰撞。"""
+        ctx = ProjectContext()
+        ctx.session_id = "sess-uuid"
+        ctx.tenant_id = "tenant-uuid"
+        evaluate_stage_gate(ctx, stage=1, detailed=False)
+        with sqlite_store._get_conn() as conn:
+            row = conn.execute(
+                "SELECT record_id FROM gate_evaluation_records WHERE session_id=?",
+                ("sess-uuid",),
+            ).fetchone()
+        assert row is not None
+        assert len(row["record_id"]) == 36
+
+
+# ─────────────────────────────────────────────────────────
+# 2b. 评估记录随会话生命周期回收
+# ─────────────────────────────────────────────────────────
+
+
+class TestGateEvaluationLifecycle:
+    def test_purge_session_removes_evaluation_records(self, sqlite_store):
+        _insert_session(
+            sqlite_store,
+            session_id="sess-gate-purge",
+            tenant_id="tenant-gp",
+            current_state="init",
+            context_json={"data_classification": "business_internal"},
+        )
+        _insert_eval(
+            sqlite_store,
+            session_id="sess-gate-purge",
+            tenant_id="tenant-gp",
+            stage_id=1,
+            risk_tier="low",
+            passed=True,
+            blocking_rule_ids=[],
+            evaluated_at="2026-07-14T00:00:00",
+        )
+
+        sqlite_store.purge_session("sess-gate-purge", "tenant-gp", "admin", {"reason": "test"})
+
+        with sqlite_store._get_conn() as conn:
+            remaining = conn.execute(
+                "SELECT COUNT(*) AS n FROM gate_evaluation_records WHERE session_id=?",
+                ("sess-gate-purge",),
+            ).fetchone()
+        assert remaining["n"] == 0
+
 
 # ─────────────────────────────────────────────────────────
 # 3. 降级测试

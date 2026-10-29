@@ -88,6 +88,7 @@ def test_dry_run_reports_matches_without_writing() -> None:
         "sessions_updated": 0,
         "human_actions_updated": 0,
         "interrupt_resume_outbox_updated": 0,
+        "gate_evaluation_records_updated": 0,
     }
     assert not any(sql.startswith("UPDATE") for sql, _ in conn.executed)
     assert conn.committed is False
@@ -96,21 +97,27 @@ def test_dry_run_reports_matches_without_writing() -> None:
 def test_apply_updates_only_null_tenant_rows() -> None:
     conn = _BackfillConnection(
         orphan_ids=["s-1", "s-2"],
-        update_counts={"sessions": 2, "human_actions": 5, "interrupt_resume_outbox": 1},
+        update_counts={
+            "sessions": 2,
+            "human_actions": 5,
+            "interrupt_resume_outbox": 1,
+            "gate_evaluation_records": 4,
+        },
     )
     store = _store_with_conn(conn)
 
     result = store.backfill_orphan_sessions("tenant-a", dry_run=False)
 
     updates = [sql for sql, _ in conn.executed if sql.startswith("UPDATE")]
-    assert len(updates) == 3
-    # 幂等保证：三条更新都只触碰 tenant_id IS NULL 的行。
+    assert len(updates) == 4
+    # 幂等保证：四条更新都只触碰 tenant_id IS NULL 的行。
     assert all("tenant_id IS NULL" in sql for sql in updates)
     assert updates[0].startswith("UPDATE sessions SET tenant_id = %s::uuid")
     assert conn.committed is True
     assert result["sessions_updated"] == 2
     assert result["human_actions_updated"] == 5
     assert result["interrupt_resume_outbox_updated"] == 1
+    assert result["gate_evaluation_records_updated"] == 4
 
 
 def test_apply_without_matches_skips_writes() -> None:

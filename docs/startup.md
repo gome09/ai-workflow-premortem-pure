@@ -132,6 +132,8 @@ curl -k https://localhost/api/health/ready
 
 只有 readiness 成功且健康响应确认执行模式为 `langgraph_interrupt`、checkpoint 后端为持久化 PostgreSQL 时，才应开放工作流请求。配置不合法、checkpoint 表或数据库不可用、加密 key 缺失时应用应 fail closed，不会静默降级到内存 checkpoint。
 
+启动时会先执行一次中断恢复 outbox 对账，之后由进程内调度器按 `INTERRUPT_RESUME_RETRY_INTERVAL_SECONDS`（默认 600 秒）周期重试失败行。该调度器只在 `langgraph_interrupt` 模式启动，`/health` 的 `interrupt_resume_scheduler` 字段可确认状态（`running` / `not_started` / `disabled`）；设为 0 可关闭周期重试，仅保留启动对账。运行期瞬时失败不再需要重启进程才能重试。
+
 生产 Compose 强制 `DEMO_AUTO_AUTH=false`，前端显示交互式登录/注册表单。只有开发 override 与 `.env.demo` 显式启用固定演示账号自动认证；生产不得开启该选项。
 
 本地 SQLite 可用于功能调试，但不可用于持久化恢复或生产：

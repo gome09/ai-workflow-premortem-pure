@@ -2,21 +2,31 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from core.models import PendingHumanAction, ProjectContext, SessionState
+from storage.access import SYSTEM_ACCESS, SystemAccess
 from storage.backends.postgres import (
     PostgresSessionStore,
     _aggregate_actions_backlog,
     _aggregate_governance_overview,
 )
+from storage.backends.sqlite_store import SQLiteSessionStore
 from storage.errors import StaleContextError, TenantIsolationError
 
 
 class _FakeResult:
-    def __init__(self, row: dict | None = None, rows: list[dict] | None = None) -> None:
+    def __init__(
+        self,
+        row: dict | None = None,
+        rows: list[dict] | None = None,
+        rowcount: int = 0,
+    ) -> None:
         self._row = row
         self._rows = rows or []
+        self.rowcount = rowcount
 
     def fetchone(self) -> dict | None:
         return self._row
@@ -168,6 +178,65 @@ def test_postgres_list_and_delete_require_tenant() -> None:
     with pytest.raises(TenantIsolationError):
         store.delete("s-1")
     assert conn.executed == []
+
+
+def test_system_access_sentinel_cannot_be_forged() -> None:
+    assert SystemAccess.SYSTEM is SYSTEM_ACCESS
+    with pytest.raises(TypeError):
+        SystemAccess()  # type: ignore[call-arg]  # 哨兵只能在模块内构造一次
+
+
+def test_postgres_load_allows_explicit_system_access() -> None:
+    conn = _FakeConnection()
+    store = _store_with_conn(conn)
+
+    assert store.load("s-1", system_access=SYSTEM_ACCESS) is None
+
+    load_sql, _ = conn.executed[0]
+    assert "tenant_id = %s::uuid" not in load_sql
+
+
+@pytest.mark.parametrize("forged", [True, False, 1, "system", object()])
+def test_postgres_load_rejects_forged_system_flag(forged: object) -> None:
+    conn = _FakeConnection()
+    store = _store_with_conn(conn)
+
+    with pytest.raises(TenantIsolationError):
+        store.load("s-1", system_access=forged)  # type: ignore[arg-type]
+    assert conn.executed == []
+
+
+def test_postgres_list_and_delete_accept_system_access() -> None:
+    conn = _FakeConnection()
+    store = _store_with_conn(conn)
+
+    assert store.list_sessions(limit=5, system_access=SYSTEM_ACCESS) == []
+    assert store.delete("s-1", system_access=SYSTEM_ACCESS) is False
+
+
+def test_system_access_usage_is_audit_logged(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.WARNING, logger="storage.access")
+    store = _store_with_conn(_FakeConnection())
+
+    store.load("s-1", system_access=SYSTEM_ACCESS)
+
+    assert "operation=load" in caplog.text
+    assert "session_id=s-1" in caplog.text
+
+
+def test_sqlite_rejects_forged_system_flag(tmp_path) -> None:
+    store = SQLiteSessionStore(str(tmp_path / "demo.db"))
+    store.initialize()
+
+    with pytest.raises(TenantIsolationError):
+        store.load("s-1", system_access=True)  # type: ignore[arg-type]
+
+
+def test_sqlite_accepts_system_access_sentinel(tmp_path) -> None:
+    store = SQLiteSessionStore(str(tmp_path / "demo.db"))
+    store.initialize()
+
+    assert store.load("missing-session", system_access=SYSTEM_ACCESS) is None
 
 
 def test_governance_overview_structure_is_stable() -> None:

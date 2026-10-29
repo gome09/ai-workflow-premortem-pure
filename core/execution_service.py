@@ -18,6 +18,7 @@ def reconcile_pending_interrupt_resumes(limit: int = 100) -> dict[str, int]:
     """Retry durable interrupt resumes left incomplete by a crash or outage."""
     from storage import cache as cache_module
     from storage import session_store as session_store_module
+    from storage.access import SYSTEM_ACCESS
 
     session_store = session_store_module.session_store
     context_cache = cache_module.context_cache
@@ -47,7 +48,7 @@ def reconcile_pending_interrupt_resumes(limit: int = 100) -> dict[str, int]:
             ctx = (
                 session_store.load(item["session_id"], tenant_id)
                 if tenant_id
-                else session_store.load(item["session_id"], system=True)
+                else session_store.load(item["session_id"], system_access=SYSTEM_ACCESS)
             )
             if ctx is None:
                 raise ValueError(f"Session not found: {item['session_id']}")

@@ -28,6 +28,7 @@ from api.routers import (
     stage,
     traces,
 )
+from auth.jwt import verify_token
 from auth.router import router as auth_router
 from core.audit_service import append_audit_event
 from core.config import settings
@@ -40,6 +41,8 @@ from graph.checkpoint_manager import (
     initialize_interrupt_runtime,
 )
 from scenarios import list_scenarios
+from storage.access import SYSTEM_ACCESS
+from storage.cache import context_cache
 from storage.errors import StaleContextError, TenantIsolationError
 from storage.field_security import is_encryption_enabled
 from storage.session_store import session_store
@@ -124,7 +127,7 @@ def _rate_limit_audit_handler(request, exc):
     try:
         session_id = (request.path_params or {}).get("session_id") or ""
         if session_id:
-            ctx = session_store.load(session_id, system=True)
+            ctx = session_store.load(session_id, system_access=SYSTEM_ACCESS)
             if ctx is not None:
                 append_audit_event(
                     ctx,
@@ -140,6 +143,9 @@ def _rate_limit_audit_handler(request, exc):
                     },
                 )
                 session_store.save(ctx)
+                # 审计事件写库后版本已推进，缓存必须同步刷新；
+                # 否则后续 get_session 仍会拿到旧版本，正确保存被误判为陈旧。
+                context_cache.set(ctx)
     except Exception:
         logger.warning("Could not persist rate_limit_exceeded audit event", exc_info=True)
     return _rate_limit_exceeded_handler(request, exc)
@@ -148,14 +154,36 @@ def _rate_limit_audit_handler(request, exc):
 app.add_exception_handler(RateLimitExceeded, _rate_limit_audit_handler)
 
 
+def _request_tenant_id(request: Request) -> str:
+    """从 Authorization: Bearer 头解析租户；解析失败返回空串。
+
+    异常处理路径不能依赖鉴权依赖注入（依赖在正常请求链路中才执行），
+    因此这里直接校验令牌。失败只表示无法定位缓存键，不改变原始错误响应。
+    """
+    scheme, _, token = (request.headers.get("authorization") or "").partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        return ""
+    try:
+        return verify_token(token.strip()).tenant_id
+    except Exception:
+        return ""
+
+
 async def _stale_context_handler(request: Request, exc: Exception) -> JSONResponse:
-    """并发保存冲突：客户端需重新加载最新上下文后再重试。"""
+    """并发保存冲突：失效缓存并提示客户端重新加载最新上下文后重试。"""
     stale = exc if isinstance(exc, StaleContextError) else None
+    session_id = stale.session_id if stale else ""
+    if session_id:
+        tenant_id = _request_tenant_id(request)
+        if tenant_id:
+            # 409 后客户端会重新加载；若旧版本仍留在缓存里，reload 会再次命中
+            # 旧版本并反复 409。删除缓存让 reload 回源到数据库读取最新版本。
+            context_cache.delete(session_id, tenant_id)
     return JSONResponse(
         status_code=409,
         content={
             "detail": "Session context is stale; reload before saving again",
-            "session_id": stale.session_id if stale else "",
+            "session_id": session_id,
         },
     )
 

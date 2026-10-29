@@ -18,7 +18,7 @@
 | 文档一致性检查 | ✅ 扫描 37 份当前项目 Markdown（排除 `.upgrade/`、archive、运行时产物和缓存），0 处违规（2026-10-27） |
 | 数据库迁移链 | ✅ Alembic V001 → V008（V006：LangGraph checkpoint；V007：durable resume outbox；V008：租户索引、乐观锁与生成列） |
 | V008 结构实测 | ✅ 临时 PostgreSQL 18 库上完成 `V007 → V008 → V007 → V008` 双向迁移；历史行生成列 / `tenant_id` 回填、`stage_id` 类型转换、NOT VALID 约束、租户索引命中与乐观锁并发行为均通过（2026-10-27）。真实业务库 `ai_workflow` 已按"备份 → 补齐 V001 基线缺失列 → `upgrade head`"路径升级到 V008，旧数据无损（20 会话 / 144 审计事件），备份保存在 `.upgrade/backup/` |
-| 旧库租户归属 | ⚠️ 旧库 20 个会话与 90 条 `human_actions` 的 `tenant_id` 为 NULL（早于多租户模型），默认租户作用域查询不可见，需按实际归属回填 |
+| 旧库租户归属 | ⚠️ 旧库 20 个会话与 90 条 `human_actions` 的 `tenant_id` 为 NULL（早于多租户模型），默认租户作用域查询不可见，需按实际归属回填。回填通道已提供：`scripts/backfill_session_tenants.py`（默认 dry-run，仅填 `tenant_id IS NULL` 行） |
 | ProjectContext 迁移链 | ✅ 0.6.0-alpha.8 → 0.7.0 → 0.8.0 → 0.9.0 |
 
 ## v1.3.0 回归验证（2026-07-17）

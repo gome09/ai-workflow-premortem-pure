@@ -14,6 +14,7 @@ from typing import Any
 
 from core.migrations import migrate_context
 from core.models import ProjectContext
+from storage.access import SystemAccess, resolve_system_access
 from storage.field_security import decrypt_fields_after_load, encrypt_fields_for_storage
 
 logger = logging.getLogger(__name__)
@@ -1106,13 +1107,19 @@ class SQLiteSessionStore:
             )
 
     def load(
-        self, session_id: str, tenant_id: str = "", *, system: bool = False
+        self,
+        session_id: str,
+        tenant_id: str = "",
+        *,
+        system_access: SystemAccess | None = None,
     ) -> ProjectContext | None:
         """Load a session; return None if not found or tenant mismatch.
 
-        SQLite demo mode keeps the tenant-optional behavior; `system` is accepted
-        for facade parity with the PostgreSQL backend and intentionally ignored.
+        SQLite demo mode keeps the tenant-optional behavior; `system_access` is
+        validated for facade parity with the PostgreSQL backend so forged flags
+        (e.g. a stray `True`) fail loudly instead of silently widening access.
         """
+        resolve_system_access(system_access, operation="load", session_id=session_id)
         with self._lock:
             with self._get_conn() as conn:
                 if tenant_id:
@@ -1352,8 +1359,11 @@ class SQLiteSessionStore:
                 ).fetchall()
         return [dict(row) for row in rows]
 
-    def delete(self, session_id: str, tenant_id: str = "", *, system: bool = False) -> bool:
+    def delete(
+        self, session_id: str, tenant_id: str = "", *, system_access: SystemAccess | None = None
+    ) -> bool:
         """Delete a session row. Returns True if a row was deleted."""
+        resolve_system_access(system_access, operation="delete", session_id=session_id)
         with self._lock:
             with self._get_conn() as conn:
                 if tenant_id:
@@ -1370,9 +1380,15 @@ class SQLiteSessionStore:
                 return cur.rowcount > 0
 
     def list_sessions(
-        self, limit: int = 20, tenant_id: str = "", *, system: bool = False, offset: int = 0
+        self,
+        limit: int = 20,
+        tenant_id: str = "",
+        *,
+        system_access: SystemAccess | None = None,
+        offset: int = 0,
     ) -> list[dict]:
         """Return recent sessions for the history list."""
+        resolve_system_access(system_access, operation="list_sessions", session_id="")
         with self._lock:
             with self._get_conn() as conn:
                 if tenant_id:

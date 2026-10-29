@@ -20,6 +20,7 @@ from psycopg_pool import ConnectionPool
 from core.config import settings
 from core.migrations import migrate_context
 from core.models import ProjectContext
+from storage.access import SystemAccess, resolve_system_access
 from storage.errors import StaleContextError, TenantIsolationError
 from storage.field_security import decrypt_fields_after_load, encrypt_fields_for_storage
 
@@ -1279,13 +1280,18 @@ class PostgresSessionStore:
 
     @_record_db_operation("load")
     def load(
-        self, session_id: str, tenant_id: str = "", *, system: bool = False
+        self,
+        session_id: str,
+        tenant_id: str = "",
+        *,
+        system_access: SystemAccess | None = None,
     ) -> ProjectContext | None:
         """加载会话，不存在或 tenant 不匹配则返回 None。
 
-        生产路径必须显式携带 tenant；`system=True` 仅供启动补偿、审计等无请求
-        上下文的内部通道使用。
+        生产路径必须显式携带 tenant；`system_access=SYSTEM_ACCESS` 仅供启动补偿、
+        审计等无请求上下文的内部通道使用，每次使用都会记录 warning 审计日志。
         """
+        system = resolve_system_access(system_access, operation="load", session_id=session_id)
         if not tenant_id and not system:
             raise TenantIsolationError(session_id, "load")
         params: tuple[Any, ...]
@@ -1537,8 +1543,11 @@ class PostgresSessionStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def delete(self, session_id: str, tenant_id: str = "", *, system: bool = False) -> bool:
+    def delete(
+        self, session_id: str, tenant_id: str = "", *, system_access: SystemAccess | None = None
+    ) -> bool:
         """Delete a session row. Returns True if a row was deleted."""
+        system = resolve_system_access(system_access, operation="delete", session_id=session_id)
         if not tenant_id and not system:
             raise TenantIsolationError(session_id, "delete")
         with self._get_conn() as conn:
@@ -1557,12 +1566,18 @@ class PostgresSessionStore:
 
     @_record_db_operation("list")
     def list_sessions(
-        self, limit: int = 20, tenant_id: str = "", *, system: bool = False, offset: int = 0
+        self,
+        limit: int = 20,
+        tenant_id: str = "",
+        *,
+        system_access: SystemAccess | None = None,
+        offset: int = 0,
     ) -> list[dict]:
         """列出最近的会话（用于前端历史列表）。生产路径必须携带 tenant。
 
         读取 V008 生成列，避免为列表页解析整份 context_json。
         """
+        system = resolve_system_access(system_access, operation="list_sessions", session_id="")
         if not tenant_id and not system:
             raise TenantIsolationError("", "list_sessions")
         columns = (
@@ -1590,6 +1605,83 @@ class PostgresSessionStore:
         with self._get_conn() as conn:
             rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
+
+    # ── Tenant maintenance ──────────────────────────────────────────────────
+
+    @_record_db_operation("backfill_tenant")
+    def backfill_orphan_sessions(
+        self,
+        tenant_id: str,
+        session_ids: list[str] | None = None,
+        *,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """为历史上 tenant_id 为 NULL 的会话回填租户归属（幂等）。
+
+        早于多租户模型创建的会话没有租户归属，默认租户作用域查询不可见，
+        也不进入治理统计。本方法提供受控回填通道：
+
+        - 默认 dry_run，只统计匹配行数，不写库；
+        - 仅更新 tenant_id IS NULL 的行，已有归属的行永不覆盖，可重复执行；
+        - human_actions / interrupt_resume_outbox 按 session_id 联表回填，
+          同样只填 NULL 行；所有更新在同一事务内提交；
+        - tenant 不存在时抛 ValueError，避免把会话挂到无效租户。
+        """
+        with self._get_conn() as conn:
+            tenant_row = conn.execute(
+                "SELECT 1 AS ok FROM tenants WHERE tenant_id = %s::uuid", (tenant_id,)
+            ).fetchone()
+            if tenant_row is None:
+                raise ValueError(f"Tenant not found: {tenant_id}")
+
+            if session_ids:
+                rows = conn.execute(
+                    "SELECT session_id FROM sessions "
+                    "WHERE tenant_id IS NULL AND session_id = ANY(%s)",
+                    (list(session_ids),),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT session_id FROM sessions WHERE tenant_id IS NULL"
+                ).fetchall()
+            target_ids = [row["session_id"] for row in rows]
+
+            result: dict[str, Any] = {
+                "tenant_id": tenant_id,
+                "dry_run": dry_run,
+                "sessions_matched": len(target_ids),
+                "sessions_updated": 0,
+                "human_actions_updated": 0,
+                "interrupt_resume_outbox_updated": 0,
+            }
+            if dry_run or not target_ids:
+                return result
+
+            session_cursor = conn.execute(
+                "UPDATE sessions SET tenant_id = %s::uuid "
+                "WHERE session_id = ANY(%s) AND tenant_id IS NULL",
+                (tenant_id, target_ids),
+            )
+            # 必须先更新 sessions，再按 JOIN 回填依赖表——同事务内 s.tenant_id 已是新归属。
+            action_cursor = conn.execute(
+                "UPDATE human_actions AS h SET tenant_id = s.tenant_id "
+                "FROM sessions AS s "
+                "WHERE h.session_id = s.session_id AND h.tenant_id IS NULL "
+                "AND s.session_id = ANY(%s)",
+                (target_ids,),
+            )
+            outbox_cursor = conn.execute(
+                "UPDATE interrupt_resume_outbox AS o SET tenant_id = s.tenant_id "
+                "FROM sessions AS s "
+                "WHERE o.session_id = s.session_id AND o.tenant_id IS NULL "
+                "AND s.session_id = ANY(%s)",
+                (target_ids,),
+            )
+            conn.commit()
+            result["sessions_updated"] = session_cursor.rowcount
+            result["human_actions_updated"] = action_cursor.rowcount
+            result["interrupt_resume_outbox_updated"] = outbox_cursor.rowcount
+            return result
 
     def log_event(
         self,

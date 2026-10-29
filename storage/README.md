@@ -33,7 +33,14 @@ Upgrade such a database in four steps:
 4. Run `alembic upgrade head` and verify the V008 columns, indexes and constraints.
 
 Rows predating the multi-tenant model keep `tenant_id = NULL`; backfill them to a
-real tenant before relying on tenant-scoped reads or governance aggregates.
+real tenant before relying on tenant-scoped reads or governance aggregates:
+
+```bash
+# dry-run（缺省）：只统计匹配的孤儿会话
+uv run python scripts/backfill_session_tenants.py --tenant-id <tenant-uuid>
+# 实际写库：仅更新 tenant_id IS NULL 的行，可重复执行
+uv run python scripts/backfill_session_tenants.py --tenant-id <tenant-uuid> --apply
+```
 
 ### SQLite (lite mode)
 

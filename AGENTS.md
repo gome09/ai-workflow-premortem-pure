@@ -9,9 +9,10 @@
 - 项目：AI Workflow Premortem，AI 工作流预验尸与人机监督平台；源于本科毕业设计，当前按长期维护的开源项目演进。
 - 当前应用版本：`1.3.0`；版本元数据必须同时保持 `core/version.py` 与 `pyproject.toml` 一致。
 - 当前数据库迁移头：Alembic `V008`；当前 `ProjectContext` schema：`0.9.0`。
+- 真实业务库 `ai_workflow` 已升级至 V008（20 会话 / 90 人工动作 / 144 审计事件保留）；历史行 `tenant_id` 仍为 NULL，回填前不会进入租户作用域查询与治理统计。旧库升级顺序与备份路径见 `storage/README.md` 与 `.upgrade/backup/`。
 - Phase 0–4 代码侧已完成；`docs/archive/plan/phase-*.md` 与 `phase-*-design.md` 是历史实施/设计基线（已归档），不得把其中旧版本、旧行号或未勾选项当作当前事实。
 - formal-project-uplift Wave A–E 已完成；剩余工作主要是仓库公开后的远端治理动作，如 CodeQL 转正、main 分支保护和发布设置。权威状态见 `.upgrade/STATE.md`。
-- 最近一次本地全量测试基线：`750 passed, 1 skipped`（2026-10-27，项目 `.venv` pytest，`STORAGE_BACKEND=sqlite` + `CHECKPOINT_BACKEND=memory`）。该轮仍有 4 条失败来自工作树中未提交的 `frontend/app.py` WIP 前端契约测试（缺 `api_delete` / `_role_from_token`），与存储层改动无关；上一轮 2026-09-21 基线为 `731 passed, 1 skipped`。测试数量会随测试集合变化，不应硬编码为永久断言。
+- 最近一次本地全量测试基线：`750 passed, 1 skipped`（2026-10-29 复核，与 2026-10-27 基线一致；项目 `.venv` pytest，`STORAGE_BACKEND=sqlite` + `CHECKPOINT_BACKEND=memory`）。该轮仍有 4 条失败来自工作树中未提交的 `frontend/app.py` WIP 前端契约测试（缺 `api_delete` / `_role_from_token`），与存储层改动无关；上一轮 2026-09-21 基线为 `731 passed, 1 skipped`。测试数量会随测试集合变化，不应硬编码为永久断言。
 - 治理总览当前只聚合真实业务会话（`business_internal` / `sensitive_personal`）；四个内置场景及其他 `public_demo` 会话必须与总览、趋势、积压动作和对应业务 Gauge 隔离。前端必须明确展示该统计口径，正常零数据不得表述为加载失败。
 - 录制测试基线必须走 `uv run`（项目 `.venv`）。用系统 Python 直接跑 `python -m pytest` 会因缺少 `prometheus-fastapi-instrumentator` 等主依赖触发 7 处 `importorskip` 跳过，得到 `623 passed, 8 skipped` 的降级结果——该数字不是有效基线。
 

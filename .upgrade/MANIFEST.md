@@ -130,7 +130,8 @@ core, planning, phase, validation, reporting, review, lifecycle
 
 ## Registered Artifact Policies
 
-- None.
+- `.upgrade/backup/ai_workflow_legacy_20261027.sql` — kind=runtime; module=core; lifecycle=temporary; git=ignore; required=false
+- `.upgrade/backup/daemon.json.20261028.bak` — kind=runtime; module=planning; lifecycle=temporary; git=ignore; required=false
 
 ## Stage Retained
 
@@ -166,7 +167,7 @@ core, planning, phase, validation, reporting, review, lifecycle
 ## Last Maintenance Report
 
 - Action type: phase-update
-- Timestamp: 2026-09-22T00:48:40+00:00
-- Changed: 2
+- Timestamp: 2026-10-29T11:27:56+00:00
+- Changed: 1
 - Skipped: 0
 <!-- project-upgrade-maintainer:manifest:end -->

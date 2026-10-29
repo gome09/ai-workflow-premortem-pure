@@ -151,10 +151,7 @@ def downgrade() -> None:
         op.execute(f"ALTER TABLE {table_name} DROP CONSTRAINT IF EXISTS {constraint_name}")
 
     # stage_id back to TEXT (numeric data is preserved as text).
-    op.execute(
-        "ALTER TABLE interrupt_records "
-        "ALTER COLUMN stage_id TYPE TEXT USING stage_id::text"
-    )
+    op.execute("ALTER TABLE interrupt_records ALTER COLUMN stage_id TYPE TEXT USING stage_id::text")
 
     op.execute("DROP INDEX IF EXISTS idx_human_actions_session_tenant_status")
     op.execute("DROP INDEX IF EXISTS idx_users_tenant")

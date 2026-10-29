@@ -24,17 +24,19 @@ Phase 0–4 与 formal-project-uplift Wave A–E 的代码侧工作已完成；�
 - 文档与安全数据面同步：checkpoint 完整上下文副本、密钥生命周期、备份恢复、事故响应和 PII 掩码边界已写入当前规格与合规材料。
 - 生产配置加固：生产关闭 demo auto-auth、Docker secrets 纳入两把加密 key、容器 readiness、配置 fail-fast、依赖兼容约束和 `uv run` 启动入口。
 - 文档压缩与生命周期整理：`docs/demo-scenarios.md` 去除重复启动说明；旧日志、截图、trace、缓存与 smoke 证据通过受控 cleanup 归档。截图证据现统一位于 `.upgrade/archive/`，具体碰撞安全名称以 `.upgrade/MANIFEST.md` 为准。
-- 当前带日期测试基线为 `750 passed, 1 skipped`（2026-10-27，项目 `.venv`，`sqlite` + `memory` checkpoint）；4 条失败来自工作树中未提交的前端 WIP 测试，不计入基线。上一轮 2026-09-21 基线为 `731 passed, 1 skipped`。
+- 当前带日期测试基线为 `750 passed, 1 skipped`（2026-10-29 复核，与 2026-10-27 首次记录一致；项目 `.venv`，`sqlite` + `memory` checkpoint）；4 条失败来自工作树中未提交的前端 WIP 测试，不计入基线。上一轮 2026-09-21 基线为 `731 passed, 1 skipped`。
 - 数据库查询与读写优化（2026-10-27）：新增 Alembic V008（`sessions.version`、JSONB 生成列、租户索引、`human_actions.tenant_id` 回填、`interrupt_records.stage_id` 改 INTEGER、NOT VALID CHECK/FK）；PostgreSQL 写入启用乐观锁与租户一致性校验，`load/delete/list_sessions` 在空 tenant 时拒绝（`system=True` 为启动补偿内部通道）；治理总览/趋势/积压改读生成列并将聚合下推 SQL；`_sync_*` 全面改 `executemany`；连接改为惰性 `psycopg_pool.ConnectionPool`（`DB_POOL_MIN/MAX_SIZE`、`DB_STATEMENT_TIMEOUT_MS`）；新增 `premortem_db_operation_seconds` Histogram。SQLite 保持租户可选兼容。提交 `d25578c`、`8ae102f`。本轮 `750 passed, 1 skipped`，4 个失败均来自工作树中未提交的 `frontend/app.py` 相关 WIP 测试（缺 `api_delete` / `_role_from_token`），非本次改动引入。
+- Docker 构建上下文清理（2026-10-28）：`.dockerignore` 新增 `/*.txt`、`.uv-cache/`、`.uv/`、`.screenshots/`、`/Makefile`，阻止内部方案与本地缓存进入镜像；`pyproject.toml` / `uv.lock` 保留，因为 deps 构建阶段仍依赖。镜像拉取慢已定位为 Docker Desktop VM 内 DNS 首次解析返回空、docker.io 解析被污染且无 HTTPS 代理、ghcr.io 无镜像源，叠加首次构建基础镜像未缓存。
 - 真实 PostgreSQL 验证（2026-10-27）：本机 PostgreSQL 18（127.0.0.1:5432）以临时库 `ai_workflow_v008_verify` / `ai_workflow_v008_upgrade` 完成实测——V007→V008 迁移、生成列回填、`human_actions.tenant_id` 回填、`interrupt_records.stage_id` 数字转换（非数字按设计置 NULL）、4 个 NOT VALID CHECK 与 `fk_sessions_tenant`、`V008`→`V007`→`V008` 双向迁移；`PostgresSessionStore` 真实读写验证首次插入 version=0、保存 version+1、陈旧写入 409 抛错、跨租户覆盖拒绝、空 tenant 拒绝与 `system=True` 通道、列表分页与生成列投影、治理口径排除 `public_demo`，并确认 `idx_sessions_tenant_updated` 可命中。临时库已删除。本机 `.env` 已改为 `POSTGRES_PORT=5432` 以匹配容器内端口（宿主进程连 Docker DB 时需临时改为 `5433`）；`secrets/` 已补齐 `data_encryption_key` 与 `checkpoint_encryption_key`，`docker compose config` 校验通过。真实业务库 `ai_workflow` 已于 2026-10-27 升级到 V008：先 `pg_dump` 备份到 `.upgrade/backup/ai_workflow_legacy_20261027.sql`，再补齐 V001 基线缺失列（`sessions.tenant_id` 等 30 列），最后 `alembic upgrade head`（V001→V008）。旧数据无损（20 会话 / 90 人工动作 / 144 审计事件）；历史行 `tenant_id` 均为 NULL，默认租户作用域查询不可见，待按实际归属回填。
+- 数据库迭代收尾与工作区整理（2026-10-29）：复核 V008 迁移头、真实业务库数据量与数据库相关文档，补齐 `AGENTS.md` 业务库状态与基线日期；`ruff format` 修正 3 个存量文件后复跑 `750 passed, 1 skipped`（4 条失败仍为前端 WIP）。`.upgrade` 执行 `sync` 修复忽略链路，cleanup 归档 42 项旧 trace/日志、31 个临时脚本移入回收站，并为 `.upgrade/backup/` 的 SQL 转储与 daemon 备份注册 runtime/ignore 策略。
 
 ## Current Blockers
 
 - main 分支保护、Private vulnerability reporting、CodeQL required check、Scorecard 与 GitHub Release 必须远端实查。
-- 旧 Docker 镃像是否曾包含敏感文件，需在 Docker daemon 可用后重建并核验；若镜像曾外发，应轮换相关密钥。
+- 旧 Docker 镜像是否曾包含敏感文件，需在 Docker daemon 可用后重建并核验；若镜像曾外发，应轮换相关密钥。
 - NIST AI 600-1 四项存疑编号、TC260 二手摘要以及未成年人 AI 应用指南定稿内容仍需原文复核。
 - ISO 42001 当前仍有系统退役、跨租户集团视图和第三方供应链风险集成三项缺口。
-- 四份已停止服务的 stdout/stderr 日志仍被 Windows 句柄占用，暂留 `.upgrade/logs/`；释放句柄后可再次走 cleanup review/apply。
+- `.upgrade/tmp/.trash/` 仍有 32 个已清理文件等待自然过期；四份旧 stdout/stderr 日志的句柄占用已随 2026-10-29 cleanup 解除，今日 pytest 日志保留在 `.upgrade/logs/`。
 
 ## Validation Commands
 
@@ -61,7 +63,7 @@ Obtain remote governance evidence and prepare release configuration
 
 ## last_completed_task
 
-Resolved local type, formatting, and documentation validation failures; local checks passed on 2026-09-22
+Closed database iteration review, synced docs, and completed .upgrade cleanup with backup artifact policies on 2026-10-29
 
 ## next_action
 
@@ -69,7 +71,7 @@ Authenticate GitHub maintainer account, verify branch protection and vulnerabili
 
 ## last_update
 
-- Date: 2026-09-22T00:48:40+00:00
+- Date: 2026-10-29T11:27:56+00:00
 - Updated by: project-upgrade-maintainer
 - Summary: Entered or refreshed Phase 4.
 

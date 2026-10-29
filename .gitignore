@@ -123,9 +123,11 @@ docs/internal/
 !.upgrade/archive/.gitkeep
 .upgrade/checkpoints/*.tmp
 .upgrade/checkpoints/*.bak
-.upgrade/backup/
 .upgrade/reports/*.tmp
 .upgrade/reports/*.bak
 .upgrade/transactions/*
 !.upgrade/transactions/.gitkeep
+# Registered artifact policy exclusions
+/.upgrade/backup/ai_workflow_legacy_20261027.sql
+/.upgrade/backup/daemon.json.20261028.bak
 # project-upgrade-maintainer:end

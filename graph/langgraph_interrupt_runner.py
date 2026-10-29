@@ -46,9 +46,7 @@ def _coerce_context(result: Any, fallback: ProjectContext) -> ProjectContext:
             return _inherit_storage_version(context, fallback)
         if isinstance(context, dict):
             try:
-                return _inherit_storage_version(
-                    ProjectContext.model_validate(context), fallback
-                )
+                return _inherit_storage_version(ProjectContext.model_validate(context), fallback)
             except Exception:
                 logger.exception("Could not validate context channel from LangGraph result.")
         try:

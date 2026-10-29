@@ -36,6 +36,7 @@ def observe_db_operation(operation: str, elapsed_seconds: float) -> None:
     except Exception:  # pragma: no cover - metrics must never break the request path
         logger.debug("observe_db_operation failed; non-fatal", exc_info=True)
 
+
 # ─────────────────────────────────────────────────────────
 # 会话状态（Gauge，按需刷新）
 # ─────────────────────────────────────────────────────────

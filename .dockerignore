@@ -96,6 +96,13 @@ nginx/
 /Dockerfile
 /.dockerignore
 
+# Internal planning notes and local-only artifacts (not part of the runtime app).
+/*.txt
+.uv-cache/
+.uv/
+.screenshots/
+/Makefile
+
 # project-upgrade:start
 .upgrade/
 # project-upgrade:end
@@ -110,4 +117,7 @@ nginx/
 .upgrade/traces
 .upgrade/transactions/*
 !.upgrade/transactions/.gitkeep
+# Registered artifact policy exclusions
+/.upgrade/backup/ai_workflow_legacy_20261027.sql
+/.upgrade/backup/daemon.json.20261028.bak
 # project-upgrade-maintainer:end

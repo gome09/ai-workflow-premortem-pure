@@ -1,0 +1,67 @@
+{
+  "created_at": "2026-10-29T11:25:12+00:00",
+  "entries": [
+    {
+      "action": "register-existing",
+      "classification": {
+        "ambiguous": false,
+        "evidence": {
+          "governance_terms": [
+            "rollback"
+          ],
+          "runtime_terms": []
+        },
+        "inferred_rules": [
+          "Consult this artifact before irreversible, migration, or rollback-sensitive changes."
+        ],
+        "path": ".upgrade/backup/daemon.json.20261028.bak",
+        "purpose": "Docker daemon.json backup for local rollback only",
+        "reason": "governance/evidence terminology or governed review/decision scope detected",
+        "recommended_docker_policy": "exclude",
+        "recommended_expose_in_agents": true,
+        "recommended_expose_in_readme": true,
+        "recommended_git_policy": "tracked",
+        "recommended_kind": "governance",
+        "recommended_lifecycle": "permanent",
+        "recommended_module": "planning",
+        "recommended_required": true
+      },
+      "create_file": false,
+      "mtime_ns": 1793185467473585500,
+      "path": ".upgrade/backup/daemon.json.20261028.bak",
+      "policy": {
+        "classifier_reason": "governance/evidence terminology or governed review/decision scope detected",
+        "docker_policy": "exclude",
+        "expose_in_agents": false,
+        "expose_in_readme": false,
+        "git_policy": "ignore",
+        "kind": "runtime",
+        "lifecycle": "temporary",
+        "module": "planning",
+        "path": ".upgrade/backup/daemon.json.20261028.bak",
+        "purpose": "Docker daemon.json backup for local rollback only",
+        "required": false,
+        "rules": []
+      },
+      "previous_policy": null,
+      "reason": "new extension artifact policy",
+      "registry_sha256": "278b1c6d80a7489b88507aa7a1ca78c84d0f08ee33254e44c3806c70ccb0a28e",
+      "sha256": "8fcd84c52672bea67c3f59c230937367101d348d9d663c59239b255c4ed6f582",
+      "size": 352
+    }
+  ],
+  "implementation_sha256": "03ffc5303b9bd8ecccf42cab5f0a07eec2a3ac89d9f9d406041fbb0ee8fb5eab",
+  "kind": "artifact-policy",
+  "plan_id": "271e7c5f0ea501c3ddd4b3cea400a2f1cd620a427191f9af82f322eead950825",
+  "policy_dependencies": [
+    "references/shared/safety-and-lifecycle.md",
+    "subskills/lifecycle/references/artifact-policy-linking.md",
+    "assets/templates/AGENTS.md",
+    "assets/templates/README.md",
+    "assets/templates/ARTIFACTS.json"
+  ],
+  "policy_version": 14,
+  "root": "D:\\BackendDevelopment\\Project\\Projest_Test-4\\ai-workflow-premortem",
+  "schema_version": 3,
+  "skill_version": "18.0.1"
+}

@@ -1,5 +1,34 @@
 {
-  "schema_version": 1,
+  "entries": [
+    {
+      "classifier_reason": "no governance or runtime signal detected; treat as retained upgrade content",
+      "docker_policy": "exclude",
+      "expose_in_agents": false,
+      "expose_in_readme": false,
+      "git_policy": "ignore",
+      "kind": "runtime",
+      "lifecycle": "temporary",
+      "module": "core",
+      "path": ".upgrade/backup/ai_workflow_legacy_20261027.sql",
+      "purpose": "Legacy PostgreSQL dump for local restore only; sensitive, never commit",
+      "required": false,
+      "rules": []
+    },
+    {
+      "classifier_reason": "governance/evidence terminology or governed review/decision scope detected",
+      "docker_policy": "exclude",
+      "expose_in_agents": false,
+      "expose_in_readme": false,
+      "git_policy": "ignore",
+      "kind": "runtime",
+      "lifecycle": "temporary",
+      "module": "planning",
+      "path": ".upgrade/backup/daemon.json.20261028.bak",
+      "purpose": "Docker daemon.json backup for local rollback only",
+      "required": false,
+      "rules": []
+    }
+  ],
   "managed_by": "project-upgrade-maintainer",
-  "entries": []
+  "schema_version": 1
 }

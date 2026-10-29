@@ -57,8 +57,6 @@ def client_and_service(tmp_path):
         patch("storage.session_store.session_store.initialize"),
         patch("core.session_service.session_store", store),
         patch("core.session_service.context_cache", cache),
-        patch("api.routers.session.session_store", store),
-        patch("api.routers.session.context_cache", cache),
     ):
         from api.main import app
 

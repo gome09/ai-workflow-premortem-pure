@@ -3,16 +3,19 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from api.schemas import ResolveActionRequest
+from api.schemas import ActionResolutionResponse, ResolveActionRequest
 from auth.jwt import TenantContext, get_current_tenant
 from auth.permissions import Role, require_roles
+from core.models import ActionResolutionLog, AuditEvent, PendingHumanAction
 from core.session_service import session_service
 
 router = APIRouter(prefix="/sessions", tags=["oversight"])
 
 
 @router.get(
-    "/{session_id}/actions", dependencies=[require_roles(Role.viewer, Role.editor, Role.admin)]
+    "/{session_id}/actions",
+    response_model=list[PendingHumanAction],
+    dependencies=[require_roles(Role.viewer, Role.editor, Role.admin)],
 )
 def list_actions(
     session_id: str,
@@ -32,6 +35,7 @@ def list_actions(
 
 @router.get(
     "/{session_id}/actions/{action_id}",
+    response_model=PendingHumanAction,
     dependencies=[require_roles(Role.viewer, Role.editor, Role.admin)],
 )
 def get_action(
@@ -50,6 +54,7 @@ def get_action(
 
 @router.get(
     "/{session_id}/actions/{action_id}/resolution-logs",
+    response_model=list[ActionResolutionLog],
     dependencies=[require_roles(Role.viewer, Role.editor, Role.admin)],
 )
 def list_action_resolution_logs(
@@ -70,6 +75,7 @@ def list_action_resolution_logs(
 
 @router.post(
     "/{session_id}/actions/{action_id}/resolve",
+    response_model=ActionResolutionResponse,
     dependencies=[require_roles(Role.editor, Role.admin)],
 )
 def resolve_action(
@@ -106,7 +112,9 @@ def resolve_action(
 
 
 @router.get(
-    "/{session_id}/audit-events", dependencies=[require_roles(Role.viewer, Role.editor, Role.admin)]
+    "/{session_id}/audit-events",
+    response_model=list[AuditEvent],
+    dependencies=[require_roles(Role.viewer, Role.editor, Role.admin)],
 )
 def list_audit_events(
     session_id: str,

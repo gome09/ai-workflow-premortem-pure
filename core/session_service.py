@@ -7,6 +7,7 @@ FastAPI 和 Streamlit 都通过此层交互，不直接操作图。
 from __future__ import annotations
 
 import logging
+from typing import Literal
 
 from core.audit_service import append_audit_event
 from core.eval_dataset_service import (
@@ -118,6 +119,19 @@ from tools.safety_classifier import add_findings_dedup, scan_user_materials
 
 logger = logging.getLogger(__name__)
 
+DataClassification = Literal["public_demo", "business_internal", "sensitive_personal"]
+
+# T1.1 数据分级顺序：数值越大越敏感，降级需要更高权限。
+DATA_CLASSIFICATION_ORDER: dict[str, int] = {
+    "public_demo": 0,
+    "business_internal": 1,
+    "sensitive_personal": 2,
+}
+
+
+class DataClassificationDowngradeError(PermissionError):
+    """调用方不具备 admin 权限却尝试降低数据分级时抛出。"""
+
 
 class SessionService:
     def create_session(self, tenant_id: str = "", scenario_id: str | None = None) -> ProjectContext:
@@ -171,6 +185,58 @@ class SessionService:
             context_cache.set(ctx)
 
         return {"session_id": session_id, "session_name": normalized_name}
+
+    def update_data_classification(
+        self,
+        session_id: str,
+        *,
+        data_classification: DataClassification,
+        note: str = "",
+        actor_role: str = "",
+        tenant_id: str = "",
+    ) -> dict:
+        """覆写会话数据分级，并写 data_classification_changed 审计事件。
+
+        规则：升级或同级修改允许 editor+；降级必须 admin。
+        角色准入由 API 层保证，本方法只接收 actor_role 用于降级判定与审计。
+        """
+        ctx = self.get_session(session_id, tenant_id=tenant_id)
+        if not ctx:
+            raise ValueError(f"Session not found: {session_id}")
+
+        before = ctx.data_classification
+        is_downgrade = (
+            DATA_CLASSIFICATION_ORDER[data_classification] < DATA_CLASSIFICATION_ORDER[before]
+        )
+        if is_downgrade and actor_role != "admin":
+            raise DataClassificationDowngradeError(
+                "Downgrading data_classification requires admin role"
+            )
+
+        append_audit_event(
+            ctx,
+            actor="user",
+            event_type="data_classification_changed",
+            target_type="session",
+            target_id=session_id,
+            before={"data_classification": before},
+            after={"data_classification": data_classification},
+            metadata={
+                "note": note,
+                "is_downgrade": is_downgrade,
+                "actor_role": actor_role,
+            },
+        )
+        ctx.data_classification = data_classification
+        session_store.save(ctx)
+        context_cache.set(ctx)
+        return {
+            "ok": True,
+            "session_id": session_id,
+            "before": before,
+            "after": data_classification,
+            "is_downgrade": is_downgrade,
+        }
 
     def delete_session(
         self, session_id: str, *, purged_by: str = "admin", tenant_id: str = ""

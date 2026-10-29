@@ -1,7 +1,9 @@
 # api/schemas.py
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from core.stage_resolution_service import StageResolutionOperation
 
 
 class SendMessageRequest(BaseModel):
@@ -248,3 +250,101 @@ class TraceToEvalDatasetRequest(BaseModel):
 class UpdateDataClassificationRequest(BaseModel):
     data_classification: Literal["public_demo", "business_internal", "sensitive_personal"]
     note: str = ""
+
+
+class RenameSessionResponse(BaseModel):
+    session_id: str
+    session_name: str
+
+
+class UpdateDataClassificationResponse(BaseModel):
+    ok: bool = True
+    session_id: str
+    before: str
+    after: str
+    is_downgrade: bool
+
+
+class DeleteSessionResponse(BaseModel):
+    """删除会话的收尾摘要。归档行数等附加字段允许透传。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    session_id: str
+    tenant_id: str = ""
+    session_name: str = ""
+    research_target: str = ""
+    domain: str = ""
+    current_state: str
+    data_classification: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+    purged_by: str = ""
+    archived_audit_events: int | None = None
+
+
+class StageOperationResultResponse(BaseModel):
+    """阶段变更操作的通用信封。
+
+    `result` 随操作类型变化，因此保留扩展字段透传，避免响应被静默裁剪。
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    session_id: str
+    operation: str
+    result: Any = None
+    result_type: str = ""
+    stage_id: int
+    stage_advancement_decision: dict[str, Any] | None = None
+    next_required_operation: dict[str, Any] | None = None
+    runtime_validation: str = "deferred_by_instruction"
+
+
+class MaterialsAddedResponse(StageOperationResultResponse):
+    ok: bool = True
+    materials_added_count: int = 0
+    user_materials_count: int = 0
+    evidence_sources_count: int = 0
+    safety_findings_count: int = 0
+
+
+class ResolveFlagResponse(StageOperationResultResponse):
+    ok: bool = True
+    flag_id: str
+    action: str
+    note: str = ""
+    resolved_action_ids: list[str] = Field(default_factory=list)
+    resolved_actions_count: int = 0
+
+
+class ExportReportResponse(BaseModel):
+    """导出结果：markdown 为 {format, content}，json 直接返回报告字典。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    format: str | None = None
+    content: Any = None
+
+
+class StageResolutionSummaryResponse(BaseModel):
+    """四阶段阻断项与可执行操作的汇总视图。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    by_stage: dict[str, list[StageResolutionOperation]] = Field(default_factory=dict)
+    current_stage_id: int | None = None
+    actionable_stage_ids: list[int] = Field(default_factory=list)
+    future_stage_placeholders: list[dict[str, Any]] = Field(default_factory=list)
+    total_operations: int = 0
+    hard_blockers_count: int = 0
+    overridable_blockers_count: int = 0
+    executable_operations_count: int = 0
+    hard_blockers: list[StageResolutionOperation] = Field(default_factory=list)
+    overridable_blockers: list[StageResolutionOperation] = Field(default_factory=list)
+    current_required_operations: list[StageResolutionOperation] = Field(default_factory=list)
+
+
+class StageResolutionOperationsResponse(BaseModel):
+    stage_id: int
+    operations: list[StageResolutionOperation] = Field(default_factory=list)

@@ -7,14 +7,21 @@ from api.limiter import limiter
 from api.schemas import (
     StageActionSyncRequest,
     StageAdvanceRequest,
+    StageOperationResultResponse,
     StageRerunRequest,
+    StageResolutionOperationsResponse,
+    StageResolutionSummaryResponse,
     StageRevisionRequest,
     StageRollbackRequest,
 )
 from auth.jwt import TenantContext, get_current_tenant
 from auth.permissions import Role, require_roles
+from core.gates.report import GateReport
 from core.session_service import session_service
+from core.stage_advancement_decision import StageAdvancementDecision
 from core.stage_readiness_service import (
+    StageGateResult,
+    StageReadiness,
     build_stage_readiness,
     get_stage_gate_result,
     get_stage_readiness,
@@ -29,6 +36,7 @@ router = APIRouter(prefix="/sessions", tags=["stage-readiness"])
 
 @router.get(
     "/{session_id}/stage-readiness",
+    response_model=dict[str, StageReadiness],
     dependencies=[require_roles(Role.viewer, Role.editor, Role.admin)],
 )
 def list_stage_readiness(session_id: str, ctx: TenantContext = Depends(get_current_tenant)) -> dict:
@@ -41,6 +49,7 @@ def list_stage_readiness(session_id: str, ctx: TenantContext = Depends(get_curre
 
 @router.get(
     "/{session_id}/stage-readiness/{stage_id}",
+    response_model=StageReadiness,
     dependencies=[require_roles(Role.viewer, Role.editor, Role.admin)],
 )
 def read_stage_readiness(
@@ -58,6 +67,7 @@ def read_stage_readiness(
 
 @router.get(
     "/{session_id}/stage-gate/{stage_id}",
+    response_model=StageGateResult,
     dependencies=[require_roles(Role.viewer, Role.editor, Role.admin)],
 )
 def read_stage_gate(
@@ -79,6 +89,7 @@ def read_stage_gate(
 
 @router.get(
     "/{session_id}/stage-resolution",
+    response_model=StageResolutionSummaryResponse,
     dependencies=[require_roles(Role.viewer, Role.editor, Role.admin)],
 )
 def list_stage_resolution_operations(
@@ -93,6 +104,7 @@ def list_stage_resolution_operations(
 
 @router.get(
     "/{session_id}/stage-resolution/{stage_id}",
+    response_model=StageResolutionOperationsResponse,
     dependencies=[require_roles(Role.viewer, Role.editor, Role.admin)],
 )
 def read_stage_resolution_operations(
@@ -115,6 +127,7 @@ def read_stage_resolution_operations(
 
 @router.get(
     "/{session_id}/stages/{stage_id}/advancement-decision",
+    response_model=StageAdvancementDecision,
     dependencies=[require_roles(Role.viewer, Role.editor, Role.admin)],
 )
 def read_stage_advancement_decision(
@@ -136,7 +149,9 @@ def read_stage_advancement_decision(
 
 
 @router.post(
-    "/{session_id}/stages/{stage_id}/advance", dependencies=[require_roles(Role.editor, Role.admin)]
+    "/{session_id}/stages/{stage_id}/advance",
+    response_model=StageAdvancementDecision,
+    dependencies=[require_roles(Role.editor, Role.admin)],
 )
 @limiter.limit("20/hour")
 def advance_stage_if_ready(
@@ -165,7 +180,9 @@ def advance_stage_if_ready(
 
 
 @router.post(
-    "/{session_id}/stages/{stage_id}/rerun", dependencies=[require_roles(Role.editor, Role.admin)]
+    "/{session_id}/stages/{stage_id}/rerun",
+    response_model=StageOperationResultResponse,
+    dependencies=[require_roles(Role.editor, Role.admin)],
 )
 def prepare_stage_rerun(
     session_id: str,
@@ -189,7 +206,9 @@ def prepare_stage_rerun(
 
 
 @router.post(
-    "/{session_id}/stages/{stage_id}/revise", dependencies=[require_roles(Role.editor, Role.admin)]
+    "/{session_id}/stages/{stage_id}/revise",
+    response_model=StageOperationResultResponse,
+    dependencies=[require_roles(Role.editor, Role.admin)],
 )
 def request_stage_revision(
     session_id: str,
@@ -214,6 +233,7 @@ def request_stage_revision(
 
 @router.post(
     "/{session_id}/stages/{stage_id}/rollback",
+    response_model=StageOperationResultResponse,
     dependencies=[require_roles(Role.editor, Role.admin)],
 )
 def request_stage_rollback(
@@ -241,6 +261,7 @@ def request_stage_rollback(
 
 @router.post(
     "/{session_id}/stages/{stage_id}/sync-review-actions",
+    response_model=StageOperationResultResponse,
     dependencies=[require_roles(Role.editor, Role.admin)],
 )
 def sync_stage_review_actions(
@@ -269,6 +290,7 @@ def sync_stage_review_actions(
 
 @router.get(
     "/{session_id}/gate-report",
+    response_model=GateReport,
     dependencies=[require_roles(Role.viewer, Role.editor, Role.admin)],
 )
 def get_gate_report(

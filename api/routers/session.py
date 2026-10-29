@@ -7,19 +7,23 @@ from api.schemas import (
     AddMaterialsRequest,
     CreateSessionRequest,
     CreateSessionResponse,
+    DeleteSessionResponse,
+    ExportReportResponse,
+    MaterialsAddedResponse,
     RenameSessionRequest,
+    RenameSessionResponse,
     ResolveFlagRequest,
+    ResolveFlagResponse,
     ScenarioSummaryResponse,
     SessionListItem,
     UpdateDataClassificationRequest,
+    UpdateDataClassificationResponse,
 )
 from auth.jwt import TenantContext, get_current_tenant
 from auth.permissions import Role, require_roles
-from core.audit_service import append_audit_event
-from core.session_service import session_service
+from core.models import ProjectContext
+from core.session_service import DataClassificationDowngradeError, session_service
 from scenarios import get_scenario, list_scenarios
-from storage.cache import context_cache
-from storage.session_store import session_store
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -84,7 +88,11 @@ def list_sessions(
     ]
 
 
-@router.get("/{session_id}", dependencies=[require_roles(Role.viewer, Role.editor, Role.admin)])
+@router.get(
+    "/{session_id}",
+    response_model=ProjectContext,
+    dependencies=[require_roles(Role.viewer, Role.editor, Role.admin)],
+)
 def get_session(session_id: str, ctx: TenantContext = Depends(get_current_tenant)) -> dict:
     """获取完整会话上下文。"""
     project_ctx = session_service.get_session(session_id, tenant_id=ctx.tenant_id)
@@ -95,6 +103,7 @@ def get_session(session_id: str, ctx: TenantContext = Depends(get_current_tenant
 
 @router.patch(
     "/{session_id}/name",
+    response_model=RenameSessionResponse,
     dependencies=[require_roles(Role.editor, Role.admin)],
 )
 def rename_session(
@@ -115,62 +124,37 @@ def rename_session(
 
 @router.patch(
     "/{session_id}/data-classification",
+    response_model=UpdateDataClassificationResponse,
     dependencies=[require_roles(Role.editor, Role.admin)],
 )
 def update_data_classification(
     session_id: str,
     body: UpdateDataClassificationRequest,
     ctx: TenantContext = Depends(get_current_tenant),
-) -> dict:
+) -> UpdateDataClassificationResponse:
     """覆写会话数据分级。
 
-    规则：升级或同级修改允许 editor+；降级必须 admin，且写 AuditEvent。
+    协议层只做角色准入与异常映射；分级顺序、降级门槛、审计与持久化
+    统一由 SessionService.update_data_classification 承担。
     """
-    project_ctx = session_service.get_session(session_id, tenant_id=ctx.tenant_id)
-    if not project_ctx:
-        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
-
-    before = project_ctx.data_classification
-    after = body.data_classification
-    order = {"public_demo": 0, "business_internal": 1, "sensitive_personal": 2}
-    is_downgrade = order[after] < order[before]
-
-    if is_downgrade:
-        # 降级必须 admin
-        if Role(ctx.role) != Role.admin:
-            raise HTTPException(
-                status_code=403,
-                detail="Downgrading data_classification requires admin role",
-            )
-
-    append_audit_event(
-        project_ctx,
-        actor="user",
-        event_type="data_classification_changed",
-        target_type="session",
-        target_id=session_id,
-        before={"data_classification": before},
-        after={"data_classification": after},
-        metadata={
-            "note": body.note,
-            "is_downgrade": is_downgrade,
-            "actor_role": ctx.role,
-        },
-    )
-    project_ctx.data_classification = after
-    session_store.save(project_ctx)
-    context_cache.set(project_ctx)
-    return {
-        "ok": True,
-        "session_id": session_id,
-        "before": before,
-        "after": after,
-        "is_downgrade": is_downgrade,
-    }
+    try:
+        result = session_service.update_data_classification(
+            session_id,
+            data_classification=body.data_classification,
+            note=body.note,
+            actor_role=ctx.role,
+            tenant_id=ctx.tenant_id,
+        )
+    except DataClassificationDowngradeError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return UpdateDataClassificationResponse(**result)
 
 
 @router.delete(
     "/{session_id}",
+    response_model=DeleteSessionResponse,
     dependencies=[require_roles(Role.admin)],
 )
 def delete_session(
@@ -186,7 +170,11 @@ def delete_session(
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.post("/{session_id}/materials", dependencies=[require_roles(Role.editor, Role.admin)])
+@router.post(
+    "/{session_id}/materials",
+    response_model=MaterialsAddedResponse,
+    dependencies=[require_roles(Role.editor, Role.admin)],
+)
 def add_materials(
     session_id: str,
     body: AddMaterialsRequest,
@@ -199,7 +187,11 @@ def add_materials(
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.post("/{session_id}/flags/resolve", dependencies=[require_roles(Role.editor, Role.admin)])
+@router.post(
+    "/{session_id}/flags/resolve",
+    response_model=ResolveFlagResponse,
+    dependencies=[require_roles(Role.editor, Role.admin)],
+)
 def resolve_flag(
     session_id: str,
     body: ResolveFlagRequest,
@@ -223,7 +215,9 @@ def resolve_flag(
 
 
 @router.get(
-    "/{session_id}/export", dependencies=[require_roles(Role.viewer, Role.editor, Role.admin)]
+    "/{session_id}/export",
+    response_model=ExportReportResponse,
+    dependencies=[require_roles(Role.viewer, Role.editor, Role.admin)],
 )
 def export_report(
     session_id: str,

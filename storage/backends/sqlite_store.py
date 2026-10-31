@@ -15,6 +15,7 @@ from typing import Any
 from core.migrations import migrate_context
 from core.models import ProjectContext
 from storage.access import SystemAccess, resolve_system_access
+from storage.errors import TenantIsolationError
 from storage.field_security import decrypt_fields_after_load, encrypt_fields_for_storage
 from storage.projection_read import build_projection_rows, get_projection_spec
 from storage.projection_state import compute_state, plan_sync
@@ -1196,11 +1197,12 @@ class SQLiteSessionStore:
     ) -> ProjectContext | None:
         """Load a session; return None if not found or tenant mismatch.
 
-        SQLite demo mode keeps the tenant-optional behavior; `system_access` is
-        validated for facade parity with the PostgreSQL backend so forged flags
-        (e.g. a stray `True`) fail loudly instead of silently widening access.
+        与 PostgreSQL 后端一致 fail-closed：空租户默认拒绝，仅显式
+        `SYSTEM_ACCESS` 通道（启动补偿、审计）可跨租户读取。
         """
-        resolve_system_access(system_access, operation="load", session_id=session_id)
+        system = resolve_system_access(system_access, operation="load", session_id=session_id)
+        if not tenant_id and not system:
+            raise TenantIsolationError(session_id, "load")
         with self._lock:
             with self._get_conn() as conn:
                 if tenant_id:
@@ -1534,7 +1536,9 @@ class SQLiteSessionStore:
         offset: int = 0,
     ) -> list[dict]:
         """Return recent sessions for the history list."""
-        resolve_system_access(system_access, operation="list_sessions", session_id="")
+        system = resolve_system_access(system_access, operation="list_sessions", session_id="")
+        if not tenant_id and not system:
+            raise TenantIsolationError("", "list_sessions")
         with self._lock:
             with self._get_conn() as conn:
                 if tenant_id:
@@ -1576,8 +1580,19 @@ class SQLiteSessionStore:
                 )
                 conn.commit()
 
-    def session_exists(self, session_id: str, tenant_id: str = "") -> bool:
-        """判断会话是否存在；SQLite demo 模式保持 tenant 可选。"""
+    def session_exists(
+        self,
+        session_id: str,
+        tenant_id: str = "",
+        *,
+        system_access: SystemAccess | None = None,
+    ) -> bool:
+        """判断会话是否存在；空租户默认拒绝，仅 `SYSTEM_ACCESS` 可跨租户探测。"""
+        system = resolve_system_access(
+            system_access, operation="session_exists", session_id=session_id
+        )
+        if not tenant_id and not system:
+            raise TenantIsolationError(session_id, "session_exists")
         with self._lock:
             with self._get_conn() as conn:
                 if tenant_id:
@@ -1598,10 +1613,12 @@ class SQLiteSessionStore:
         session_id: str,
         tenant_id: str = "",
         filters: dict[str, Any] | None = None,
+        *,
+        system_access: SystemAccess | None = None,
     ) -> list[dict] | None:
         """直接读取投影表；None 表示会话不存在，[] 表示合法空集合。"""
         spec = get_projection_spec(table)
-        if not self.session_exists(session_id, tenant_id):
+        if not self.session_exists(session_id, tenant_id, system_access=system_access):
             return None
         clauses = ["session_id = ?"]
         params: list[Any] = [session_id]

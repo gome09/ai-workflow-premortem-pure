@@ -170,7 +170,7 @@ def test_sqlite_round_trip_with_key(tmp_path, monkeypatch):
     store = SQLiteSessionStore(str(db_path))
     store.initialize()
 
-    ctx = ProjectContext()
+    ctx = ProjectContext(tenant_id="enc-tenant")
     ctx.data_classification = "business_internal"
     ctx.user_materials = ["secret text"]
     ctx.evidence_sources = [
@@ -197,7 +197,7 @@ def test_sqlite_round_trip_with_key(tmp_path, monkeypatch):
     assert "confidential summary" not in raw_json
 
     # load() must restore plaintext
-    loaded = store.load(ctx.session_id)
+    loaded = store.load(ctx.session_id, ctx.tenant_id)
     assert loaded is not None
     assert loaded.user_materials == ["secret text"]
     assert loaded.evidence_sources[0].summary == "confidential summary"
@@ -212,7 +212,7 @@ def test_sqlite_round_trip_without_key(tmp_path, monkeypatch):
     store = SQLiteSessionStore(str(db_path))
     store.initialize()
 
-    ctx = ProjectContext()
+    ctx = ProjectContext(tenant_id="enc-tenant")
     ctx.data_classification = "business_internal"
     ctx.user_materials = ["plaintext secret"]
     ctx.evidence_sources = [
@@ -238,7 +238,7 @@ def test_sqlite_round_trip_without_key(tmp_path, monkeypatch):
     assert "plaintext secret" in raw_json
 
     # load() restores plaintext unchanged
-    loaded = store.load(ctx.session_id)
+    loaded = store.load(ctx.session_id, ctx.tenant_id)
     assert loaded is not None
     assert loaded.user_materials == ["plaintext secret"]
     assert loaded.evidence_sources[0].summary == "plaintext summary"

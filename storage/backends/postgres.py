@@ -1219,8 +1219,23 @@ class PostgresSessionStore:
             rows,
         )
 
-    def session_exists(self, session_id: str, tenant_id: str = "") -> bool:
-        """判断会话是否存在；带 tenant 时同时校验租户归属。"""
+    def session_exists(
+        self,
+        session_id: str,
+        tenant_id: str = "",
+        *,
+        system_access: SystemAccess | None = None,
+    ) -> bool:
+        """判断会话是否存在；带 tenant 时同时校验租户归属。
+
+        空租户默认拒绝，仅显式 `SYSTEM_ACCESS` 通道可跨租户探测；
+        否则 `list_projection` 等调用会退化为全库可读（跨租户 IDOR）。
+        """
+        system = resolve_system_access(
+            system_access, operation="session_exists", session_id=session_id
+        )
+        if not tenant_id and not system:
+            raise TenantIsolationError(session_id, "session_exists")
         if tenant_id:
             sql = "SELECT 1 FROM sessions WHERE session_id = %s AND tenant_id = %s::uuid"
             params: tuple[Any, ...] = (session_id, tenant_id)
@@ -1237,10 +1252,12 @@ class PostgresSessionStore:
         session_id: str,
         tenant_id: str = "",
         filters: dict[str, Any] | None = None,
+        *,
+        system_access: SystemAccess | None = None,
     ) -> list[dict] | None:
         """直接读取投影表；None 表示会话不存在（含跨租户），[] 表示合法空集合。"""
         spec = get_projection_spec(table)
-        if not self.session_exists(session_id, tenant_id):
+        if not self.session_exists(session_id, tenant_id, system_access=system_access):
             return None
         clauses = ["session_id = %s"]
         params: list[Any] = [session_id]

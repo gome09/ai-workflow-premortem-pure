@@ -66,4 +66,15 @@ def verify_token(token: str, token_type: str = "access") -> TenantContext:  # no
 
 
 async def get_current_tenant(token: str = Depends(oauth2_scheme)) -> TenantContext:
-    return verify_token(token)
+    """校验令牌并强制携带租户作用域。
+
+    空 tenant_id 的令牌无法产生租户过滤，存储层面对空租户会 fail-closed；
+    在入口直接 403，避免把越权尝试传成 500 或静默回退到全局读取。
+    """
+    ctx = verify_token(token)
+    if not ctx.tenant_id.strip():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token is missing a tenant scope",
+        )
+    return ctx

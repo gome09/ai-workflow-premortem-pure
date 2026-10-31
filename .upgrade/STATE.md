@@ -46,6 +46,8 @@ Phase 0–4 与 formal-project-uplift Wave A–E 的代码侧工作已完成；P
 - 忽略规则提交与 SSH 推送（2026-10-31）：提交 `1f6f298` 同步 Git/Docker 忽略规则，并通过 SSH 推送 `main` 至 `origin`（`git@github.com:gome09/ai-workflow-premortem-pure.git`），`834226e..1f6f298` 共 23 个提交已上远端；本地 `HEAD` 与 `origin/main` 均为 `1f6f298`。
 - 前端设计改进（2026-10-31）：按已批准方案分阶段落地。`e9dd4dc` 推理过程改 `st.markdown` 纯文本渲染，会话条目补 `role`/`tabindex`/`aria-label`、Enter/Space 选中、F2 重命名与可见 ✏️ 按钮；`09a62a4` 新增 `.streamlit/config.toml` 双主题（`primaryColor #4C8BF5`），`index.html` 删除固定 `--sidebar-background` 与 `color-scheme`、改按 `st.context.theme.type` 动态注入底色，治理图表删除无效的 `alt.themes` 注册与白字 `mark_text` 层；`3fa719d` 用 `st.navigation` 双页（会话工作台 / 治理总览）替换侧栏 radio，新增 `frontend/views/pages.py`；`1e02f94` 治理总览/趋势/积压读取收敛到 `api_client` 的 30 秒会话级缓存，接口失败显式 `st.error` 并在空数据时明确“非加载失败”，侧栏新增会话搜索与每次 +20 的分页，评测/红队面板改为默认懒加载；本阶段为治理图表补显式 `altair>=5.0.0` / `pandas>=2.0.0` 依赖，并新增 `tests/test_frontend_ui_smoke.py`（`AppTest` 工作台与治理稀疏数据冒烟）和 `tests/test_frontend_theme.py`（主题双基色、无固定侧栏色、会话条目键盘可访问性与图表无白字层）。前端测试 42 passed。
 
+- 前后端边界加固（2026-10-31）：优先级 1 —— `pyproject.toml` 新增 PEP 735 `frontend` 依赖组（streamlit / altair / pandas / requests / python-dotenv），新增 `Dockerfile.frontend` 只执行 `uv sync --frozen --no-install-project --only-group frontend` 且仅 COPY `frontend/`；`docker-compose.yml` 与 `docker-compose.lite.yml` 的 frontend 服务改用该镜像，删除 `env_file: .env`、`secrets: jwt_secret` 与 `POSTGRES_HOST`/`REDIS_HOST` 注入，运行时只保留 `API_BASE` 与 `DEMO_AUTO_AUTH`（lite 显式开启免登录）；新增 `tests/test_frontend_image_isolation.py`（compose 无 env_file/secret、镜像不 COPY 后端源码、依赖组声明、frontend 源码不导入后端包）。优先级 2 —— `auth/jwt.py` 的 `get_current_tenant` 对空 `tenant_id` 令牌返回 403；PostgreSQL 与 SQLite 的 `load`、`list_sessions`、`session_exists`、`list_projection` 空租户 fail-closed，`system_access` 透传到 `list_projection`，跨租户读取只能走 `SYSTEM_ACCESS` 哨兵；修复 `tests/test_field_encryption.py` 两条无租户 `load` 调用，新增 `tests/test_tenant_fail_closed.py` 并扩展 `tests/test_storage_tenant_and_locking.py`。全量 `882 passed, 1 skipped`（SQLite + memory + mock，21.3s）；Ruff、mypy（163 files）、doc-check、version-check 通过。
+
 ## Current Blockers
 
 - main 分支保护、Private vulnerability reporting、CodeQL required check、Scorecard 与 GitHub Release 必须远端实查。
@@ -87,9 +89,9 @@ Verify branch protection, private vulnerability reporting, and CodeQL required c
 
 ## last_update
 
-- Date: 2026-10-31T06:15:00+00:00
-- Updated by: frontend design improvement stage 5
-- Summary: Declared altair/pandas dependencies for governance charts, added AppTest smoke and theme contract tests, and refreshed uv.lock; frontend suite 42 passed.
+- Date: 2026-10-31T14:40:00+08:00
+- Updated by: frontend/backend boundary hardening
+- Summary: Split the Streamlit UI into its own Dockerfile.frontend + `frontend` dependency group with no secrets or backend sources, and made empty-tenant reads fail-closed across JWT, PostgreSQL and SQLite; full suite 882 passed, 1 skipped.
 
 ## last_validation
 

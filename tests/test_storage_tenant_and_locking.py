@@ -181,6 +181,25 @@ def test_postgres_list_and_delete_require_tenant() -> None:
     assert conn.executed == []
 
 
+def test_postgres_session_exists_and_projection_require_tenant() -> None:
+    conn = _FakeConnection()
+    store = _store_with_conn(conn)
+
+    with pytest.raises(TenantIsolationError):
+        store.session_exists("s-1")
+    with pytest.raises(TenantIsolationError):
+        store.list_projection("human_actions", "s-1")
+    assert conn.executed == []
+
+
+def test_postgres_projection_reads_accept_system_access() -> None:
+    conn = _FakeConnection(select_row={"ok": 1})
+    store = _store_with_conn(conn)
+
+    assert store.session_exists("s-1", system_access=SYSTEM_ACCESS) is True
+    assert store.list_projection("human_actions", "s-1", system_access=SYSTEM_ACCESS) == []
+
+
 def test_system_access_sentinel_cannot_be_forged() -> None:
     assert SystemAccess.SYSTEM is SYSTEM_ACCESS
     with pytest.raises(TypeError):

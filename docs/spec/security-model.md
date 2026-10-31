@@ -52,6 +52,8 @@ This project has two security layers:
 
 会话、审计事件、人工动作等核心记录都带 `tenant_id`，查询按当前认证用户的租户范围过滤。
 
+读取路径为 fail-closed：`get_current_tenant` 对空 `tenant_id` 令牌直接返回 403；存储层的 `load`、`list_sessions`、`session_exists`、`list_projection` 在空租户下抛 `TenantIsolationError`（PostgreSQL 与 SQLite 一致）。跨租户读取只能显式传入 `SYSTEM_ACCESS` 内部哨兵，且每次使用都会写 warning 审计日志。
+
 这属于面向本地/小团队场景的行级隔离，不是企业级强隔离方案。
 
 ### Rate Limiting
@@ -98,6 +100,8 @@ Nginx 配置来自：
 - `grafana_password`
 
 `scripts/gen_secrets.sh` 会把 JWT、PostgreSQL、Redis 三项同时同步到 `.env`，因为应用环境变量优先级高于 `/run/secrets`；Grafana 密码只读 secret，API key 的 `.env` 占位行会被注释以便读取 secret。因而不能笼统宣称完整栈完全不在 `.env` 保存敏感值。`.env.demo` 仍是脱敏离线模板，不包含真实 API Key、数据库密码或证书私钥。
+
+前端镜像隔离：`frontend` 服务使用 `Dockerfile.frontend`，只安装 PEP 735 `frontend` 依赖组（Streamlit / Altair / pandas / requests / python-dotenv），镜像内不含 `api/`、`core/`、`storage/` 等后端源码与数据库驱动。compose 中 frontend 不挂载任何 secret、不读取 `.env`、也不注入 `POSTGRES_HOST`/`REDIS_HOST`，运行时只接收 `API_BASE`（及演示开关）。该边界由 `tests/test_frontend_image_isolation.py` 固化。
 
 ### Additional Hardening Already Present
 

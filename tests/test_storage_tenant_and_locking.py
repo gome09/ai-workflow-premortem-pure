@@ -136,7 +136,8 @@ def test_save_insert_path_uses_version_zero() -> None:
     )
     assert "version" in insert_sql
     assert "projection_state" in insert_sql
-    assert ") VALUES (%s, %s::uuid, %s, %s, %s::jsonb, %s, %s, 0)" in insert_sql
+    assert "context_digest" in insert_sql
+    assert ") VALUES (%s, %s::uuid, %s, %s, %s::jsonb, %s, %s, %s, 0)" in insert_sql
 
 
 def test_human_actions_sync_writes_tenant_id() -> None:

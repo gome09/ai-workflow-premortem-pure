@@ -15,6 +15,7 @@ from typing import Any
 from core.migrations import migrate_context
 from core.models import ProjectContext
 from storage.access import SystemAccess, resolve_system_access
+from storage.context_digest import compute_context_digest
 from storage.errors import TenantIsolationError
 from storage.field_security import decrypt_fields_after_load, encrypt_fields_for_storage
 from storage.projection_read import build_projection_rows, get_projection_spec
@@ -25,10 +26,11 @@ logger = logging.getLogger(__name__)
 # Default DB path; can be overridden via SQLITE_PATH env var.
 _DEFAULT_DB_PATH = "data/workflow.db"
 
-# V009 columns added after the initial DDL; existing SQLite files are upgraded
-# in place by initialize() (CREATE TABLE IF NOT EXISTS does not add columns).
-_V009_COLUMNS: tuple[tuple[str, str, str], ...] = (
+# V009/V010 columns added after the initial DDL; existing SQLite files are
+# upgraded in place by initialize() (CREATE TABLE IF NOT EXISTS does not add columns).
+_ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("sessions", "projection_state", "TEXT NOT NULL DEFAULT '{}'"),
+    ("sessions", "context_digest", "TEXT"),
     ("eval_runs", "pass_criteria", "TEXT NOT NULL DEFAULT '[]'"),
     ("eval_runs", "llm_judge_suggestion", "TEXT"),
 )
@@ -39,6 +41,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     current_state    TEXT NOT NULL DEFAULT 'init',
     context_json     TEXT NOT NULL DEFAULT '{}',
     projection_state TEXT NOT NULL DEFAULT '{}',
+    context_digest   TEXT,
     tenant_id        TEXT,
     created_at       TEXT NOT NULL,
     updated_at       TEXT NOT NULL
@@ -460,14 +463,14 @@ class SQLiteSessionStore:
         with self._lock:
             with self._get_conn() as conn:
                 conn.executescript(_INIT_DDL)
-                self._ensure_v009_columns(conn)
+                self._ensure_added_columns(conn)
                 conn.commit()
         logger.info("SQLite schema initialized at %s", self._db_path)
 
     @staticmethod
-    def _ensure_v009_columns(conn: sqlite3.Connection) -> None:
-        """对已存在的旧库幂等补齐 V009 列。"""
-        for table, column, ddl in _V009_COLUMNS:
+    def _ensure_added_columns(conn: sqlite3.Connection) -> None:
+        """对已存在的旧库幂等补齐 V009/V010 新增列。"""
+        for table, column, ddl in _ADDED_COLUMNS:
             existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}  # noqa: S608
             if column in existing:
                 continue
@@ -1086,42 +1089,61 @@ class SQLiteSessionStore:
         now = _dt(ctx.updated_at)
         created = _dt(ctx.created_at)
         data = ctx.model_dump(mode="json")
+        # updated_at 只落 sessions 列：若留在 context_json，每次保存都会改变
+        # 内容指纹，写放大保护就失效了。
+        data.pop("updated_at", None)
         current_state = compute_state(data)
         state_json = json.dumps(current_state, default=str)
+        digest = compute_context_digest(data)
         context_json = self._build_context_json_for_storage(ctx, data)
         with self._lock:
             with self._get_conn() as conn:
                 row = conn.execute(
-                    "SELECT projection_state FROM sessions WHERE session_id=?",
+                    "SELECT projection_state, context_digest FROM sessions WHERE session_id=?",
                     (ctx.session_id,),
                 ).fetchone()
                 previous_state = (
                     json.loads(row["projection_state"]) if row and row["projection_state"] else {}
                 )
                 plans = plan_sync(previous_state, current_state, data)
-                conn.execute(
-                    """
-                    INSERT INTO sessions
-                        (session_id, tenant_id, current_state, context_json, projection_state,
-                         created_at, updated_at)
-                    VALUES (?,?,?,?,?,?,?)
-                    ON CONFLICT(session_id) DO UPDATE SET
-                        tenant_id        = excluded.tenant_id,
-                        current_state    = excluded.current_state,
-                        context_json     = excluded.context_json,
-                        projection_state = excluded.projection_state,
-                        updated_at       = excluded.updated_at
-                    """,
-                    (
-                        ctx.session_id,
-                        ctx.tenant_id or None,
-                        ctx.current_state.value,
-                        context_json,
-                        state_json,
-                        created,
-                        now,
-                    ),
-                )
+                if row and (row["context_digest"] or "") == digest:
+                    # 内容未变化：只推进状态与时间，不重写整份 context_json。
+                    conn.execute(
+                        """
+                        UPDATE sessions
+                        SET current_state    = ?,
+                            projection_state = ?,
+                            updated_at       = ?
+                        WHERE session_id = ?
+                        """,
+                        (ctx.current_state.value, state_json, now, ctx.session_id),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        INSERT INTO sessions
+                            (session_id, tenant_id, current_state, context_json,
+                             projection_state, context_digest, created_at, updated_at)
+                        VALUES (?,?,?,?,?,?,?,?)
+                        ON CONFLICT(session_id) DO UPDATE SET
+                            tenant_id        = excluded.tenant_id,
+                            current_state    = excluded.current_state,
+                            context_json     = excluded.context_json,
+                            projection_state = excluded.projection_state,
+                            context_digest   = excluded.context_digest,
+                            updated_at       = excluded.updated_at
+                        """,
+                        (
+                            ctx.session_id,
+                            ctx.tenant_id or None,
+                            ctx.current_state.value,
+                            context_json,
+                            state_json,
+                            digest,
+                            created,
+                            now,
+                        ),
+                    )
                 if not plans["human_actions"].skip:
                     self._sync_human_actions(conn, ctx)
                 plan = plans["action_resolution_logs"]
@@ -1207,12 +1229,14 @@ class SQLiteSessionStore:
             with self._get_conn() as conn:
                 if tenant_id:
                     row = conn.execute(
-                        "SELECT context_json, tenant_id FROM sessions WHERE session_id=? AND tenant_id=?",
+                        "SELECT context_json, tenant_id, updated_at FROM sessions "
+                        "WHERE session_id=? AND tenant_id=?",
                         (session_id, tenant_id),
                     ).fetchone()
                 else:
                     row = conn.execute(
-                        "SELECT context_json, tenant_id FROM sessions WHERE session_id=?",
+                        "SELECT context_json, tenant_id, updated_at FROM sessions "
+                        "WHERE session_id=?",
                         (session_id,),
                     ).fetchone()
         if not row:
@@ -1222,6 +1246,8 @@ class SQLiteSessionStore:
             decrypt_fields_after_load(ctx)
             if row["tenant_id"]:
                 ctx.tenant_id = row["tenant_id"]
+            if row["updated_at"]:
+                ctx.updated_at = datetime.fromisoformat(row["updated_at"])
         return ctx
 
     def archive_audit_events(self, session_id: str, purged_by: str, summary: dict) -> int:

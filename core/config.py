@@ -13,6 +13,10 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         secrets_dir="/run/secrets",
+        # `.env` 由 compose、`make demo-*` 与 CI 多服务共享，除后端字段外还包含
+        # 前端专用键（DEMO_AUTO_AUTH / DEMO_USER_*）与容器键（SQLITE_PATH）。
+        # 未知键必须忽略，否则 `cp .env.demo .env` 会在导入时触发 extra_forbidden。
+        extra="ignore",
     )
 
     # LLM
@@ -50,8 +54,11 @@ class Settings(BaseSettings):
     postgres_user: str = "postgres"
     postgres_password: str = ""
     # Connection pool (psycopg_pool); the pool is created lazily on first query.
+    # max_size 默认对齐 FastAPI 同步端点的线程并发；pool timeout 防止请求在
+    # 池排队时无上限等待（psycopg_pool 默认 30s，过长会拖垮前端超时）。
     db_pool_min_size: int = 2
-    db_pool_max_size: int = 10
+    db_pool_max_size: int = 20
+    db_pool_timeout_seconds: float = 5.0
     # Per-statement server-side timeout; 0 disables the timeout.
     db_statement_timeout_ms: int = 5000
 
@@ -151,6 +158,8 @@ class Settings(BaseSettings):
             raise ValueError("DB_POOL_MIN_SIZE must be >= 0")
         if self.db_pool_max_size < 1 or self.db_pool_max_size < self.db_pool_min_size:
             raise ValueError("DB_POOL_MAX_SIZE must be >= 1 and >= DB_POOL_MIN_SIZE")
+        if self.db_pool_timeout_seconds < 0:
+            raise ValueError("DB_POOL_TIMEOUT_SECONDS must be >= 0")
         if self.db_statement_timeout_ms < 0:
             raise ValueError("DB_STATEMENT_TIMEOUT_MS must be >= 0")
         if self.retention_sweep_interval_seconds < 0:

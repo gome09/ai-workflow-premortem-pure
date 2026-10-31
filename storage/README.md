@@ -8,12 +8,13 @@ The current database schema migration mechanism is **Alembic**.
 
 1. `api/main.py` initializes the session store in the `lifespan` context manager.
 2. `storage/backends/postgres.py::PostgresSessionStore.initialize()` runs `alembic upgrade head`.
-3. Alembic migrations are under `alembic/versions/` (currently V001 → V009).
+3. Alembic migrations are under `alembic/versions/` (currently V001 → V010).
    V006 adds the LangGraph PostgreSQL checkpoint schema; V007 adds the durable
    interrupt-resume outbox; V008 adds `sessions.version` (optimistic locking),
    JSONB generated columns, tenant indexes and `human_actions.tenant_id`;
    V009 adds `sessions.projection_state` (save() differential sync state) and
-   `eval_runs.pass_criteria` / `llm_judge_suggestion`.
+   `eval_runs.pass_criteria` / `llm_judge_suggestion`; V010 adds
+   `sessions.context_digest` (save() skips rewriting unchanged `context_json`).
    Runtime code validates these tables but does not create or upgrade them ad hoc.
 
 ### Legacy databases created before Alembic
@@ -28,11 +29,11 @@ Upgrade such a database in four steps:
 
 1. Back up with `pg_dump` and store the dump outside the repository tree
    (`.upgrade/backup/` is git-ignored).
-2. Diff it against a database that has run V001 → V009, then
+2. Diff it against a database that has run V001 → V010, then
    `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` every missing non-generated column.
 3. Insert the baseline row into `alembic_version` (or run `alembic stamp V001`)
    so the chain does not try to recreate existing tables.
-4. Run `alembic upgrade head` and verify the V008/V009 columns, indexes and constraints.
+4. Run `alembic upgrade head` and verify the V008/V009/V010 columns, indexes and constraints.
 
 Rows predating the multi-tenant model keep `tenant_id = NULL`; backfill them to a
 real tenant before relying on tenant-scoped reads or governance aggregates:

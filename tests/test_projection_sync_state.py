@@ -216,7 +216,7 @@ def _columns(db_path: str, table: str) -> set[str]:
         conn.close()
 
 
-def test_initialize_adds_v009_columns_to_existing_database(tmp_path) -> None:
+def test_initialize_adds_v009_and_v010_columns_to_existing_database(tmp_path) -> None:
     db_path = str(tmp_path / "legacy.db")
     conn = sqlite3.connect(db_path)
     conn.execute(
@@ -235,4 +235,5 @@ def test_initialize_adds_v009_columns_to_existing_database(tmp_path) -> None:
     SQLiteSessionStore(db_path).initialize()
 
     assert "projection_state" in _columns(db_path, "sessions")
+    assert "context_digest" in _columns(db_path, "sessions")
     assert {"pass_criteria", "llm_judge_suggestion"} <= _columns(db_path, "eval_runs")

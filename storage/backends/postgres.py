@@ -21,6 +21,7 @@ from core.config import settings
 from core.migrations import migrate_context
 from core.models import ProjectContext
 from storage.access import SystemAccess, resolve_system_access
+from storage.context_digest import compute_context_digest
 from storage.errors import StaleContextError, TenantIsolationError
 from storage.field_security import decrypt_fields_after_load, encrypt_fields_for_storage
 from storage.projection_read import build_projection_rows, get_projection_spec
@@ -170,6 +171,7 @@ class PostgresSessionStore:
                         conninfo=self._dsn,
                         min_size=int(settings.db_pool_min_size),
                         max_size=int(settings.db_pool_max_size),
+                        timeout=float(settings.db_pool_timeout_seconds),
                         kwargs=self._connect_kwargs(),
                         open=True,
                     )
@@ -312,14 +314,18 @@ class PostgresSessionStore:
         """
         ctx.updated_at = datetime.utcnow()
         data = ctx.model_dump(mode="json")
+        # updated_at 只落 sessions 列：若留在 context_json，每次保存都会改变
+        # 内容指纹，写放大保护就失效了。
+        data.pop("updated_at", None)
         current_state = compute_state(data)
         state_json = json.dumps(current_state, default=str)
+        digest = compute_context_digest(data)
         context_json = self._build_context_json_for_storage(ctx, data)
         expected_version = int(getattr(ctx, "_storage_version", 0))
         incoming_tenant = ctx.tenant_id or ""
         with self._get_conn() as conn:
             row = conn.execute(
-                "SELECT version, tenant_id::text, projection_state "
+                "SELECT version, tenant_id::text, projection_state, context_digest "
                 "FROM sessions WHERE session_id = %s FOR UPDATE",
                 (ctx.session_id,),
             ).fetchone()
@@ -330,9 +336,9 @@ class PostgresSessionStore:
                     """
                     INSERT INTO sessions (
                         session_id, tenant_id, current_state, context_json, projection_state,
-                        created_at, updated_at, version
+                        context_digest, created_at, updated_at, version
                     )
-                    VALUES (%s, %s::uuid, %s, %s, %s::jsonb, %s, %s, 0)
+                    VALUES (%s, %s::uuid, %s, %s, %s::jsonb, %s, %s, %s, 0)
                     """,
                     (
                         ctx.session_id,
@@ -340,6 +346,7 @@ class PostgresSessionStore:
                         ctx.current_state.value,
                         context_json,
                         state_json,
+                        digest,
                         ctx.created_at,
                         ctx.updated_at,
                     ),
@@ -352,24 +359,45 @@ class PostgresSessionStore:
                 current_version = int(row.get("version") or 0)
                 if current_version != expected_version:
                     raise StaleContextError(ctx.session_id, expected_version, current_version)
-                conn.execute(
-                    """
-                    UPDATE sessions
-                    SET current_state    = %s,
-                        context_json     = %s,
-                        projection_state = %s::jsonb,
-                        updated_at       = %s,
-                        version          = version + 1
-                    WHERE session_id = %s
-                    """,
-                    (
-                        ctx.current_state.value,
-                        context_json,
-                        state_json,
-                        ctx.updated_at,
-                        ctx.session_id,
-                    ),
-                )
+                if (row.get("context_digest") or "") == digest:
+                    # 内容未变化：只推进版本/状态，不重写整份 context_json（TOAST 列）。
+                    conn.execute(
+                        """
+                        UPDATE sessions
+                        SET current_state    = %s,
+                            projection_state = %s::jsonb,
+                            updated_at       = %s,
+                            version          = version + 1
+                        WHERE session_id = %s
+                        """,
+                        (
+                            ctx.current_state.value,
+                            state_json,
+                            ctx.updated_at,
+                            ctx.session_id,
+                        ),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        UPDATE sessions
+                        SET current_state    = %s,
+                            context_json     = %s,
+                            projection_state = %s::jsonb,
+                            context_digest   = %s,
+                            updated_at       = %s,
+                            version          = version + 1
+                        WHERE session_id = %s
+                        """,
+                        (
+                            ctx.current_state.value,
+                            context_json,
+                            state_json,
+                            digest,
+                            ctx.updated_at,
+                            ctx.session_id,
+                        ),
+                    )
                 new_version = current_version + 1
             if not plans["human_actions"].skip:
                 self._sync_human_actions(conn, ctx)
@@ -1392,13 +1420,14 @@ class PostgresSessionStore:
         params: tuple[Any, ...]
         if tenant_id:
             sql = (
-                "SELECT context_json, tenant_id::text, version FROM sessions "
+                "SELECT context_json, tenant_id::text, version, updated_at FROM sessions "
                 "WHERE session_id = %s AND tenant_id = %s::uuid"
             )
             params = (session_id, tenant_id)
         else:
             sql = (
-                "SELECT context_json, tenant_id::text, version FROM sessions WHERE session_id = %s"
+                "SELECT context_json, tenant_id::text, version, updated_at "
+                "FROM sessions WHERE session_id = %s"
             )
             params = (session_id,)
         with self._get_conn() as conn:
@@ -1410,6 +1439,8 @@ class PostgresSessionStore:
             decrypt_fields_after_load(ctx)
             if row.get("tenant_id"):
                 ctx.tenant_id = row["tenant_id"]
+            if row.get("updated_at"):
+                ctx.updated_at = row["updated_at"]
             ctx._storage_version = int(row.get("version") or 0)
         return ctx
 

@@ -16,6 +16,7 @@ from core.migrations import migrate_context
 from core.models import ProjectContext
 from storage.access import SystemAccess, resolve_system_access
 from storage.field_security import decrypt_fields_after_load, encrypt_fields_for_storage
+from storage.projection_read import build_projection_rows, get_projection_spec
 
 logger = logging.getLogger(__name__)
 
@@ -1494,6 +1495,47 @@ class SQLiteSessionStore:
                     (session_id, event_type, stage, json.dumps(payload, default=str)),
                 )
                 conn.commit()
+
+    def session_exists(self, session_id: str, tenant_id: str = "") -> bool:
+        """判断会话是否存在；SQLite demo 模式保持 tenant 可选。"""
+        with self._lock:
+            with self._get_conn() as conn:
+                if tenant_id:
+                    row = conn.execute(
+                        "SELECT 1 FROM sessions WHERE session_id=? AND tenant_id=?",
+                        (session_id, tenant_id),
+                    ).fetchone()
+                else:
+                    row = conn.execute(
+                        "SELECT 1 FROM sessions WHERE session_id=?",
+                        (session_id,),
+                    ).fetchone()
+        return row is not None
+
+    def list_projection(
+        self,
+        table: str,
+        session_id: str,
+        tenant_id: str = "",
+        filters: dict[str, Any] | None = None,
+    ) -> list[dict] | None:
+        """直接读取投影表；None 表示会话不存在，[] 表示合法空集合。"""
+        spec = get_projection_spec(table)
+        if not self.session_exists(session_id, tenant_id):
+            return None
+        clauses = ["session_id = ?"]
+        params: list[Any] = [session_id]
+        for key, value in (filters or {}).items():
+            if key not in spec.filters:
+                raise ValueError(f"Unsupported projection filter: {key}")
+            clauses.append(f"{key} = ?")
+            params.append(value)
+        # table / order_by / filter 列均来自 PROJECTION_TABLES 白名单。
+        sql = f"SELECT * FROM {table} WHERE {' AND '.join(clauses)} ORDER BY {spec.order_by}"  # noqa: S608
+        with self._lock:
+            with self._get_conn() as conn:
+                rows = conn.execute(sql, tuple(params)).fetchall()
+        return build_projection_rows(table, [dict(row) for row in rows])
 
     def list_report_artifacts(self, session_id: str) -> list[dict]:
         with self._lock:

@@ -23,6 +23,7 @@ from core.models import ProjectContext
 from storage.access import SystemAccess, resolve_system_access
 from storage.errors import StaleContextError, TenantIsolationError
 from storage.field_security import decrypt_fields_after_load, encrypt_fields_for_storage
+from storage.projection_read import build_projection_rows, get_projection_spec
 
 logger = logging.getLogger(__name__)
 
@@ -1176,6 +1177,42 @@ class PostgresSessionStore:
             """,
             rows,
         )
+
+    def session_exists(self, session_id: str, tenant_id: str = "") -> bool:
+        """判断会话是否存在；带 tenant 时同时校验租户归属。"""
+        if tenant_id:
+            sql = "SELECT 1 FROM sessions WHERE session_id = %s AND tenant_id = %s::uuid"
+            params: tuple[Any, ...] = (session_id, tenant_id)
+        else:
+            sql = "SELECT 1 FROM sessions WHERE session_id = %s"
+            params = (session_id,)
+        with self._get_conn() as conn:
+            row = conn.execute(sql, params).fetchone()
+        return row is not None
+
+    def list_projection(
+        self,
+        table: str,
+        session_id: str,
+        tenant_id: str = "",
+        filters: dict[str, Any] | None = None,
+    ) -> list[dict] | None:
+        """直接读取投影表；None 表示会话不存在（含跨租户），[] 表示合法空集合。"""
+        spec = get_projection_spec(table)
+        if not self.session_exists(session_id, tenant_id):
+            return None
+        clauses = ["session_id = %s"]
+        params: list[Any] = [session_id]
+        for key, value in (filters or {}).items():
+            if key not in spec.filters:
+                raise ValueError(f"Unsupported projection filter: {key}")
+            clauses.append(f"{key} = %s")
+            params.append(value)
+        # table / order_by / filter 列均来自 PROJECTION_TABLES 白名单。
+        sql = f"SELECT * FROM {table} WHERE {' AND '.join(clauses)} ORDER BY {spec.order_by}"  # noqa: S608
+        with self._get_conn() as conn:
+            rows = conn.execute(sql, tuple(params)).fetchall()
+        return build_projection_rows(table, [dict(row) for row in rows])
 
     def list_interrupt_records(self, session_id: str) -> list[dict]:
         """从独立 interrupt_records 表读取执行中断记录。"""

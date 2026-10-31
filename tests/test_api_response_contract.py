@@ -48,6 +48,7 @@ def _schema_ref(openapi_schema: dict, path: str, method: str) -> str:
     ("path", "method", "expected"),
     [
         ("/sessions/{session_id}", "get", "ProjectContext"),
+        ("/sessions/{session_id}/overview", "get", "SessionOverviewResponse"),
         ("/sessions/{session_id}/actions", "get", "PendingHumanAction"),
         ("/sessions/{session_id}/audit-events", "get", "AuditEvent"),
         ("/sessions/{session_id}/stage-readiness", "get", "StageReadiness"),

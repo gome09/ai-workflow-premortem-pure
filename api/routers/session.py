@@ -16,6 +16,7 @@ from api.schemas import (
     ResolveFlagResponse,
     ScenarioSummaryResponse,
     SessionListItem,
+    SessionOverviewResponse,
     UpdateDataClassificationRequest,
     UpdateDataClassificationResponse,
 )
@@ -99,6 +100,21 @@ def get_session(session_id: str, ctx: TenantContext = Depends(get_current_tenant
     if not project_ctx:
         raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
     return project_ctx.model_dump(mode="json")
+
+
+@router.get(
+    "/{session_id}/overview",
+    response_model=SessionOverviewResponse,
+    dependencies=[require_roles(Role.viewer, Role.editor, Role.admin)],
+)
+def get_session_overview(
+    session_id: str, ctx: TenantContext = Depends(get_current_tenant)
+) -> SessionOverviewResponse:
+    """获取会话首屏概览（不含 stage 输出与明细轨迹）。"""
+    overview = session_service.get_session_overview(session_id, tenant_id=ctx.tenant_id)
+    if not overview:
+        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
+    return SessionOverviewResponse(**overview)
 
 
 @router.patch(

@@ -1,4 +1,5 @@
 # api/schemas.py
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -61,6 +62,21 @@ class SessionListItem(BaseModel):
     research_target: str
     domain: str
     updated_at: str
+
+
+class SessionOverviewResponse(BaseModel):
+    """会话首屏轻量概览；不包含 stage 输出、轨迹与评测明细。"""
+
+    session_id: str
+    session_name: str = ""
+    current_state: str
+    selected_scenario_id: str | None = None
+    data_classification: str
+    created_at: datetime
+    updated_at: datetime
+    conversation_history: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
+    flagged_items: list[dict[str, Any]] = Field(default_factory=list)
+    pending_actions: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ResolveFlagRequest(BaseModel):

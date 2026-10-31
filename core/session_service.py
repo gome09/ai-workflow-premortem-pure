@@ -7,7 +7,7 @@ FastAPI 和 Streamlit 都通过此层交互，不直接操作图。
 from __future__ import annotations
 
 import logging
-from typing import Literal
+from typing import Any, Literal
 
 from core.audit_service import append_audit_event
 from core.eval_dataset_service import (
@@ -158,6 +158,59 @@ class SessionService:
         if ctx:
             context_cache.set(ctx)
         return ctx
+
+    def _projection_rows(
+        self,
+        table: str,
+        session_id: str,
+        tenant_id: str = "",
+        filters: dict[str, Any] | None = None,
+    ) -> list[dict] | None:
+        """投影表直读；None 表示不可用或会话不存在，交给调用方回退上下文路径。"""
+        reader = getattr(session_store, "list_projection", None)
+        if reader is None:
+            return None
+        try:
+            return reader(table, session_id, tenant_id, filters=filters)
+        except Exception:
+            logger.exception(
+                "Projection read failed for %s (session=%s); falling back to context.",
+                table,
+                session_id,
+            )
+            return None
+
+    def _session_exists(self, session_id: str, tenant_id: str = "") -> bool | None:
+        """会话存在性探测；None 表示后端不支持，应走旧路径。"""
+        checker = getattr(session_store, "session_exists", None)
+        if checker is None:
+            return None
+        try:
+            return bool(checker(session_id, tenant_id))
+        except Exception:
+            logger.exception("Session existence check failed for %s.", session_id)
+            return None
+
+    def get_session_overview(self, session_id: str, tenant_id: str = "") -> dict | None:
+        """轻量概览：只返回前端首屏需要的字段，避免整份上下文响应。"""
+        ctx = self.get_session(session_id, tenant_id)
+        if not ctx:
+            return None
+        return {
+            "session_id": ctx.session_id,
+            "session_name": ctx.session_name,
+            "current_state": ctx.current_state.value,
+            "selected_scenario_id": ctx.selected_scenario_id,
+            "data_classification": ctx.data_classification,
+            "created_at": ctx.created_at,
+            "updated_at": ctx.updated_at,
+            "conversation_history": {
+                stage: [message.model_dump(mode="json") for message in messages]
+                for stage, messages in ctx.conversation_history.items()
+            },
+            "flagged_items": [item.model_dump(mode="json") for item in ctx.flagged_items],
+            "pending_actions": [action.model_dump(mode="json") for action in ctx.pending_actions],
+        }
 
     def rename_session(self, session_id: str, name: str, tenant_id: str = "") -> dict:
         """重命名会话并记录审计事件。"""
@@ -503,6 +556,14 @@ class SessionService:
         self, session_id: str, status: str | None = None, tenant_id: str = ""
     ) -> list[dict]:
         """列出人工监督动作。"""
+        rows = self._projection_rows(
+            "human_actions",
+            session_id,
+            tenant_id,
+            {"status": status} if status else None,
+        )
+        if rows is not None:
+            return rows
         ctx = self.get_session(session_id, tenant_id)
         if not ctx:
             raise ValueError(f"Session not found: {session_id}")
@@ -527,6 +588,11 @@ class SessionService:
         self, session_id: str, action_id: str, tenant_id: str = ""
     ) -> list[dict]:
         """List append-only resolution attempts for one human action."""
+        rows = self._projection_rows(
+            "action_resolution_logs", session_id, tenant_id, {"action_id": action_id}
+        )
+        if rows is not None:
+            return rows
         ctx = self.get_session(session_id, tenant_id)
         if not ctx:
             raise ValueError(f"Session not found: {session_id}")
@@ -720,6 +786,9 @@ class SessionService:
 
     def list_audit_events(self, session_id: str, tenant_id: str = "") -> list[dict]:
         """列出审计事件。"""
+        rows = self._projection_rows("audit_events", session_id, tenant_id)
+        if rows is not None:
+            return rows
         ctx = self.get_session(session_id, tenant_id)
         if not ctx:
             raise ValueError(f"Session not found: {session_id}")
@@ -727,6 +796,9 @@ class SessionService:
 
     def list_interrupt_records(self, session_id: str, tenant_id: str = "") -> list[dict]:
         """列出当前会话的 interrupt/action 映射记录。"""
+        rows = self._projection_rows("interrupt_records", session_id, tenant_id)
+        if rows is not None:
+            return rows
         ctx = self.get_session(session_id, tenant_id)
         if not ctx:
             raise ValueError(f"Session not found: {session_id}")
@@ -760,6 +832,9 @@ class SessionService:
 
     def list_evidence(self, session_id: str, tenant_id: str = "") -> list[dict]:
         """列出当前会话证据来源。"""
+        rows = self._projection_rows("evidence_sources", session_id, tenant_id)
+        if rows is not None:
+            return rows
         ctx = self.get_session(session_id, tenant_id)
         if not ctx:
             raise ValueError(f"Session not found: {session_id}")
@@ -820,6 +895,14 @@ class SessionService:
         self, session_id: str, status: str | None = None, tenant_id: str = ""
     ) -> list[dict]:
         """列出安全扫描发现。"""
+        rows = self._projection_rows(
+            "safety_findings",
+            session_id,
+            tenant_id,
+            {"status": status} if status else None,
+        )
+        if rows is not None:
+            return rows
         ctx = self.get_session(session_id, tenant_id)
         if not ctx:
             raise ValueError(f"Session not found: {session_id}")
@@ -983,15 +1066,15 @@ class SessionService:
         )
 
     def list_report_artifacts(self, session_id: str, tenant_id: str = "") -> list[dict]:
+        exists = self._session_exists(session_id, tenant_id)
+        if exists:
+            try:
+                return session_store.list_report_artifacts(session_id)
+            except Exception:
+                logger.exception("Failed to list report_artifacts table; falling back to context.")
         ctx = self.get_session(session_id, tenant_id)
         if not ctx:
             raise ValueError(f"Session not found: {session_id}")
-        try:
-            artifacts = session_store.list_report_artifacts(session_id)
-            if artifacts:
-                return artifacts
-        except Exception:
-            logger.exception("Failed to list report_artifacts table; falling back to context.")
         return [artifact.model_dump(mode="json") for artifact in ctx.report_artifacts]
 
     def get_report_artifact(self, session_id: str, report_id: str, tenant_id: str = "") -> dict:
@@ -1010,6 +1093,9 @@ class SessionService:
         raise ValueError(f"Report artifact not found: {report_id}")
 
     def list_eval_cases(self, session_id: str, tenant_id: str = "") -> list[dict]:
+        rows = self._projection_rows("eval_cases", session_id, tenant_id)
+        if rows is not None:
+            return rows
         ctx = self.get_session(session_id, tenant_id)
         if not ctx:
             raise ValueError(f"Session not found: {session_id}")
@@ -1117,6 +1203,9 @@ class SessionService:
     # ── Eval Dataset / Experiment foundation ───────────────────
 
     def list_eval_datasets(self, session_id: str, tenant_id: str = "") -> list[dict]:
+        rows = self._projection_rows("eval_datasets", session_id, tenant_id)
+        if rows is not None:
+            return rows
         ctx = self.get_session(session_id, tenant_id)
         if not ctx:
             raise ValueError(f"Session not found: {session_id}")
@@ -1290,6 +1379,9 @@ class SessionService:
         )
 
     def list_eval_experiments(self, session_id: str, tenant_id: str = "") -> list[dict]:
+        rows = self._projection_rows("eval_experiments", session_id, tenant_id)
+        if rows is not None:
+            return rows
         ctx = self.get_session(session_id, tenant_id)
         if not ctx:
             raise ValueError(f"Session not found: {session_id}")
@@ -1589,6 +1681,9 @@ class SessionService:
     # ── Red Team foundation ────────────────────────────────────
 
     def list_redteam_cases(self, session_id: str, tenant_id: str = "") -> list[dict]:
+        rows = self._projection_rows("redteam_cases", session_id, tenant_id)
+        if rows is not None:
+            return rows
         ctx = self.get_session(session_id, tenant_id)
         if not ctx:
             raise ValueError(f"Session not found: {session_id}")

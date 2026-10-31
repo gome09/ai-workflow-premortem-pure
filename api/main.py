@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 import redis as redis_lib
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -217,6 +218,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# 大 JSON 响应（完整 ProjectContext / 列表）压缩传输，小响应保持原样。
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 app.include_router(auth_router)
 app.include_router(session.router)

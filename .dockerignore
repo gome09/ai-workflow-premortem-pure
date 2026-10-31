@@ -75,6 +75,7 @@ artifacts/
 .vscode/
 .claude/
 .agents/
+.trae/
 .codex/
 .cursor/
 .windsurf/
@@ -101,6 +102,7 @@ nginx/
 .uv-cache/
 .uv/
 .screenshots/
+/config/
 /Makefile
 
 # project-upgrade:start

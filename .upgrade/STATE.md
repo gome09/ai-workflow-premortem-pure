@@ -42,6 +42,7 @@ Phase 0–4 与 formal-project-uplift Wave A–E 的代码侧工作已完成；P
 - 文档漂移修复与产物注册表复核（2026-10-31）：将 `STATE.md` 过期的“当前测试基线 750 passed”更正为 `844 passed, 1 skipped`（2026-10-31），并明确 Phase 4 剩余项仅为远端治理动作；`health-check` 无错误，`ARTIFACTS.json` 两条 runtime 注册项（旧业务库 SQL 转储、daemon.json 备份）路径存在、Git 与 Docker 忽略规则均命中、registry 哈希与 `CONFIG.json` 一致。`artifact-policy-review` 对 `daemon.json.20261028.bak` 提示分类器建议与已注册策略不同（建议 content/permanent/tracked），按“仅本地回滚、永不提交”的既有决策保留 runtime/ignore，未持久化或应用计划。另发现 `frontend_wip_20261029/`、`frontend_mvc_20261031/` 两个备份目录未注册且未忽略，待后续 `git-policy-review` 或 cleanup 决策。
 - 项目整体整理（2026-10-31）：按业务代码口径扫描 500 个跟踪文件，确认无遗留副本、无异常空文件、无缓存/构建产物误入库（空文件仅为合法的 `__init__.py` / `.gitkeep`）。`cleanup-apply` 应用计划 `6f5d4071...`，将 1 份过期 pytest 日志与 6 个一次性临时/计划文件移入 `.upgrade/tmp/.trash/`（可恢复，7 项，约 88 KB），`MANIFEST.md` 清单由 CLI 刷新。按用户决策保留两个前端备份目录、保留回收站现有 33 个文件，未执行 purge；`.upgrade/backup` 两条已注册 runtime 项维持 Git/Docker 排除。
 - 根目录整理（2026-10-31）：将 3 个已完成实施方案 txt 与 `.trae/documents/frontend-app-mvc-refactor.md` 归档到 `.upgrade/archive/plans/`，并在 `MANIFEST.md` 的 “Moved from Project” 登记；删除空目录 `artifacts/live_e2e_four_stage/`、`.screenshots/`、`.trae/`，`.trae/` 已加入 `.gitignore`。两个根目录 HTML 交付物（README/CHANGELOG 引用）、`config/`（compose 挂载点）及 `.env` / `secrets/` / `data/` 等本地运行时保持不动。
+- 忽略规则同步（2026-10-31）：`.gitignore` 补齐 `.uv-cache/`、`.screenshots/`、`data/`、`/*.txt`；`.dockerignore` 补齐 `.trae/`、`/config/`。核对确认 `.upgrade/`、`secrets/`、`data/`、`artifacts/`、缓存与 IDE 目录均已排除出 Docker 构建上下文，运行时目录不再进入 Git 跟踪。`.upgrade/archive/` 下 18 个历史文档属于“提交早于归档忽略规则”的既有例外，按 git-policy 约定保持现状，不新增或移除忽略规则。
 
 ## Current Blockers
 
@@ -84,9 +85,9 @@ Authenticate GitHub maintainer account, verify branch protection and vulnerabili
 
 ## last_update
 
-- Date: 2026-10-31T03:52:00+00:00
-- Updated by: manual root tidy + state sync
-- Summary: Archived 3 root-level implementation plans and 1 .trae design doc into .upgrade/archive/plans, registered them in MANIFEST Moved from Project, removed empty local directories, and added .trae/ to .gitignore.
+- Date: 2026-10-31T04:05:00+00:00
+- Updated by: ignore-rule sync + state sync
+- Summary: Added missing .trae/, .uv-cache/, .screenshots/, data/, /*.txt and /config/ exclusions; verified Docker build context excludes upgrade workspace, secrets and runtime data; confirmed 18 tracked archive docs remain a historical exception.
 
 ## last_validation
 

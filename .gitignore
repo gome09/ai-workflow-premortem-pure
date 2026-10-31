@@ -21,6 +21,7 @@ env/
 
 # uv
 .uv/
+.uv-cache/
 
 # 测试 & 覆盖率
 .pytest_cache/
@@ -74,6 +75,7 @@ id_ed25519.*
 # 报告输出
 exports/
 artifacts/
+.screenshots/
 *.json.bak
 
 # Streamlit
@@ -83,11 +85,13 @@ artifacts/
 *.log
 *.tmp
 *.bak
+/*.txt
 tmp/
 temp/
 .cache/
 
-# 本地数据库
+# 本地数据库与运行时数据（compose 挂载）
+data/
 *.sqlite
 *.sqlite3
 *.db

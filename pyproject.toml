@@ -26,6 +26,8 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "streamlit>=1.40.0",
+    "altair>=5.0.0",                  # 治理总览图表：前端直接 import altair / pandas
+    "pandas>=2.0.0",
     "psycopg[binary,pool]>=3.2.0",    # PostgreSQL 异步驱动
     "langgraph-checkpoint-postgres==3.0.5",  # V006 与 runtime schema guard 精确对应 package migrations 0..9
     "redis[hiredis]>=5.2.0",

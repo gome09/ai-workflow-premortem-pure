@@ -44,6 +44,7 @@ Phase 0–4 与 formal-project-uplift Wave A–E 的代码侧工作已完成；P
 - 根目录整理（2026-10-31）：将 3 个已完成实施方案 txt 与 `.trae/documents/frontend-app-mvc-refactor.md` 归档到 `.upgrade/archive/plans/`，并在 `MANIFEST.md` 的 “Moved from Project” 登记；删除空目录 `artifacts/live_e2e_four_stage/`、`.screenshots/`、`.trae/`，`.trae/` 已加入 `.gitignore`。两个根目录 HTML 交付物（README/CHANGELOG 引用）、`config/`（compose 挂载点）及 `.env` / `secrets/` / `data/` 等本地运行时保持不动。
 - 忽略规则同步（2026-10-31）：`.gitignore` 补齐 `.uv-cache/`、`.screenshots/`、`data/`、`/*.txt`；`.dockerignore` 补齐 `.trae/`、`/config/`。核对确认 `.upgrade/`、`secrets/`、`data/`、`artifacts/`、缓存与 IDE 目录均已排除出 Docker 构建上下文，运行时目录不再进入 Git 跟踪。`.upgrade/archive/` 下 18 个历史文档属于“提交早于归档忽略规则”的既有例外，按 git-policy 约定保持现状，不新增或移除忽略规则。
 - 忽略规则提交与 SSH 推送（2026-10-31）：提交 `1f6f298` 同步 Git/Docker 忽略规则，并通过 SSH 推送 `main` 至 `origin`（`git@github.com:gome09/ai-workflow-premortem-pure.git`），`834226e..1f6f298` 共 23 个提交已上远端；本地 `HEAD` 与 `origin/main` 均为 `1f6f298`。
+- 前端设计改进（2026-10-31）：按已批准方案分阶段落地。`e9dd4dc` 推理过程改 `st.markdown` 纯文本渲染，会话条目补 `role`/`tabindex`/`aria-label`、Enter/Space 选中、F2 重命名与可见 ✏️ 按钮；`09a62a4` 新增 `.streamlit/config.toml` 双主题（`primaryColor #4C8BF5`），`index.html` 删除固定 `--sidebar-background` 与 `color-scheme`、改按 `st.context.theme.type` 动态注入底色，治理图表删除无效的 `alt.themes` 注册与白字 `mark_text` 层；`3fa719d` 用 `st.navigation` 双页（会话工作台 / 治理总览）替换侧栏 radio，新增 `frontend/views/pages.py`；`1e02f94` 治理总览/趋势/积压读取收敛到 `api_client` 的 30 秒会话级缓存，接口失败显式 `st.error` 并在空数据时明确“非加载失败”，侧栏新增会话搜索与每次 +20 的分页，评测/红队面板改为默认懒加载；本阶段为治理图表补显式 `altair>=5.0.0` / `pandas>=2.0.0` 依赖，并新增 `tests/test_frontend_ui_smoke.py`（`AppTest` 工作台与治理稀疏数据冒烟）和 `tests/test_frontend_theme.py`（主题双基色、无固定侧栏色、会话条目键盘可访问性与图表无白字层）。前端测试 42 passed。
 
 ## Current Blockers
 
@@ -86,9 +87,9 @@ Verify branch protection, private vulnerability reporting, and CodeQL required c
 
 ## last_update
 
-- Date: 2026-10-31T04:20:00+00:00
-- Updated by: ssh push + state sync
-- Summary: Committed ignore-rule sync as 1f6f298 and pushed main to origin over SSH; local HEAD matches origin/main.
+- Date: 2026-10-31T06:15:00+00:00
+- Updated by: frontend design improvement stage 5
+- Summary: Declared altair/pandas dependencies for governance charts, added AppTest smoke and theme contract tests, and refreshed uv.lock; frontend suite 42 passed.
 
 ## last_validation
 

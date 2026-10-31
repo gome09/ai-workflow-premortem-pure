@@ -4,10 +4,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import streamlit as st
 import streamlit.components.v1 as components
 
 _COMPONENT_DIR = Path(__file__).with_name("session_item_component")
 _session_item = components.declare_component("session_item", path=_COMPONENT_DIR)
+
+
+def _is_dark_theme() -> bool:
+    """读取当前主题类型；低版本无 st.context.theme 时回退为深色。"""
+    theme = getattr(st.context, "theme", None)
+    theme_type = getattr(theme, "type", None)
+    return theme_type != "light"
 
 
 def render_session_item(
@@ -29,6 +37,7 @@ def render_session_item(
         state_label=state_label,
         domain=domain,
         is_current=is_current,
+        is_dark=_is_dark_theme(),
         disabled=disabled,
         can_delete=can_delete,
         max_length=80,

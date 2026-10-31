@@ -4,13 +4,12 @@
     <meta charset="utf-8" />
     <style>
       :root {
-        color-scheme: light dark;
-        --sidebar-background: #262730;
+        --session-item-background: transparent;
       }
       * { box-sizing: border-box; }
       html, body {
         align-items: stretch;
-        background: var(--sidebar-background);
+        background: var(--session-item-background);
         display: flex;
         font-family: sans-serif;
         gap: 1rem;
@@ -34,10 +33,10 @@
         flex: 1;
         min-width: 0;
       }
-      #session-item:hover { border-color: rgb(255, 75, 75); }
+      #session-item:hover { border-color: #4C8BF5; }
       #session-item:focus-visible {
-        border-color: rgb(255, 75, 75);
-        outline: 2px solid rgba(255, 75, 75, 0.45);
+        border-color: #4C8BF5;
+        outline: 2px solid rgba(76, 139, 245, 0.45);
         outline-offset: 1px;
       }
       #session-item.current {
@@ -76,7 +75,7 @@
         padding: 0;
         width: 38px;
       }
-      #rename-button:hover,
+      #rename-button:hover { border-color: #4C8BF5; }
       #delete-button:hover { border-color: rgb(255, 75, 75); }
     </style>
   </head>
@@ -135,6 +134,10 @@
         item.title = stateText ? `${stateText} · ${hint}` : hint;
         renameButton.style.display = args.disabled ? "none" : "flex";
         deleteButton.style.display = args.can_delete ? "flex" : "none";
+        document.documentElement.style.setProperty(
+          "--session-item-background",
+          args.is_dark ? "#262730" : "#FFFFFF"
+        );
         editor.maxLength = Number(args.max_length || 80);
         resize();
       }

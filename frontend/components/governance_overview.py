@@ -43,13 +43,6 @@ def render_governance_overview(api_base: str, token: str) -> None:
         "public_demo 演示会话均已排除，不会进入下方指标、趋势或积压动作。"
     )
 
-    # Set Altair theme to handle Chinese display
-    alt.themes.register(
-        "streamlit",
-        lambda: alt.theme.enable(streamlit=False),
-    )
-    alt.themes.enable("default")
-
     try:
         response = requests.get(f"{api_base}/governance/overview", headers=headers, timeout=10)
         response.raise_for_status()
@@ -169,18 +162,8 @@ def render_governance_overview(api_base: str, token: str) -> None:
         line = base.mark_line(color="#4C8BF5", strokeWidth=3)
         points = base.mark_point(color="#4C8BF5", filled=True, size=110, stroke="white")
 
-        text_layer = base.mark_text(
-            align="center",
-            baseline="bottom",
-            dy=-12,
-            size=12,
-            color="white",
-        ).encode(
-            text=alt.Text("pass_rate:Q", format=".0%"),
-        )
-
         chart = (
-            (line + points + text_layer)
+            (line + points)
             .configure_axis(
                 titleFontSize=12,
                 labelFontSize=11,

@@ -66,9 +66,12 @@ def test_reasoning_is_rendered_without_unsafe_html():
     assert "unsafe_allow_html" not in SOURCE
 
 
-def test_session_and_delete_boxes_share_gray_theme_with_visible_gap():
+def test_session_and_delete_boxes_use_theme_aware_background():
     assert "gap: 1rem" in COMPONENT_SOURCE
-    assert "background: var(--sidebar-background)" in COMPONENT_SOURCE
+    assert "background: var(--session-item-background)" in COMPONENT_SOURCE
     assert COMPONENT_SOURCE.count("background: transparent") >= 4
-    assert "--sidebar-background: #262730" in COMPONENT_SOURCE
+    assert '"#262730"' in COMPONENT_SOURCE
+    assert '"#FFFFFF"' in COMPONENT_SOURCE
+    assert "--sidebar-background" not in COMPONENT_SOURCE
     assert "event.data.theme?.secondaryBackgroundColor" not in COMPONENT_SOURCE
+    assert "is_dark=_is_dark_theme()" in SOURCE

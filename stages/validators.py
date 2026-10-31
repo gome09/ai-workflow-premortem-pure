@@ -125,11 +125,28 @@ def stage1_schema_to_output(
     )
 
 
-def _infer_policy_from_schema(node) -> HumanOversightPolicy | None:
+def _has_explicit_oversight_signal(node) -> bool:
+    """结构化节点是否明确表达了监督意图（而非默认值）。"""
+    risk_level = str(getattr(node, "oversight_risk_level", "medium")).lower()
+    return (
+        bool(getattr(node, "human_review_required", False))
+        or bool(getattr(node, "evidence_required", False))
+        or not bool(getattr(node, "can_auto_continue", True))
+        or risk_level in {"high", "critical"}
+    )
+
+
+def _infer_policy_from_schema(node, *, strict: bool = False) -> HumanOversightPolicy | None:
     # Always infer a policy for every workflow node — even low-risk nodes
     # benefit from a lightweight oversight record.  The gate rule only blocks
     # when a high/critical failure-mode is addressed *and* policy is None, so
     # returning a policy here never relaxes a real safety gate.
+    #
+    # strict=True (HIGH/CRITICAL sessions) refuses to synthesize a policy for
+    # nodes without an explicit oversight signal, so risky nodes surface as
+    # policy_gap blockers instead of being silently approved.
+    if strict and not _has_explicit_oversight_signal(node):
+        return None
     required_action = "verify_evidence" if node.evidence_required else "approve"
     risk_level = node.oversight_risk_level if hasattr(node, "oversight_risk_level") else "medium"
     return HumanOversightPolicy(
@@ -144,7 +161,9 @@ def _infer_policy_from_schema(node) -> HumanOversightPolicy | None:
     )
 
 
-def stage2_schema_to_output(schema: Stage2Schema, raw_text: str) -> Stage2Output:
+def stage2_schema_to_output(
+    schema: Stage2Schema, raw_text: str, *, strict: bool = False
+) -> Stage2Output:
     nodes = []
     for item in schema.workflow_nodes:
         nodes.append(
@@ -156,7 +175,7 @@ def stage2_schema_to_output(schema: Stage2Schema, raw_text: str) -> Stage2Output
                 check_criteria="；".join(item.check_criteria),
                 failure_modes_addressed=item.addressed_failure_mode_ids,
                 prompt_template=item.prompt_template,
-                oversight_policy=_infer_policy_from_schema(item),
+                oversight_policy=_infer_policy_from_schema(item, strict=strict),
             )
         )
     return Stage2Output(workflow_nodes=nodes, total_stages=len(nodes), raw_summary=raw_text)

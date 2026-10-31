@@ -5,6 +5,7 @@ import hashlib
 import json
 from typing import Any, Literal, cast
 
+from core.data_protection import redact_payload, snapshot
 from core.models import AuditEvent, ProjectContext
 
 
@@ -38,7 +39,12 @@ def append_audit_event(
     after: Any = None,
     metadata: dict | None = None,
 ) -> AuditEvent:
-    """向 ProjectContext 追加审计事件。"""
+    """向 ProjectContext 追加审计事件。
+
+    快照与 metadata 统一经 `core.data_protection` 脱敏；`before_hash` /
+    `after_hash` 仍基于未脱敏输入计算，保证审计哈希可复核原文差异。
+    """
+    classification = getattr(ctx, "data_classification", "business_internal")
     event = AuditEvent(
         session_id=ctx.session_id,
         actor=cast(Literal["system", "user", "ai"], actor),
@@ -47,9 +53,9 @@ def append_audit_event(
         target_id=target_id,
         before_hash=stable_hash(before),
         after_hash=stable_hash(after),
-        before_snapshot=_to_plain_dict(before),
-        after_snapshot=_to_plain_dict(after),
-        metadata=metadata or {},
+        before_snapshot=snapshot(before, classification),
+        after_snapshot=snapshot(after, classification),
+        metadata=redact_payload(metadata or {}, classification),
     )
     ctx.audit_events.append(event)
     return event

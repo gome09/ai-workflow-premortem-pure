@@ -8,6 +8,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, PrivateAttr
 
+from core.ids import new_id
+from core.risk.models import RiskFactorScores, RiskOverrideRecord
+
 # FIXME: ProjectContext 这个模型字段太多了（890行），应该拆成子模型
 # 但因为 LangGraph state 需要是单一 dict，拆分会影响 graph 的状态传递
 # 先这样，后面有时间再重构
@@ -31,6 +34,9 @@ class SessionState(StrEnum):
     S4_REVIEW = "s4_review"
     ITERATING = "iterating"
     COMPLETE = "complete"
+    # 终止/阻断态：非法或不可恢复的运行失败必须显式进入这里，不得静默回退。
+    ERROR = "error"
+    RECOVERY_REQUIRED = "recovery_required"
 
 
 class ReviewAction(StrEnum):
@@ -130,7 +136,7 @@ class Stage1Output(BaseModel):
 class HumanOversightPolicy(BaseModel):
     """阶段输出对应的人工监督策略。"""
 
-    policy_id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
+    policy_id: str = Field(default_factory=new_id)
     stage_id: int
     risk_level: Literal["low", "medium", "high", "critical"]
     trigger_reason: str
@@ -207,7 +213,7 @@ class Stage4Output(BaseModel):
 
 
 class FlaggedItem(BaseModel):
-    item_id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
+    item_id: str = Field(default_factory=new_id)
     stage: int
     content: str  # 被标注的原文
     context: str = ""  # 上下文片段
@@ -230,7 +236,7 @@ class MigrationRecord(BaseModel):
 class PendingHumanAction(BaseModel):
     """需要人类处理的正式审核动作。"""
 
-    action_id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
+    action_id: str = Field(default_factory=new_id)
     session_id: str
     stage_id: int
     node_id: str | None = None
@@ -251,7 +257,7 @@ class PendingHumanAction(BaseModel):
     superseded_by: str | None = None
 
     # Stage-advancement contract fields.
-    action_contract_id: str = Field(default_factory=lambda: f"ACTC-{str(uuid.uuid4())[:8]}")
+    action_contract_id: str = Field(default_factory=lambda: new_id("ACTC-"))
     action_schema_version: str = ACTION_SCHEMA_VERSION
     idempotency_key: str | None = None
     target_stage: int | None = None
@@ -271,7 +277,7 @@ class PendingHumanAction(BaseModel):
 class AuditEvent(BaseModel):
     """审计事件，用于记录人工监督与系统关键决策。"""
 
-    event_id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
+    event_id: str = Field(default_factory=new_id)
     session_id: str
     actor: Literal["system", "user", "ai"]
     event_type: str
@@ -288,7 +294,7 @@ class AuditEvent(BaseModel):
 class ActionResolutionLog(BaseModel):
     """Append-only record for human action resolution attempts."""
 
-    log_id: str = Field(default_factory=lambda: f"ARL-{str(uuid.uuid4())[:8]}")
+    log_id: str = Field(default_factory=lambda: new_id("ARL-"))
     session_id: str
     action_id: str
     idempotency_key: str | None = None
@@ -338,7 +344,7 @@ class ActionResolutionResult(BaseModel):
 class LLMTrace(BaseModel):
     """Minimal GenAI trace for stage execution."""
 
-    trace_id: str = Field(default_factory=lambda: f"TRC-{str(uuid.uuid4())[:8]}")
+    trace_id: str = Field(default_factory=lambda: new_id("TRC-"))
     session_id: str
     stage: int | None = None
     node_name: str = ""
@@ -395,7 +401,7 @@ SourceType = Literal[
 class EvidenceSource(BaseModel):
     """可追溯证据来源。"""
 
-    evidence_id: str = Field(default_factory=lambda: f"EVID-{str(uuid.uuid4())[:8]}")
+    evidence_id: str = Field(default_factory=lambda: new_id("EVID-"))
     session_id: str
     title: str
     url: str | None = None
@@ -414,7 +420,7 @@ class EvidenceSource(BaseModel):
 class SafetyFinding(BaseModel):
     """轻量安全扫描发现。"""
 
-    finding_id: str = Field(default_factory=lambda: f"SAFE-{str(uuid.uuid4())[:8]}")
+    finding_id: str = Field(default_factory=lambda: new_id("SAFE-"))
     session_id: str
     stage_id: int | None = None
     risk_type: Literal[
@@ -454,7 +460,7 @@ class EvalCase(BaseModel):
     从 Stage 3 结构化压测结果同步生成，暂不自动执行外部 eval runner。
     """
 
-    eval_id: str = Field(default_factory=lambda: f"EVAL-{str(uuid.uuid4())[:8]}")
+    eval_id: str = Field(default_factory=lambda: new_id("EVAL-"))
     session_id: str
     stage_id: int = 3
     target_node_id: str | None = None
@@ -499,7 +505,7 @@ class EvalRun(BaseModel):
     and links it to a dataset/experiment for regression tracking.
     """
 
-    run_id: str = Field(default_factory=lambda: f"RUN-{str(uuid.uuid4())[:8]}")
+    run_id: str = Field(default_factory=lambda: new_id("RUN-"))
     session_id: str
     eval_id: str
     dataset_id: str | None = None
@@ -536,7 +542,7 @@ class EvalJudgment(BaseModel):
     judge labels as a final human approval for high-risk cases.
     """
 
-    judgment_id: str = Field(default_factory=lambda: f"JDG-{str(uuid.uuid4())[:8]}")
+    judgment_id: str = Field(default_factory=lambda: new_id("JDG-"))
     session_id: str
     eval_run_id: str
     eval_id: str | None = None
@@ -555,7 +561,7 @@ class EvalJudgment(BaseModel):
 class HumanCalibration(BaseModel):
     """Human override/calibration for an EvalRun judgment."""
 
-    calibration_id: str = Field(default_factory=lambda: f"CAL-{str(uuid.uuid4())[:8]}")
+    calibration_id: str = Field(default_factory=lambda: new_id("CAL-"))
     session_id: str
     eval_run_id: str
     eval_id: str | None = None
@@ -577,7 +583,7 @@ class EvalDataset(BaseModel):
     deferred to a future release.
     """
 
-    dataset_id: str = Field(default_factory=lambda: f"DATASET-{str(uuid.uuid4())[:8]}")
+    dataset_id: str = Field(default_factory=lambda: new_id("DATASET-"))
     session_id: str
     name: str
     description: str = ""
@@ -654,7 +660,7 @@ class EvalExperiment(BaseModel):
     by EvalRegressionRule in core/gates/rules/eval_regression.py.
     """
 
-    experiment_id: str = Field(default_factory=lambda: f"EXP-{str(uuid.uuid4())[:8]}")
+    experiment_id: str = Field(default_factory=lambda: new_id("EXP-"))
     session_id: str
     dataset_id: str
     name: str
@@ -686,7 +692,7 @@ class RedTeamCase(BaseModel):
     EvalDataset / EvalExperiment regression pipeline.
     """
 
-    redteam_case_id: str = Field(default_factory=lambda: f"RTC-{str(uuid.uuid4())[:8]}")
+    redteam_case_id: str = Field(default_factory=lambda: new_id("RTC-"))
     session_id: str
     taxonomy_refs: list[str] = Field(default_factory=list)
     control_refs: list[str] = Field(default_factory=list)
@@ -728,7 +734,7 @@ class InterruptRecord(BaseModel):
     guarded LangGraph interrupt/checkpoint adapter (langgraph_interrupt mode).
     """
 
-    interrupt_id: str = Field(default_factory=lambda: f"INT-{str(uuid.uuid4())[:8]}")
+    interrupt_id: str = Field(default_factory=lambda: new_id("INT-"))
     session_id: str
     action_id: str
     stage_id: int
@@ -751,7 +757,7 @@ class InterruptRecord(BaseModel):
 class ReportArtifact(BaseModel):
     """版本化报告快照，后续可扩展为独立 report_artifacts 表。"""
 
-    report_id: str = Field(default_factory=lambda: f"RPT-{str(uuid.uuid4())[:8]}")
+    report_id: str = Field(default_factory=lambda: new_id("RPT-"))
     session_id: str
     version: str
     generated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -805,6 +811,11 @@ class ProjectContext(BaseModel):
     data_classification: Literal["public_demo", "business_internal", "sensitive_personal"] = (
         "business_internal"
     )
+
+    # ── 六因子结构化风险模型（Milestone 2）──────────
+    # 可选字段：旧 context_json 无此数据时走确定性 legacy inference。
+    risk_profile: RiskFactorScores | None = None
+    risk_overrides: list[RiskOverrideRecord] = Field(default_factory=list)
 
     # ── 各阶段结构化输出（逐步填充）────────────────
     stage_1_output: Stage1Output | None = None

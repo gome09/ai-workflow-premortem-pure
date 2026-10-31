@@ -121,10 +121,24 @@ Phase 1（T1.1–T1.4，自 v1.0.3 起落地并沿用至今）的数据安全能
 | 能力 | 实现 | 位置 |
 |------|------|------|
 | 数据分类分级 | `ProjectContext` 落库数据打三级标签（公开示例 / 客户业务材料 / 敏感个人信息），支持覆写并留审计 | `core/models.py` `data_classification` 字段；`PATCH /sessions/{id}/data-classification` |
-| 字段级加密 | 存储层支持 Fernet 对称加密；仅在配置有效 `DATA_ENCRYPTION_KEY` 时启用。`make setup` / `scripts/gen_secrets.sh` 会生成 `secrets/data_encryption_key` 并以 Docker secrets 注入；未配置时 PostgreSQL 会告警并明文存储 | `storage/field_security.py`；`/health.data_encryption` |
+| 字段级加密 | 存储层 Fernet 对称加密，密文带 `enc:v1:` 前缀；覆盖 `research_target` / `goal` / `user_materials` / 用户材料型 evidence summary+claims / conversation content / pending actions / report content。`make setup` / `scripts/gen_secrets.sh` 会生成 `secrets/data_encryption_key` 并以 Docker secrets 注入；PostgreSQL 后端或 `APP_ENV=production` 下缺失/错误密钥必须 `FieldDecryptionError` fail-closed，不会静默返回明文 | `storage/field_security.py`；`/health.data_encryption` |
+| 事件/审计脱敏 | `session_events` 与 `audit_events` 的自由文本字段按分级改写为 `{"_redacted": true, "sha256": ..., "length": ...}`；用户消息只记录 `input_sha256` / `input_length` / state，不落原文；`public_demo` 保持可读 | `core/data_protection.py`；`core/audit_service.py`；`core/session_service.py` |
 | PII 掩码 | `PII_MASK_BEFORE_LLM` 开启后，仅在 evidence summary / `user_materials` 格式化路径做四类正则检测与掩码并产出 finding；直接用户消息和会话历史当前不覆盖 | `tools/safety_classifier.py`（`PII_PATTERNS`）；`core/evidence_service.py` |
 | 中断 checkpoint | `langgraph_interrupt` + PostgreSQL 使用独立 Fernet key 加密完整 `ProjectContext` checkpoint；要求持久 PostgreSQL 后端、单 worker，并在初始化或健康异常时 fail closed。SQLite 的 memory checkpoint 仅供本地调试且进程重启即丢失 | `graph/checkpoint_manager.py`；Alembic V006/V007；`/health/ready` |
 | AI 生成标识 | 报告导出首屏中文免责声明，对齐《生成合成内容标识办法》 | `core/report_service.py` |
+
+### Workflow State Fail-Closed
+
+未知或非法 `current_state` 不允许自动回退到 `INIT`：
+
+- 运行路径：`graph.runner.run_one_step` 与 `core.execution_service.execute_one_turn` 在进入节点前调用 `assert_advanceable`；未知状态由 `mark_invalid_state` 改写为 `RECOVERY_REQUIRED` 并写 `workflow_state_invalid` 审计事件，不执行任何节点。
+- 存储路径：`storage/backends/postgres.py` 与 `sqlite_store.py` 的 `load()` 先经 `sanitize_persisted_state`，把旧版本或人工改库留下的未知状态改写为 `RECOVERY_REQUIRED` 并保留原始值到 `last_error`，避免 Pydantic 校验失败表现为 500/404。
+- 阻断态：`ERROR` / `RECOVERY_REQUIRED` 下 `send_message` 抛 `WorkflowBlockedError`，API 返回 409；只能通过 `POST /sessions/{session_id}/workflow/recover` 显式恢复，目标状态必须属于可恢复集合且恢复动作写 `workflow_recovered` 审计事件。
+- 确定性：判定只依赖当前状态值，不调用 LLM、不读取外部服务。
+
+### Production Safety Gate
+
+CI 的 `production-safety` job 为 blocking，覆盖：Alembic V008→V010 升级/回滚、production safety 测试集（状态 fail-closed、HIGH/CRITICAL 阻断、事件脱敏、字段加密、retention 租户边界、ID 唯一性）以及 PostgreSQL + Redis 业务 E2E。job 设置 `PRODUCTION_SAFETY_REQUIRED=1`，缺少数据库、Redis 或加密密钥时测试失败而不是跳过。
 
 ### What This Deployment Still Does NOT Provide
 
@@ -132,7 +146,7 @@ Phase 1（T1.1–T1.4，自 v1.0.3 起落地并沿用至今）的数据安全能
 - 企业级租户隔离
 - 外部 SIEM / 审计日志汇聚
 - 专业 secrets manager 集成（如 Vault / KMS）
-- 默认生产初始化中的字段加密密钥自动生成与挂载（当前需运维者在 `.env` 显式设置 `DATA_ENCRYPTION_KEY`）
+- 非 Docker 部署的字段加密密钥自动生成与托管（Docker 部署由 `make setup` 生成；裸机部署需运维者在 `.env` 显式设置 `DATA_ENCRYPTION_KEY`）
 - checkpoint 密钥自动生成、托管或轮换（启用 PostgreSQL 中断模式时，运维者须另行配置并备份 `CHECKPOINT_ENCRYPTION_KEY`，且不得复用 `DATA_ENCRYPTION_KEY`）
 - Streamlit 端的完整登录门户界面
 

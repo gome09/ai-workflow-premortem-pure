@@ -10,10 +10,15 @@ from api.schemas import (
     DeleteSessionResponse,
     ExportReportResponse,
     MaterialsAddedResponse,
+    RecoverWorkflowRequest,
+    RecoverWorkflowResponse,
     RenameSessionRequest,
     RenameSessionResponse,
     ResolveFlagRequest,
     ResolveFlagResponse,
+    RiskFactorScoresRequest,
+    RiskOverrideRequest,
+    RiskProfileResponse,
     ScenarioSummaryResponse,
     SessionListItem,
     SessionOverviewResponse,
@@ -23,6 +28,7 @@ from api.schemas import (
 from auth.jwt import TenantContext, get_current_tenant
 from auth.permissions import Role, require_roles
 from core.models import ProjectContext
+from core.risk.assessment import RiskOverridePermissionError
 from core.session_service import DataClassificationDowngradeError, session_service
 from scenarios import get_scenario, list_scenarios
 
@@ -168,6 +174,82 @@ def update_data_classification(
     return UpdateDataClassificationResponse(**result)
 
 
+@router.get(
+    "/{session_id}/risk-profile",
+    response_model=RiskProfileResponse,
+    dependencies=[require_roles(Role.viewer, Role.editor, Role.admin)],
+)
+def get_risk_profile(
+    session_id: str, ctx: TenantContext = Depends(get_current_tenant)
+) -> RiskProfileResponse:
+    """读取会话的六因子风险画像、生效等级与 override 历史。"""
+    try:
+        return RiskProfileResponse(
+            **session_service.get_risk_profile(session_id, tenant_id=ctx.tenant_id)
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.put(
+    "/{session_id}/risk-profile",
+    response_model=RiskProfileResponse,
+    dependencies=[require_roles(Role.editor, Role.admin)],
+)
+def set_risk_profile(
+    session_id: str,
+    body: RiskFactorScoresRequest,
+    ctx: TenantContext = Depends(get_current_tenant),
+) -> RiskProfileResponse:
+    """显式设置六因子风险输入（写入 risk_profile_updated 审计事件）。"""
+    try:
+        return RiskProfileResponse(
+            **session_service.set_risk_profile(
+                session_id,
+                impact=body.impact,
+                autonomy=body.autonomy,
+                data_sensitivity=body.data_sensitivity,
+                reversibility=body.reversibility,
+                scale=body.scale,
+                external_exposure=body.external_exposure,
+                rationale=body.rationale,
+                actor=ctx.user_id or "user",
+                actor_role=ctx.role,
+                tenant_id=ctx.tenant_id,
+            )
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post(
+    "/{session_id}/risk-profile/override",
+    response_model=RiskProfileResponse,
+    dependencies=[require_roles(Role.editor, Role.admin)],
+)
+def override_risk_tier(
+    session_id: str,
+    body: RiskOverrideRequest,
+    ctx: TenantContext = Depends(get_current_tenant),
+) -> RiskProfileResponse:
+    """人工覆写风险等级；降级需 admin 且不得低于确定性 floor。"""
+    try:
+        return RiskProfileResponse(
+            **session_service.override_risk_tier(
+                session_id,
+                requested_tier=body.requested_tier,
+                reason=body.reason,
+                actor=ctx.user_id or "user",
+                actor_role=ctx.role,
+                tenant_id=ctx.tenant_id,
+            )
+        )
+    except RiskOverridePermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 @router.delete(
     "/{session_id}",
     response_model=DeleteSessionResponse,
@@ -184,6 +266,38 @@ def delete_session(
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post(
+    "/{session_id}/workflow/recover",
+    response_model=RecoverWorkflowResponse,
+    dependencies=[require_roles(Role.editor, Role.admin)],
+)
+def recover_workflow(
+    session_id: str,
+    body: RecoverWorkflowRequest,
+    ctx: TenantContext = Depends(get_current_tenant),
+) -> dict:
+    """将 ERROR / RECOVERY_REQUIRED 会话显式恢复到可推进状态。
+
+    仅协议适配：状态合法性、目标状态白名单与审计由
+    `core.workflow_state_service.recover_workflow` 承担。
+    """
+    try:
+        return session_service.recover_workflow(
+            session_id,
+            target_state=body.target_state,
+            note=body.note,
+            tenant_id=ctx.tenant_id,
+        )
+    except ValueError as e:
+        detail = str(e)
+        if detail.startswith("Session not found"):
+            raise HTTPException(status_code=404, detail=detail)
+        if "is not blocked" in detail:
+            raise HTTPException(status_code=409, detail=detail)
+        # 未知/不可恢复的 target_state 属于请求参数错误。
+        raise HTTPException(status_code=400, detail=detail)
 
 
 @router.post(

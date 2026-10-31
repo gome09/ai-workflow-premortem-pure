@@ -20,10 +20,17 @@ from psycopg_pool import ConnectionPool
 from core.config import settings
 from core.migrations import migrate_context
 from core.models import ProjectContext
+from core.workflow_state_service import sanitize_persisted_state
 from storage.access import SystemAccess, resolve_system_access
 from storage.context_digest import compute_context_digest
 from storage.errors import StaleContextError, TenantIsolationError
-from storage.field_security import decrypt_fields_after_load, encrypt_fields_for_storage
+from storage.field_security import (
+    decrypt_fields_after_load,
+    decrypt_text_field,
+    encrypt_fields_for_storage,
+    encrypt_json_field,
+    encrypt_text_field,
+)
 from storage.projection_read import build_projection_rows, get_projection_spec
 from storage.projection_state import compute_state, plan_sync
 
@@ -343,7 +350,7 @@ class PostgresSessionStore:
                     (
                         ctx.session_id,
                         ctx.tenant_id or None,
-                        ctx.current_state.value,
+                        str(data.get("current_state") or "init"),
                         context_json,
                         state_json,
                         digest,
@@ -371,7 +378,7 @@ class PostgresSessionStore:
                         WHERE session_id = %s
                         """,
                         (
-                            ctx.current_state.value,
+                            str(data.get("current_state") or "init"),
                             state_json,
                             ctx.updated_at,
                             ctx.session_id,
@@ -390,7 +397,7 @@ class PostgresSessionStore:
                         WHERE session_id = %s
                         """,
                         (
-                            ctx.current_state.value,
+                            str(data.get("current_state") or "init"),
                             context_json,
                             state_json,
                             digest,
@@ -479,6 +486,7 @@ class PostgresSessionStore:
 
     def _sync_human_actions(self, conn: DictConnection, ctx: ProjectContext) -> None:
         """同步 ProjectContext 中的人工动作到索引表。使用 upsert，避免删除历史。"""
+        classification = ctx.data_classification
         rows = [
             (
                 action.action_id,
@@ -491,16 +499,14 @@ class PostgresSessionStore:
                 action.action_type,
                 action.status,
                 action.risk_level,
-                action.title,
-                action.description,
-                action.trigger_reason,
+                encrypt_text_field(action.title, classification),
+                encrypt_text_field(action.description, classification),
+                encrypt_text_field(action.trigger_reason, classification),
                 action.blocking,
-                json.dumps(action.payload_before, default=str),
-                json.dumps(action.payload_after, default=str)
-                if action.payload_after is not None
-                else None,
+                encrypt_json_field(action.payload_before, classification),
+                encrypt_json_field(action.payload_after, classification),
                 action.reviewer_decision,
-                action.reviewer_note,
+                encrypt_text_field(action.reviewer_note, classification),
                 action.stage_output_version,
                 action.superseded_by,
                 action.action_contract_id,
@@ -705,6 +711,7 @@ class PostgresSessionStore:
         )
 
     def _sync_evidence_sources(self, conn: DictConnection, ctx: ProjectContext) -> None:
+        classification = ctx.data_classification
         rows = [
             (
                 ev.evidence_id,
@@ -713,8 +720,8 @@ class PostgresSessionStore:
                 ev.url,
                 ev.source_type,
                 ev.credibility_score,
-                ev.summary,
-                json.dumps(ev.claims, default=str),
+                encrypt_text_field(ev.summary, classification),
+                encrypt_json_field(ev.claims, classification),
                 json.dumps(ev.used_by_failure_mode_ids, default=str),
                 ev.verified,
                 ev.verified_by,
@@ -819,13 +826,16 @@ class PostgresSessionStore:
         return truncated
 
     def _sync_report_artifacts(self, conn: DictConnection, ctx: ProjectContext) -> None:
+        classification = ctx.data_classification
         rows = [
             (
                 artifact.report_id,
                 ctx.session_id,
                 artifact.version,
-                json.dumps(self._truncate_report_content_json(artifact.content_json), default=str),
-                artifact.content_markdown,
+                encrypt_json_field(
+                    self._truncate_report_content_json(artifact.content_json), classification
+                ),
+                encrypt_text_field(artifact.content_markdown, classification),
                 artifact.generated_at,
             )
             for artifact in ctx.report_artifacts
@@ -1337,6 +1347,18 @@ class PostgresSessionStore:
                 item[key] = item[key].isoformat()
         return item
 
+    @staticmethod
+    def _decrypt_report_content(value: Any) -> dict:
+        """report_artifacts.content_json 可能是明文 JSONB 或加密字符串。"""
+        if isinstance(value, str):
+            decrypted = decrypt_text_field(value, field="report_artifacts.content_json")
+            try:
+                loaded = json.loads(decrypted or "{}")
+            except json.JSONDecodeError:
+                return {}
+            return loaded if isinstance(loaded, dict) else {}
+        return value or {}
+
     def list_report_artifacts(self, session_id: str) -> list[dict]:
         """从独立 report_artifacts 表读取报告快照列表。"""
         sql = """
@@ -1349,7 +1371,7 @@ class PostgresSessionStore:
             rows = conn.execute(sql, (session_id,)).fetchall()
         artifacts: list[dict] = []
         for row in rows:
-            content = row.get("content_json") or {}
+            content = self._decrypt_report_content(row.get("content_json"))
             artifacts.append(
                 {
                     "report_id": row["report_id"],
@@ -1359,7 +1381,10 @@ class PostgresSessionStore:
                     if row.get("generated_at")
                     else None,
                     "content_json": content,
-                    "content_markdown": row.get("content_markdown") or "",
+                    "content_markdown": decrypt_text_field(
+                        row.get("content_markdown"), field="report_artifacts.content_markdown"
+                    )
+                    or "",
                     "ai_generated": content.get("ai_generated", {}),
                     "human_reviewed": content.get("human_reviewed", {}),
                     "evidence": content.get("evidence_sources", []),
@@ -1383,14 +1408,17 @@ class PostgresSessionStore:
             row = conn.execute(sql, (session_id, report_id)).fetchone()
         if not row:
             return None
-        content = row.get("content_json") or {}
+        content = self._decrypt_report_content(row.get("content_json"))
         return {
             "report_id": row["report_id"],
             "session_id": row["session_id"],
             "version": row["version"],
             "generated_at": row["generated_at"].isoformat() if row.get("generated_at") else None,
             "content_json": content,
-            "content_markdown": row.get("content_markdown") or "",
+            "content_markdown": decrypt_text_field(
+                row.get("content_markdown"), field="report_artifacts.content_markdown"
+            )
+            or "",
             "ai_generated": content.get("ai_generated", {}),
             "human_reviewed": content.get("human_reviewed", {}),
             "evidence": content.get("evidence_sources", []),
@@ -1434,7 +1462,7 @@ class PostgresSessionStore:
             row = conn.execute(sql, params).fetchone()
         if not row:
             return None
-        ctx = migrate_context(row["context_json"])
+        ctx = migrate_context(sanitize_persisted_state(row["context_json"]))
         if ctx:
             decrypt_fields_after_load(ctx)
             if row.get("tenant_id"):
@@ -1578,7 +1606,17 @@ class PostgresSessionStore:
             )
             archived += 1
             # 评估记录是旁路投影数据，不保留跨会话历史，随会话一并回收。
-            conn.execute("DELETE FROM gate_evaluation_records WHERE session_id = %s", (session_id,))
+            # 租户谓词防止同名 session_id 的跨租户残留被误删。
+            if tenant_id:
+                conn.execute(
+                    "DELETE FROM gate_evaluation_records WHERE session_id = %s "
+                    "AND (tenant_id = %s OR tenant_id IS NULL OR tenant_id = '')",
+                    (session_id, tenant_id),
+                )
+            else:
+                conn.execute(
+                    "DELETE FROM gate_evaluation_records WHERE session_id = %s", (session_id,)
+                )
             if tenant_id:
                 cursor = conn.execute(
                     "DELETE FROM sessions WHERE session_id = %s AND tenant_id = %s::uuid",

@@ -78,6 +78,18 @@ def ctx_with_stage1(base_ctx) -> ProjectContext:
 
 
 @pytest.fixture
+def classification_ctx():
+    """按数据分级构造上下文的工厂，用于验证脱敏/加密/门禁随分级变化。"""
+
+    def _build(classification: str = "business_internal", **kwargs) -> ProjectContext:
+        ctx = ProjectContext(**kwargs)
+        ctx.data_classification = classification
+        return ctx
+
+    return _build
+
+
+@pytest.fixture
 def mock_llm_response():
     """Mock LLM 响应"""
     mock = MagicMock()

@@ -10,6 +10,7 @@ from core.config import settings
 from core.execution_mode import WorkflowExecutionMode
 from core.models import ProjectContext
 from core.version import APP_VERSION
+from core.workflow_state_service import assert_advanceable
 from graph.langgraph_interrupt_runner import invoke_one_turn_with_interrupts
 from graph.runner import run_one_step
 
@@ -180,6 +181,8 @@ def prepare_execution_after_action_resolutions(
 
 def execute_one_turn(ctx: ProjectContext) -> ProjectContext:
     """Run exactly one user turn through the configured execution mode."""
+    # 第二道 fail-closed 防线：阻断态或未知状态不得进入任何执行模式。
+    assert_advanceable(ctx)
     ctx.llm_call_count = getattr(ctx, "llm_call_count", 0) + 1
     # T3.5 记录前一次 token 估算，用于推算本轮 token_delta
     prev_token_estimate = getattr(ctx, "llm_token_estimate", 0) or 0

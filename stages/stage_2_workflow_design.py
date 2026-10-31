@@ -9,6 +9,7 @@ from core.context_manager import (
     build_stage_context_injection,
     format_failure_modes_for_prompt,
 )
+from core.gates.risk_profile import requires_strict_structured_output
 from core.models import HumanOversightPolicy, ProjectContext, Stage2Output, WorkflowNode
 from core.scenario_context import current_domain_profile
 from stages.base import BaseStageExecutor
@@ -18,26 +19,28 @@ from stages.schemas import Stage2Schema
 from stages.validators import stage2_schema_to_output
 
 
-def infer_oversight_policy(node: WorkflowNode) -> HumanOversightPolicy | None:
+def infer_oversight_policy(
+    node: WorkflowNode, *, strict: bool = False
+) -> HumanOversightPolicy | None:
     """旧 Markdown 输出下，基于人工动作/检查标准轻量推断监督策略。
 
     Always returns a policy — even for nodes whose text does not contain
     explicit supervision keywords.  A lightweight default policy is better
     than None, which would block the gate for any high-severity failure mode
     the node addresses.
+
+    ``strict=True`` (HIGH/CRITICAL sessions) disables that default: Markdown
+    text without an explicit supervision signal yields ``None`` so the gate
+    blocks with a policy gap instead of silently accepting an inferred policy.
     """
     text = f"{node.human_action} {node.check_criteria}"
+    evidence_signal = any(keyword in text for keyword in ["证据", "核验", "来源"])
+    risk_signal = any(keyword in text for keyword in ["高风险", "严重", "关键", "专家"])
+    if strict and not (evidence_signal or risk_signal):
+        return None
 
-    required_action = (
-        "verify_evidence"
-        if any(keyword in text for keyword in ["证据", "核验", "来源"])
-        else "approve"
-    )
-    risk_level = (
-        "high"
-        if any(keyword in text for keyword in ["高风险", "严重", "关键", "专家"])
-        else "medium"
-    )
+    required_action = "verify_evidence" if evidence_signal else "approve"
+    risk_level = "high" if risk_signal else "medium"
     return HumanOversightPolicy(
         stage_id=2,
         risk_level=cast(Literal["low", "medium", "high", "critical"], risk_level),
@@ -67,11 +70,12 @@ class Stage2Executor(BaseStageExecutor):
         )
 
     def parse_output(self, raw_text: str, ctx: ProjectContext) -> ProjectContext:
+        strict = requires_strict_structured_output(ctx)
         if settings.stage_output_mode == "json_first":
             result = self.parse_structured_output(raw_text, ctx)
             if result.parsed:
                 schema = Stage2Schema.model_validate(result.parsed)
-                ctx.stage_2_output = stage2_schema_to_output(schema, raw_text)
+                ctx.stage_2_output = stage2_schema_to_output(schema, raw_text, strict=strict)
                 ctx.parser_errors.pop("stage_2", None)
                 return ctx
             ctx.parser_errors["stage_2"] = (
@@ -118,13 +122,17 @@ class Stage2Executor(BaseStageExecutor):
                 failure_modes_addressed=fm_id_list,
                 prompt_template=prompt_template,
             )
-            node.oversight_policy = infer_oversight_policy(node)
+            node.oversight_policy = infer_oversight_policy(node, strict=strict)
             workflow_nodes.append(node)
 
         if workflow_nodes:
             ctx.stage_2_output.workflow_nodes = workflow_nodes
             ctx.stage_2_output.total_stages = len(workflow_nodes)
-            ctx.parser_errors.pop("stage_2", None)
+            if strict:
+                # HIGH/CRITICAL：Markdown 回退成功也不能当作结构化输出通过。
+                ctx.parser_errors["stage_2"] = "structured_output_required_for_high_risk"
+            else:
+                ctx.parser_errors.pop("stage_2", None)
         elif settings.stage_output_mode == "json_first":
             ctx.parser_errors["stage_2"] = "JSON 与 Markdown 解析均未得到 workflow_nodes。"
 

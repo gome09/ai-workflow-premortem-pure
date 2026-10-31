@@ -14,7 +14,26 @@ STATE_LABELS: dict[str, tuple[str, str]] = {
     "s4_running": ("🔵", "阶段四：触发方式"),
     "s4_review": ("🟠", "阶段四：等待确认"),
     "complete": ("✅", "全流程完成"),
+    "error": ("⛔", "工作流错误（已阻断）"),
+    "recovery_required": ("🛠️", "需要人工恢复"),
 }
+
+# 阻断态：前端必须停止自动推进，只允许显式恢复。
+BLOCKED_STATES = {"error", "recovery_required"}
+
+# 可由恢复入口进入的状态（与后端 RESUMABLE_STATES 对齐）。
+RECOVERABLE_STATES: tuple[str, ...] = (
+    "init",
+    "s1_running",
+    "s1_review",
+    "s2_running",
+    "s2_review",
+    "s3_running",
+    "s3_review",
+    "s4_running",
+    "s4_review",
+    "iterating",
+)
 
 STAGE_PROGRESS: dict[str, int] = {
     "init": 0,
@@ -27,6 +46,8 @@ STAGE_PROGRESS: dict[str, int] = {
     "s4_running": 88,
     "s4_review": 95,
     "complete": 100,
+    "error": 0,
+    "recovery_required": 0,
 }
 
 MODEL_LABELS: dict[str, str] = {
@@ -40,6 +61,8 @@ MODEL_LABELS: dict[str, str] = {
     "s4_running": "DeepSeek V4 Flash",
     "s4_review": "等待确认",
     "complete": "已完成",
+    "error": "已阻断",
+    "recovery_required": "等待恢复",
 }
 
 CHAT_PLACEHOLDER: dict[str, str] = {
@@ -53,4 +76,6 @@ CHAT_PLACEHOLDER: dict[str, str] = {
     "s4_running": "补充说明或追问...",
     "s4_review": "输入「确认」完成，或描述你的修改意见...",
     "complete": "全流程已完成，可从左侧导出报告。",
+    "error": "工作流已阻断，请先恢复会话。",
+    "recovery_required": "工作流需人工恢复，请先选择目标状态。",
 }

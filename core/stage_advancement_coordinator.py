@@ -31,6 +31,7 @@ from core.stage_resolution_service import (
 )
 from core.stage_scope_service import current_stage_id
 from core.traces import append_llm_trace, create_llm_trace
+from core.workflow_state_service import BLOCKED_STATES
 
 _NEXT_STATES = {
     1: SessionState.S2_RUNNING,
@@ -277,6 +278,32 @@ def advance_stage_if_ready(
     source: DecisionSource = "api_advance",
 ) -> StageAdvancementDecision:
     """Mutate current_state only when the authoritative gate allows advancement."""
+
+    if ctx.current_state in BLOCKED_STATES:
+        decision = StageAdvancementDecision(
+            session_id=ctx.session_id,
+            stage_id=stage,
+            stage_output_version=getattr(ctx, f"stage_{stage}_output_version", 1),
+            current_state=_state_value(ctx),
+            stage_lifecycle="blocked",
+            can_advance=False,
+            advanced=False,
+            next_state=None,
+            gate_result=evaluate_stage_gate(ctx, stage),
+            required_operations=[],
+            blocking_action_ids=[],
+            stale_stage_keys=_stale_stage_keys(ctx),
+            decision_reason="workflow_state_blocked",
+            decision_source=source,
+        )
+        _trace_decision(
+            ctx,
+            decision,
+            trace_type="stage_operation",
+            node_name="stage_advance_blocked",
+            extra_metadata={"event_kind": "stage_advance_blocked"},
+        )
+        return decision
 
     decision = build_stage_advancement_decision(
         ctx,

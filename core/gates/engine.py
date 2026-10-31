@@ -11,6 +11,55 @@ from core.stage_readiness_service import StageBlocker, StageGateResult, _current
 logger = logging.getLogger(__name__)
 
 
+class GateDataError(RuntimeError):
+    """HIGH/CRITICAL gate evidence could not be persisted.
+
+    For high-risk sessions the governance record is part of the safety
+    contract, so a persistence failure must block advancement instead of
+    being swallowed as a non-fatal side effect.
+    """
+
+
+def _strict_gate_persistence(ctx: ProjectContext) -> bool:
+    from core.gates.risk_profile import requires_strict_structured_output
+
+    return requires_strict_structured_output(ctx)
+
+
+def _rule_error_blocker(
+    ctx: ProjectContext, stage: int, rule_id: str, *, data_error: bool = False
+) -> StageBlocker:
+    if data_error:
+        return StageBlocker(
+            blocker_id=f"S{stage}_GATE_DATA_ERROR_{rule_id}",
+            stage_id=stage,
+            stage_output_version=_current_version(ctx, stage),
+            blocker_type="gate_data_error",
+            rule_id=rule_id,
+            severity="critical",
+            message="gate evaluation persistence failed",
+            source_type="gate_evaluation_records",
+            source_id=rule_id,
+            required_resolution="retry_gate_persistence",
+            can_be_overridden_by_approval=False,
+            metadata={"error": "gate_evaluation_persistence_failed"},
+        )
+    return StageBlocker(
+        blocker_id=f"S{stage}_GATE_RULE_ERROR_{rule_id}",
+        stage_id=stage,
+        stage_output_version=_current_version(ctx, stage),
+        blocker_type="gate_rule_error",
+        rule_id=rule_id,
+        severity="critical",
+        message="rule evaluation failed",
+        source_type="gate_rule",
+        source_id=rule_id,
+        required_resolution="rerun_stage",
+        can_be_overridden_by_approval=False,
+        metadata={"error": "rule_evaluation_failed"},
+    )
+
+
 def build_gate_trace_metadata(
     *,
     stage: int,
@@ -140,7 +189,23 @@ def evaluate_stage_gate(
                 continue
 
         evaluated_rule_ids.append(rule.rule_id)
-        rule_blockers = rule.evaluate(ctx, stage)
+        try:
+            rule_blockers = rule.evaluate(ctx, stage)
+        except GateDataError:
+            logger.warning(
+                "Gate rule %s raised GateDataError; emitting deterministic data blocker.",
+                rule.rule_id,
+                exc_info=True,
+            )
+            rule_blockers = [_rule_error_blocker(ctx, stage, rule.rule_id, data_error=True)]
+        except Exception:
+            # 规则异常不能穿透到 API：统一转为确定性 critical blocker（fail-closed）。
+            logger.warning(
+                "Gate rule %s failed; emitting deterministic rule-error blocker.",
+                rule.rule_id,
+                exc_info=True,
+            )
+            rule_blockers = [_rule_error_blocker(ctx, stage, rule.rule_id)]
 
         if detailed:
             if rule_blockers:
@@ -212,8 +277,12 @@ def _try_persist_gate_evaluation(
 ) -> None:
     """旁路写入 gate_evaluation_records——治理趋势数据源。
 
-    失败只打日志，不抛异常（治理数据缺一行可接受，评估被卡死不可接受）。
+    非高风险会话失败只打日志（治理数据缺一行可接受，评估被卡死不可接受）。
+    HIGH/CRITICAL 会话的 Gate 证据缺失会破坏可审计性，strict 下写表失败抛
+    `GateDataError`，由 readiness 转为确定性阻断。
     """
+    strict = _strict_gate_persistence(ctx)
+    blocking_rule_ids: list[str] = []
     try:
         from core.config import settings
         from core.gates.risk_profile import classify_project_risk
@@ -243,19 +312,21 @@ def _try_persist_gate_evaluation(
             blocking_rule_ids=blocking_rule_ids,
             rule_versions=rule_versions,
         )
-        # T3.5 业务指标打点（import 在函数内避免循环依赖；失败被外层 try 兜底）
-        try:
-            from api.metrics import record_gate_evaluation_metrics
+    except Exception as exc:
+        if strict:
+            raise GateDataError(
+                f"gate_evaluation_records persist failed for stage {stage}"
+            ) from exc
+        logger.warning("gate_evaluation_records persist failed; non-fatal", exc_info=True)
+        return
 
-            record_gate_evaluation_metrics(
-                passed=not blockers,
-                blocking_rule_ids=blocking_rule_ids,
-            )
-        except Exception:
-            logger.debug("record_gate_evaluation_metrics failed; non-fatal", exc_info=True)
-    except Exception:
-        import logging
+    # T3.5 业务指标打点（import 在函数内避免循环依赖；失败不阻断）
+    try:
+        from api.metrics import record_gate_evaluation_metrics
 
-        logging.getLogger(__name__).warning(
-            "gate_evaluation_records persist failed; non-fatal", exc_info=True
+        record_gate_evaluation_metrics(
+            passed=not blockers,
+            blocking_rule_ids=blocking_rule_ids,
         )
+    except Exception:
+        logger.debug("record_gate_evaluation_metrics failed; non-fatal", exc_info=True)

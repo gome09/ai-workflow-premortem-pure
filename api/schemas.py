@@ -281,6 +281,19 @@ class UpdateDataClassificationResponse(BaseModel):
     is_downgrade: bool
 
 
+class RecoverWorkflowRequest(BaseModel):
+    target_state: str
+    note: str = ""
+
+
+class RecoverWorkflowResponse(BaseModel):
+    ok: bool = True
+    session_id: str
+    before: str
+    after: str
+    last_error: str = ""
+
+
 class DeleteSessionResponse(BaseModel):
     """删除会话的收尾摘要。归档行数等附加字段允许透传。"""
 
@@ -364,3 +377,31 @@ class StageResolutionSummaryResponse(BaseModel):
 class StageResolutionOperationsResponse(BaseModel):
     stage_id: int
     operations: list[StageResolutionOperation] = Field(default_factory=list)
+
+
+class RiskFactorScoresRequest(BaseModel):
+    impact: int = Field(ge=0, le=3)
+    autonomy: int = Field(ge=0, le=3)
+    data_sensitivity: int = Field(ge=0, le=3)
+    reversibility: int = Field(ge=0, le=3)
+    scale: int = Field(ge=0, le=3)
+    external_exposure: int = Field(ge=0, le=3)
+    rationale: str = ""
+
+
+class RiskOverrideRequest(BaseModel):
+    requested_tier: Literal["low", "medium", "high", "critical"]
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class RiskProfileResponse(BaseModel):
+    session_id: str
+    factors: dict[str, int]
+    structural_tier: str
+    floor_tier: str
+    effective_tier: str
+    reasons: list[str] = Field(default_factory=list)
+    source: str
+    llm_explanation: str = ""
+    override: dict[str, Any] | None = None
+    overrides: list[dict[str, Any]] = Field(default_factory=list)

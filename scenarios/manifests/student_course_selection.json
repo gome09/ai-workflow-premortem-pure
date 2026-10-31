@@ -7,7 +7,16 @@
   "mock_fixture": "default",
   "default_config": {
     "auto_bootstrap_input": true,
-    "stage_context_note": "演示重点：AI 辅助选课系统在立项阶段的失败模式、人机协同审核流程和触发链路。"
+    "stage_context_note": "演示重点：AI 辅助选课系统在立项阶段的失败模式、人机协同审核流程和触发链路。",
+    "risk_profile": {
+      "impact": 2,
+      "autonomy": 1,
+      "data_sensitivity": 2,
+      "reversibility": 2,
+      "scale": 1,
+      "external_exposure": 1,
+      "rationale": "高校选课推荐：错误推荐可能影响学生毕业规划，依赖学业数据，最终选课由学生确认。"
+    }
   },
   "applicable_stages": [
     "init",

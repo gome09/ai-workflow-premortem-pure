@@ -6,8 +6,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from core.coverage.policy import build_coverage_report, required_high_risk_node_ids
 from core.models import HumanActionStatus, PendingHumanAction, ProjectContext
-from core.stage_scope_service import actionable_stage_ids, current_stage_id, is_stage_actionable
+from core.stage_scope_service import actionable_stage_ids, current_stage_id
 
 BlockerType = Literal[
     "missing_stage_output",
@@ -25,6 +26,8 @@ BlockerType = Literal[
     "trace_backfill_gap",
     "final_governance",
     "expert_review",
+    "gate_rule_error",
+    "gate_data_error",
 ]
 
 # Keep this Literal synchronized with
@@ -54,6 +57,7 @@ RequiredResolution = Literal[
     "trace_to_eval_case",
     "create_trace_backfill_dataset",
     "approve_expert_review",
+    "retry_gate_persistence",
 ]
 
 Severity = Literal["low", "medium", "high", "critical"]
@@ -400,18 +404,8 @@ def _blocker(
 
 
 def _high_risk_node_ids(ctx: ProjectContext) -> set[str]:
-    if not ctx.stage_1_output or not ctx.stage_2_output:
-        return set()
-    high_risk_failure_modes = {
-        fm.id
-        for fm in ctx.stage_1_output.failure_modes
-        if str(fm.severity).lower() in {"high", "critical"}
-    }
-    return {
-        node.node_id
-        for node in ctx.stage_2_output.workflow_nodes
-        if high_risk_failure_modes.intersection(set(node.failure_modes_addressed or []))
-    }
+    """Backward-compatible wrapper around the shared coverage policy."""
+    return required_high_risk_node_ids(ctx)
 
 
 def _stage_2_coverage_matrix(ctx: ProjectContext) -> list[dict[str, Any]]:
@@ -444,20 +438,25 @@ def _stage_2_coverage_matrix(ctx: ProjectContext) -> list[dict[str, Any]]:
 
 
 def _stage_3_coverage_warning(ctx: ProjectContext) -> dict[str, Any]:
-    high_risk_nodes = _high_risk_node_ids(ctx)
-    eval_nodes = {case.target_node_id for case in ctx.eval_cases if case.target_node_id}
+    report = build_coverage_report(ctx)
+    high_risk_nodes = set(report["required_node_ids"])
+    eval_nodes = {
+        case.target_node_id for case in ctx.eval_cases if case.stage_id == 3 and case.target_node_id
+    }
     run_nodes = {run.target_node_id for run in ctx.eval_runs if run.target_node_id}
     covered = eval_nodes.union(run_nodes)
-    missing = sorted(high_risk_nodes - eval_nodes)
+    missing = list(report["missing_required_node_ids"])
     return {
-        "high_risk_node_ids": sorted(high_risk_nodes),
+        "high_risk_node_ids": report["required_node_ids"],
         "covered_node_ids": sorted(high_risk_nodes.intersection(covered)),
-        "eval_case_covered_node_ids": sorted(high_risk_nodes.intersection(eval_nodes)),
+        "eval_case_covered_node_ids": sorted(report["eval_case_covered_node_ids"]),
         "eval_run_node_ids": sorted(high_risk_nodes.intersection(run_nodes)),
         "missing_eval_coverage_node_ids": missing,
         "coverage_warning": bool(missing),
         "blocking": bool(missing),
-        "blocking_reason": "High-risk workflow nodes must be covered by Stage 3 EvalCase records.",
+        "blocking_reason": (
+            "High-risk workflow nodes must meet the configured Stage 3 EvalCase coverage minimum."
+        ),
     }
 
 
@@ -628,236 +627,27 @@ def _collect_safety_blockers(ctx: ProjectContext, stage: int) -> list[StageBlock
     return blockers
 
 
-def _collect_stage1_evidence_blockers(ctx: ProjectContext) -> list[StageBlocker]:
-    if not ctx.stage_1_output:
-        return []
-    evidence_by_id = {ev.evidence_id: ev for ev in ctx.evidence_sources}
-    blockers: list[StageBlocker] = []
-    for fm in ctx.stage_1_output.failure_modes:
-        severity = str(fm.severity).lower()
-        if severity not in {"high", "critical"}:
-            continue
-        evidence_ids = list(dict.fromkeys(getattr(fm, "evidence_ids", []) or []))
-        if not evidence_ids:
-            action_id = _find_pending_action_id(ctx, 1, source_type="evidence_gap", source_id=fm.id)
-            blockers.append(
-                _blocker(
-                    ctx=ctx,
-                    stage=1,
-                    blocker_type="evidence_gap",
-                    severity=fm.severity,
-                    message=f"阶段1高风险失败模式 {fm.id} 缺少 evidence_id，必须编辑结构化 Stage1 输出补充证据引用。",
-                    source_type="failure_mode",
-                    source_id=fm.id,
-                    action_id=action_id,
-                    required_resolution="edit_stage_output",
-                    can_be_overridden_by_approval=False,
-                    metadata=_with_action_history(
-                        {
-                            "gap_type": "missing_evidence_id",
-                            "requires_structured_output": True,
-                            "expected_schema": "Stage1Schema",
-                        },
-                        ctx=ctx,
-                        stage=1,
-                        source_type="evidence_gap",
-                        source_id=fm.id,
-                        pending_action_id=action_id,
-                    ),
-                )
-            )
-            continue
-
-        for evidence_id in evidence_ids:
-            evidence = evidence_by_id.get(evidence_id)
-            if evidence is None:
-                action_id = _find_pending_action_id(
-                    ctx, 1, source_type="evidence_gap", source_id=fm.id
-                )
-                blockers.append(
-                    _blocker(
-                        ctx=ctx,
-                        stage=1,
-                        blocker_type="evidence_gap",
-                        severity=fm.severity,
-                        message=(
-                            f"阶段1高风险失败模式 {fm.id} 引用了不存在的证据 {evidence_id}，"
-                            "必须编辑结构化 Stage1 输出，不能调用 evidence verify。"
-                        ),
-                        source_type="failure_mode",
-                        source_id=fm.id,
-                        action_id=action_id,
-                        required_resolution="edit_stage_output",
-                        can_be_overridden_by_approval=False,
-                        metadata=_with_action_history(
-                            {
-                                "gap_type": "unknown_evidence_id",
-                                "missing_evidence_id": evidence_id,
-                                "requires_structured_output": True,
-                                "expected_schema": "Stage1Schema",
-                            },
-                            ctx=ctx,
-                            stage=1,
-                            source_type="evidence_gap",
-                            source_id=fm.id,
-                            pending_action_id=action_id,
-                        ),
-                    )
-                )
-                continue
-
-            if getattr(evidence, "verified", False):
-                continue
-
-            action_id = None
-            for source_type in {"evidence_unverified_for_high_risk", "evidence_low_credibility"}:
-                action_id = _find_pending_action_id(
-                    ctx, 1, source_type=source_type, source_id=fm.id
-                )
-                if action_id:
-                    break
-            blockers.append(
-                _blocker(
-                    ctx=ctx,
-                    stage=1,
-                    blocker_type="evidence_gap",
-                    severity=fm.severity,
-                    message=(
-                        f"阶段1高风险失败模式 {fm.id} 引用的证据 {evidence_id} "
-                        "尚未核验。仅关闭（dismiss）人工动作不会解除该证据门控。"
-                    ),
-                    source_type="evidence",
-                    source_id=evidence_id,
-                    action_id=action_id,
-                    required_resolution="verify_evidence",
-                    can_be_overridden_by_approval=False,
-                    metadata=_with_action_history(
-                        {
-                            "gap_type": "unverified_evidence_id",
-                            "failure_mode_id": fm.id,
-                            "evidence_exists": True,
-                            "source_type": getattr(evidence, "source_type", None),
-                            "credibility_score": getattr(evidence, "credibility_score", None),
-                        },
-                        ctx=ctx,
-                        stage=1,
-                        source_type="evidence_unverified_for_high_risk",
-                        source_id=fm.id,
-                        pending_action_id=action_id,
-                    ),
-                )
-            )
-    return blockers
-
-
-def _collect_stage2_policy_blockers(ctx: ProjectContext) -> list[StageBlocker]:
-    if not ctx.stage_1_output or not ctx.stage_2_output:
-        return []
-
-    high_risk_ids = {
-        fm.id
-        for fm in ctx.stage_1_output.failure_modes
-        if str(fm.severity).lower() in {"high", "critical"}
-    }
-    if not high_risk_ids:
-        return []
-
-    covered: set[str] = set()
-    blockers: list[StageBlocker] = []
-    severity_by_fm = {
-        fm.id: fm.severity
-        for fm in ctx.stage_1_output.failure_modes
-        if str(fm.severity).lower() in {"high", "critical"}
-    }
-
-    for node in ctx.stage_2_output.workflow_nodes:
-        addressed = set(node.failure_modes_addressed or [])
-        high_risk_addressed = addressed.intersection(high_risk_ids)
-        covered.update(high_risk_addressed)
-        if high_risk_addressed and node.oversight_policy is None:
-            blockers.append(
-                _blocker(
-                    ctx=ctx,
-                    stage=2,
-                    blocker_type="policy_gap",
-                    severity="high",
-                    message=(
-                        f"阶段2节点 {node.node_id} 覆盖高风险 failure_mode "
-                        f"{', '.join(sorted(high_risk_addressed))}，但缺少 HumanOversightPolicy。"
-                    ),
-                    source_type="workflow_node",
-                    source_id=node.node_id,
-                    action_id=_find_pending_action_id(
-                        ctx, 2, source_type="policy_gap", source_id=node.node_id
-                    ),
-                    required_resolution="edit_stage_output",
-                    can_be_overridden_by_approval=False,
-                    metadata=_with_action_history(
-                        {
-                            "failure_mode_ids": sorted(high_risk_addressed),
-                            "requires_structured_output": True,
-                            "expected_schema": "Stage2Schema",
-                        },
-                        ctx=ctx,
-                        stage=2,
-                        source_type="policy_gap",
-                        source_id=node.node_id,
-                        pending_action_id=_find_pending_action_id(
-                            ctx, 2, source_type="policy_gap", source_id=node.node_id
-                        ),
-                    ),
-                )
-            )
-
-    for failure_mode_id in sorted(high_risk_ids - covered):
-        blockers.append(
-            _blocker(
-                ctx=ctx,
-                stage=2,
-                blocker_type="policy_gap",
-                severity=severity_by_fm.get(failure_mode_id, "high"),
-                message=f"阶段2没有 workflow node 覆盖高风险 failure_mode：{failure_mode_id}。",
-                source_type="failure_mode",
-                source_id=failure_mode_id,
-                action_id=_find_pending_action_id(
-                    ctx, 2, source_type="policy_gap", source_id=failure_mode_id
-                ),
-                required_resolution="edit_stage_output",
-                can_be_overridden_by_approval=False,
-                metadata=_with_action_history(
-                    {
-                        "gap_type": "uncovered_high_risk_failure_mode",
-                        "requires_structured_output": True,
-                        "expected_schema": "Stage2Schema",
-                    },
-                    ctx=ctx,
-                    stage=2,
-                    source_type="policy_gap",
-                    source_id=failure_mode_id,
-                    pending_action_id=_find_pending_action_id(
-                        ctx, 2, source_type="policy_gap", source_id=failure_mode_id
-                    ),
-                ),
-            )
-        )
-    return blockers
-
-
 def _collect_stage3_eval_blockers(ctx: ProjectContext) -> list[StageBlocker]:
-    high_risk_nodes = _high_risk_node_ids(ctx)
+    report = build_coverage_report(ctx)
+    high_risk_nodes = set(report["required_node_ids"])
     if not high_risk_nodes:
         return []
 
     blockers: list[StageBlocker] = []
-    eval_case_nodes = {case.target_node_id for case in ctx.eval_cases if case.target_node_id}
-    for node_id in sorted(high_risk_nodes - eval_case_nodes):
+    node_case_counts = dict(report.get("node_case_counts") or {})
+    required_min_cases = int(report["policy"]["min_cases_per_high_risk_node"])
+    for node_id in list(report["missing_required_node_ids"]):
+        found_cases = int(node_case_counts.get(node_id, 0))
         blockers.append(
             _blocker(
                 ctx=ctx,
                 stage=3,
                 blocker_type="eval_failure",
                 severity="high",
-                message=f"阶段3高风险节点 {node_id} 缺少 EvalCase 覆盖，不能仅作为提醒放行。",
+                message=(
+                    f"阶段3高风险节点 {node_id} 的 EvalCase 覆盖不足"
+                    f"（{found_cases}/{required_min_cases}），不能仅作为提醒放行。"
+                ),
                 source_type="eval_coverage",
                 source_id=node_id,
                 action_id=_find_pending_action_id(
@@ -869,6 +659,8 @@ def _collect_stage3_eval_blockers(ctx: ProjectContext) -> list[StageBlocker]:
                     {
                         "target_node_id": node_id,
                         "gap_type": "missing_eval_case_coverage",
+                        "found_case_count": found_cases,
+                        "required_min_cases": required_min_cases,
                         "expected_schema": "Stage3Schema",
                         "requires_structured_output": True,
                     },
@@ -971,104 +763,6 @@ def _collect_stage3_eval_blockers(ctx: ProjectContext) -> list[StageBlocker]:
     return blockers
 
 
-def _collect_stage4_final_blockers(ctx: ProjectContext) -> list[StageBlocker]:
-    """Final governance gate aligned with upstream stage blockers.
-
-    Stage 4 completion must not contradict report/export governance. It wraps
-    unresolved upstream hard blockers into final_governance blockers while
-    preserving the original source and required_resolution so the resolution
-    operation remains accurate.
-    """
-    blockers: list[StageBlocker] = []
-
-    for upstream_stage in range(1, 4):
-        upstream = evaluate_stage_gate(ctx, upstream_stage)
-        for blocker in upstream.blockers:
-            if blocker.blocker_type == "missing_stage_output" and not is_stage_actionable(
-                ctx, upstream_stage
-            ):
-                continue
-            if blocker.can_be_overridden_by_approval:
-                # Overridable items stay visible in their native stage. Final
-                # governance only hard-blocks what cannot be approval-overridden.
-                continue
-            blockers.append(
-                _blocker(
-                    ctx=ctx,
-                    stage=4,
-                    blocker_type="final_governance",
-                    severity=blocker.severity,
-                    message=f"流程完成前上游阶段{upstream_stage}仍有未关闭治理项：{blocker.message}",
-                    source_type=blocker.source_type,
-                    source_id=blocker.source_id or blocker.blocker_id,
-                    action_id=blocker.action_id,
-                    required_resolution=blocker.required_resolution,
-                    can_be_overridden_by_approval=False,
-                    metadata={
-                        "upstream_stage_id": upstream_stage,
-                        "upstream_blocker_id": blocker.blocker_id,
-                        "upstream_blocker_type": blocker.blocker_type,
-                        "upstream_required_resolution": blocker.required_resolution,
-                        "upstream_metadata": blocker.metadata,
-                    },
-                )
-            )
-
-    for finding in ctx.safety_findings:
-        if finding.status == "open" and finding.severity in {"high", "critical"}:
-            action_id = None
-            if finding.stage_id is not None:
-                action_id = _find_pending_action_id(
-                    ctx,
-                    finding.stage_id,
-                    source_type="safety_finding",
-                    source_id=finding.finding_id,
-                )
-            blockers.append(
-                _blocker(
-                    ctx=ctx,
-                    stage=4,
-                    blocker_type="final_governance",
-                    severity=finding.severity,
-                    message=f"流程完成前仍有 {finding.severity} 安全发现未关闭：{finding.finding_id}。",
-                    source_type="safety_finding",
-                    source_id=finding.finding_id,
-                    action_id=action_id,
-                    required_resolution="resolve_action" if action_id else "resolve_safety_finding",
-                    can_be_overridden_by_approval=finding.severity != "critical",
-                    metadata={"risk_type": finding.risk_type, "stage_id": finding.stage_id},
-                )
-            )
-
-    for key, value in ctx.parser_errors.items():
-        if key.startswith("stage_") and value:
-            stage_token = key.split("_", 1)[-1]
-            source_stage = int(stage_token) if stage_token.isdigit() else 4
-            action_id = _find_pending_action_id(
-                ctx, source_stage, source_type="parser", source_id=key
-            )
-            blockers.append(
-                _blocker(
-                    ctx=ctx,
-                    stage=4,
-                    blocker_type="final_governance",
-                    severity="high",
-                    message=f"流程完成前仍有 parser error 未关闭：{key}。",
-                    source_type="parser",
-                    source_id=key,
-                    action_id=action_id,
-                    required_resolution="edit_stage_output",
-                    can_be_overridden_by_approval=False,
-                    metadata={
-                        "parser_error": value,
-                        "requires_structured_output": True,
-                        "expected_schema": f"Stage{source_stage}Schema",
-                    },
-                )
-            )
-    return blockers
-
-
 def evaluate_stage_gate(ctx: ProjectContext, stage: int) -> StageGateResult:
     """Evaluate the authoritative stage gate without mutating state.
 
@@ -1115,8 +809,42 @@ def _operation_text(required_resolution: str) -> str:
         "resolve_safety_finding": "关闭或批准对应 SafetyFinding，并保留审计记录。",
         "run_eval_experiment": "运行或重新创建并运行对应 EvalExperiment，完成后再评估回归门禁。",
         "compare_eval_experiment": "将当前 EvalExperiment 与 baseline 生成 comparison_summary。",
+        "retry_gate_persistence": "Gate 评估数据写入失败，请重试或检查存储健康状态。",
     }
     return mapping.get(required_resolution, required_resolution)
+
+
+def _evaluate_gate_for_readiness(ctx: ProjectContext, stage: int) -> StageGateResult:
+    """Evaluate a stage gate, converting persistence failures into blockers.
+
+    HIGH/CRITICAL gate evaluations are strict about writing
+    gate_evaluation_records; a storage failure must block advancement instead
+    of returning a 500 or silently skipping the governance record.
+    """
+    from core.gates.engine import GateDataError
+
+    try:
+        return evaluate_stage_gate(ctx, stage)
+    except GateDataError:
+        return StageGateResult(
+            stage_id=stage,
+            stage_output_version=_current_version(ctx, stage),
+            can_continue=False,
+            blockers=[
+                _blocker(
+                    ctx=ctx,
+                    stage=stage,
+                    blocker_type="gate_data_error",
+                    severity="critical",
+                    message=f"阶段{stage}Gate 评估数据写入失败，已阻断推进，请重试或检查存储健康状态。",
+                    source_type="gate_evaluation_records",
+                    source_id=f"stage_{stage}",
+                    required_resolution="retry_gate_persistence",
+                    can_be_overridden_by_approval=False,
+                    metadata={"error": "gate_evaluation_persistence_failed"},
+                )
+            ],
+        )
 
 
 def build_stage_readiness(ctx: ProjectContext) -> dict[str, dict[str, Any]]:
@@ -1149,7 +877,7 @@ def build_stage_readiness(ctx: ProjectContext) -> dict[str, dict[str, Any]]:
         ]
 
         if actionable:
-            result = evaluate_stage_gate(ctx, stage)
+            result = _evaluate_gate_for_readiness(ctx, stage)
             lifecycle = _stage_lifecycle(ctx, stage, result)
             blockers = result.blockers
             can_continue = result.can_continue
@@ -1191,7 +919,18 @@ def build_stage_readiness(ctx: ProjectContext) -> dict[str, dict[str, Any]]:
             )
             stage_metadata["stage_3_trace_backfill_summary"] = build_trace_backfill_summary(ctx)
         if stage == 4:
-            stage_metadata["final_governance_summary"] = _build_final_governance_summary(ctx)
+            from core.gates.engine import GateDataError
+
+            try:
+                stage_metadata["final_governance_summary"] = _build_final_governance_summary(ctx)
+            except GateDataError:
+                # HIGH/CRITICAL 的 Gate 落表失败同样不能把 readiness 变成 500；
+                # 返回确定性的 gate_data_error 摘要，与 stage blocker 同一语义。
+                stage_metadata["final_governance_summary"] = {
+                    "report_export_allowed": False,
+                    "gate_data_error": True,
+                    "error": "gate_evaluation_persistence_failed",
+                }
 
         item = StageReadiness(
             stage_id=stage,

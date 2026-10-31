@@ -30,6 +30,7 @@ from core.models import (
     RedTeamCase,
     SafetyFinding,
 )
+from storage.field_security import decrypt_row_columns
 
 
 @dataclass(frozen=True)
@@ -104,7 +105,7 @@ def get_projection_spec(table: str) -> ProjectionSpec:
 def build_model(table: str, row: dict[str, Any]) -> BaseModel:
     """把一行投影数据转换成对应 Pydantic 模型。"""
     spec = get_projection_spec(table)
-    data = dict(row)
+    data = decrypt_row_columns(table, dict(row))
     if spec.payload_column is not None:
         payload = data.get(spec.payload_column)
         data = _loads(payload) if payload is not None else {}

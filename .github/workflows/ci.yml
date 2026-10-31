@@ -33,8 +33,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --frozen
 
-      - name: Lint
-        run: make lint
+      # blocking：lint + 依赖漏洞审计（已接受 advisory 在 Makefile PIP_AUDIT_IGNORES 登记）
+      - name: Security check (lint + dependency audit)
+        run: make security-check
 
       - name: Type check (non-blocking)
         run: make typecheck
@@ -45,14 +46,6 @@ jobs:
 
       - name: Version metadata check
         run: make version-check
-
-      # 项目自身未发布 PyPI，直接 `pip-audit` 会因本地 editable 项目报错且无审计信号；
-      # 改为审计锁文件导出的第三方依赖集合。
-      - name: Dependency vulnerability audit (non-blocking)
-        run: |
-          uv export --frozen --no-emit-project --format requirements-txt --no-hashes -o requirements-audit.txt
-          uv run pip-audit --strict -r requirements-audit.txt
-        continue-on-error: true   # 先告警不阻断，观察一轮后再评估升级
 
       - name: Unit tests with coverage (sqlite + mock)
         run: |
@@ -102,15 +95,112 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.lite.yml down -v
 
-  # 完整生产栈集成（postgres/redis/api/frontend/nginx/prometheus/grafana）。
-  # mock LLM + 随机生成 secrets + 自签 TLS，经 nginx HTTPS 反代验证真实存储链路。
-  # 观察期 non-blocking（与 mypy 同策略）：远端稳定数轮后移除 continue-on-error 转强制。
-  docker-full-integration:
+  # 生产安全基线（blocking）：迁移升级/回滚 + production safety 测试集 + PG/Redis 业务 E2E。
+  production-safety:
     runs-on: ubuntu-latest
-    continue-on-error: true
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ai_workflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      APP_ENV: production
+      LLM_MODE: mock
+      STORAGE_BACKEND: postgres
+      CHECKPOINT_BACKEND: memory
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ai_workflow
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      REDIS_HOST: localhost
+      REDIS_PORT: "6379"
+      JWT_SECRET: ci-production-safety-jwt-secret-0123456789
+      RETENTION_ENABLED: "false"
+      # 缺少 PG/Redis/加密密钥时，生产安全测试必须失败而不是跳过。
+      PRODUCTION_SAFETY_REQUIRED: "1"
+      E2E_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ai_workflow
+      E2E_REDIS_URL: redis://localhost:6379/0
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --frozen
+
+      - name: Migration upgrade V008 -> head
+        run: |
+          uv run alembic upgrade V008
+          uv run alembic upgrade head
+          uv run alembic current | tee alembic-current.txt
+          grep -q "V010 (head)" alembic-current.txt
+
+      - name: Migration downgrade V008 -> re-upgrade head
+        run: |
+          uv run alembic downgrade V008
+          uv run alembic upgrade head
+          uv run alembic current | grep -q "V010 (head)"
+
+      - name: Generate field encryption key
+        run: |
+          echo "DATA_ENCRYPTION_KEY=$(uv run python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')" >> "$GITHUB_ENV"
+
+      - name: Production safety test suite
+        run: |
+          uv run pytest \
+            tests/test_workflow_state_fail_closed.py \
+            tests/test_high_risk_fail_closed.py \
+            tests/test_data_protection_redaction.py \
+            tests/test_field_security_extended.py \
+            tests/test_retention_tenant_scope.py \
+            tests/test_ids_unique.py \
+            tests/test_migration_upgrade_path.py \
+            -q
+
+      - name: PostgreSQL + Redis workflow E2E
+        run: uv run pytest tests/test_postgres_redis_workflow_e2e.py -q
+
+  # 完整生产栈集成（postgres/redis/api/frontend/nginx/prometheus/grafana）。
+  # mock LLM + 随机生成 secrets + 自签 TLS，经 nginx HTTPS 反代验证真实存储链路。
+  # blocking：移除原观察期 continue-on-error，并追加业务流 E2E。
+  docker-full-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
 
       - name: Prepare env file (postgres backend, mock LLM)
         run: |
@@ -151,6 +241,10 @@ jobs:
           if [ "$running" != "$expected" ]; then
             echo "Expected 7 running services, got:"; echo "$running"; exit 1
           fi
+
+      # 业务 E2E：创建 → 推进 → 暂停（blocking action）→ 解决动作恢复 → 回滚
+      - name: Business flow E2E through nginx
+        run: uv run python scripts/e2e_business_flow.py --base https://localhost
 
       - name: Dump logs on failure
         if: failure()

@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 import core.stage_readiness_service as readiness
+from core.coverage.policy import (
+    min_cases_for_tier,
+    required_high_risk_node_ids,
+)
 from core.gates.risk_profile import ProjectGateRiskTier, build_stage3_gate_profile
 from core.models import ProjectContext
 
@@ -10,27 +14,9 @@ def _risk_adjusted_high_risk_nodes(ctx: ProjectContext, tier: ProjectGateRiskTie
     """Return workflow node IDs that require eval coverage under the given risk tier.
 
     - LOW: only nodes addressing *critical* failure modes.
-    - MEDIUM: nodes addressing *high* or *critical* failure modes (same as default).
-    - HIGH / CRITICAL: same as default.
+    - MEDIUM / HIGH / CRITICAL: nodes addressing *high* or *critical* failure modes.
     """
-    if not ctx.stage_1_output or not ctx.stage_2_output:
-        return set()
-
-    if tier == ProjectGateRiskTier.LOW:
-        severity_filter = {"critical"}
-    else:
-        severity_filter = {"high", "critical"}
-
-    high_risk_failure_modes = {
-        fm.id
-        for fm in ctx.stage_1_output.failure_modes
-        if str(fm.severity).lower() in severity_filter
-    }
-    return {
-        node.node_id
-        for node in ctx.stage_2_output.workflow_nodes
-        if high_risk_failure_modes.intersection(set(node.failure_modes_addressed or []))
-    }
+    return required_high_risk_node_ids(ctx, tier)
 
 
 class Stage3EvalFailureRule:
@@ -56,9 +42,16 @@ class Stage3EvalFailureRule:
             return []
 
         blockers: list[readiness.StageBlocker] = []
-        eval_case_nodes = {case.target_node_id for case in ctx.eval_cases if case.target_node_id}
+        case_counts: dict[str, int] = {}
+        for case in ctx.eval_cases:
+            if case.stage_id == 3 and case.target_node_id:
+                case_counts[case.target_node_id] = case_counts.get(case.target_node_id, 0) + 1
+        min_cases = min_cases_for_tier(profile.risk_tier)
 
-        for node_id in sorted(high_risk_nodes - eval_case_nodes):
+        for node_id in sorted(high_risk_nodes):
+            found_cases = case_counts.get(node_id, 0)
+            if found_cases >= min_cases:
+                continue
             action_id = readiness._find_pending_action_id(
                 ctx, 3, source_type="eval_coverage", source_id=node_id
             )
@@ -68,7 +61,10 @@ class Stage3EvalFailureRule:
                     stage=3,
                     blocker_type="eval_failure",
                     severity="high",
-                    message=f"阶段3高风险节点 {node_id} 缺少 EvalCase 覆盖，不能仅作为提醒放行。",
+                    message=(
+                        f"阶段3高风险节点 {node_id} 的 EvalCase 覆盖不足"
+                        f"（{found_cases}/{min_cases}），不能仅作为提醒放行。"
+                    ),
                     source_type="eval_coverage",
                     source_id=node_id,
                     action_id=action_id,
@@ -78,6 +74,8 @@ class Stage3EvalFailureRule:
                         {
                             "target_node_id": node_id,
                             "gap_type": "missing_eval_case_coverage",
+                            "found_case_count": found_cases,
+                            "required_min_cases": min_cases,
                             "expected_schema": "Stage3Schema",
                             "requires_structured_output": True,
                         },

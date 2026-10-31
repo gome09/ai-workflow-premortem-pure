@@ -1,6 +1,6 @@
 # Makefile（本地开发快捷命令）
 
-.PHONY: install install-dev clean dev-db dev-api dev-frontend docker-up docker-down lint typecheck test test-cov setup setup-win prod-preflight prod-up prod-down prod-logs demo-api demo-frontend demo-ui lite-up e2e-mock e2e-full-test version-check doc-check audit security-check migrate migrate-new migrate-history
+.PHONY: install install-dev clean dev-db dev-api dev-frontend docker-up docker-down lint typecheck test test-cov setup setup-win prod-preflight prod-up prod-down prod-logs demo-api demo-frontend demo-ui lite-up e2e-mock e2e-full-test e2e-business version-check doc-check audit security-check migrate migrate-new migrate-history
 
 # 安装依赖
 install:
@@ -58,11 +58,21 @@ lint:
 typecheck:
 	uv run mypy
 
-# 依赖漏洞审计（非阻断）
-audit:
-	uv run pip-audit --strict
+# 依赖漏洞审计（阻断）。PIP_AUDIT_IGNORES 显式登记已接受 advisory（复核日期 2026-10-31）：
+# - pillow: CVE-2026-96640 / CVE-2026-96778 / GHSA-78g4-xqwv-q3g8（streamlit 依赖上限
+#   pillow<13，上游放开后移除）
+# - python-jose: PYSEC-2026-4298（无修复版本，迁移出 python-jose 前接受）
+# - pyasn1: PYSEC-2026-3455 / 3456 / 3457 / CVE-2026-119194 / 119195 / 119196 / 119197
+#   （python-jose 传递依赖，随 python-jose 迁移一并移除）
+# - python-multipart: PYSEC-2026-3036 / 3037 / 3040（streamlit 传递依赖上限）
+# 其余 advisory 一律阻断；忽略项必须在本注释登记并定期复核。
+PIP_AUDIT_IGNORES ?= CVE-2026-96640 CVE-2026-96778 GHSA-78g4-xqwv-q3g8 PYSEC-2026-4298 PYSEC-2026-3455 PYSEC-2026-3456 PYSEC-2026-3457 CVE-2026-119194 CVE-2026-119195 CVE-2026-119196 CVE-2026-119197 PYSEC-2026-3036 PYSEC-2026-3037 PYSEC-2026-3040
 
-# SAST + 漏洞审计组合
+audit:
+	uv export --frozen --no-emit-project --format requirements-txt --no-hashes -o requirements-audit.txt
+	uv run pip-audit --strict -r requirements-audit.txt $(addprefix --ignore-vuln ,$(PIP_AUDIT_IGNORES))
+
+# 安全检查组合（lint + 依赖漏洞审计），CI 阻断项
 security-check: lint audit
 
 # 版本元数据一致性检查（pyproject.toml 与 core/version.py 对齐）
@@ -92,6 +102,10 @@ e2e-mock:
 e2e-full-test:
 	cp -f .env.demo .env
 	uv run pytest tests/ -q
+
+# 全栈业务 E2E（创建 → 推进 → 暂停 → 恢复 → 回滚）；默认指向 nginx HTTPS
+e2e-business:
+	uv run python scripts/e2e_business_flow.py --base $${API_BASE:-https://localhost}
 
 # ── Database migrations ──────────────────────────────────────────────────────
 

@@ -27,3 +27,15 @@ class StaleContextError(StorageError):
             "Stale context: session="
             f"{session_id}, expected_version={expected_version}, actual_version={actual_version}"
         )
+
+
+class FieldDecryptionError(StorageError):
+    """Raised when an encrypted field cannot be decrypted (wrong key / corrupted data).
+
+    Fail-closed: 只携带字段路径与原因，不携带密文，避免敏感数据进入错误日志。
+    """
+
+    def __init__(self, field: str, reason: str) -> None:
+        self.field = field
+        self.reason = reason
+        super().__init__(f"Field decryption failed for {field}: {reason}")

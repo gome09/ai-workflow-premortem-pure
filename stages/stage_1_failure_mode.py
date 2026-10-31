@@ -13,6 +13,7 @@ from core.evidence_service import (
     format_evidence_for_prompt,
     link_failure_modes_to_evidence,
 )
+from core.gates.risk_profile import requires_strict_structured_output
 from core.models import FailureMode, ProjectContext, Stage1Output
 from core.scenario_context import current_domain_profile
 from stages.base import BaseStageExecutor
@@ -72,6 +73,7 @@ class Stage1Executor(BaseStageExecutor):
     def parse_output(self, raw_text: str, ctx: ProjectContext) -> ProjectContext:
         """JSON-first 解析，失败后回落到旧 Markdown 表格解析。"""
         search_sources = ctx.stage_1_output.search_sources if ctx.stage_1_output else []
+        strict = requires_strict_structured_output(ctx)
         if settings.stage_output_mode == "json_first":
             result = self.parse_structured_output(raw_text, ctx)
             if result.parsed:
@@ -124,7 +126,11 @@ class Stage1Executor(BaseStageExecutor):
         if failure_modes:
             ctx.stage_1_output.failure_modes = failure_modes
             link_failure_modes_to_evidence(ctx)
-            ctx.parser_errors.pop("stage_1", None)
+            if strict:
+                # HIGH/CRITICAL：Markdown 回退成功也不能当作结构化输出通过。
+                ctx.parser_errors["stage_1"] = "structured_output_required_for_high_risk"
+            else:
+                ctx.parser_errors.pop("stage_1", None)
         elif settings.stage_output_mode == "json_first":
             ctx.parser_errors["stage_1"] = "JSON 与 Markdown 解析均未得到 failure_modes。"
 

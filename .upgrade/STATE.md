@@ -2,7 +2,7 @@
 
 ## Status Summary
 
-Phase 0–4 与 formal-project-uplift Wave A–E 的代码侧工作已完成；Phase 4 剩余项仅为远端治理动作（分支保护、漏洞报告设置、CodeQL required check、GitHub Release），完成前不得宣称已发布。当前应用版本为 `1.3.0`，ProjectContext schema 为 `0.9.0`，Alembic head 为 `V010`（`sessions.context_digest` 写放大保护；V009 为 `sessions.projection_state`、`eval_runs.pass_criteria` / `llm_judge_suggestion`）。默认执行路径仍为 `single_step`；`langgraph_interrupt` 是受控 opt-in，生产启用要求加密 PostgreSQL checkpoint、独立 Fernet key、单 worker 与 fail-closed readiness。
+Phase 0–4 与 formal-project-uplift Wave A–E 的代码侧工作已完成；Phase 4 剩余项仅为远端治理动作（分支保护、漏洞报告设置、CodeQL required check、GitHub Release），完成前不得宣称已发布。当前应用版本为 `1.5.0`（Milestone 2 Domain Simplification），ProjectContext schema 为 `0.9.0`（新增 `risk_profile` / `risk_overrides` 为可选字段），Alembic head 为 `V010`（`sessions.context_digest` 写放大保护；V009 为 `sessions.projection_state`、`eval_runs.pass_criteria` / `llm_judge_suggestion`）。默认执行路径仍为 `single_step`；`langgraph_interrupt` 是受控 opt-in，生产启用要求加密 PostgreSQL checkpoint、独立 Fernet key、单 worker 与 fail-closed readiness。
 
 2026-09-21 的真实 PostgreSQL 验收已覆盖暂停、进程重建、恢复、清理、durable resume/outbox 与回滚；验收时 adapter 为 healthy/persistent/encrypted。当前 8000/8501 均未监听，因此运行状态只作为带日期的验收证据，不作为持续在线声明。
 
@@ -50,6 +50,8 @@ Phase 0–4 与 formal-project-uplift Wave A–E 的代码侧工作已完成；P
 - 数据库连接池与 save() 写放大优化（2026-10-31）：`core/config.py` 的 `DB_POOL_MAX_SIZE` 默认 10 → 20，新增 `DB_POOL_TIMEOUT_SECONDS`（默认 5 秒，>=0 校验）并在 `PostgresSessionStore._get_pool` 传入 `ConnectionPool(timeout=...)`，池排队不再沿用驱动默认 30 秒；新增 `storage/context_digest.py`（剔除 `updated_at`、在字段加密前对规范化 JSON 求 sha256），双后端 `save()` 在 `sessions.context_digest` 与本次指纹一致时只推进 `current_state` / `projection_state` / `updated_at` / `version`，不再重写整份 `context_json`，内容变化或旧行指纹为 NULL 时全量重写并刷新指纹；`load()` 的 `updated_at` 改读 `sessions` 列。新增 Alembic V010 `sessions.context_digest`，SQLite `initialize()` 通过 `_ADDED_COLUMNS` 幂等补齐。新增 `tests/test_save_write_amplification.py`（7 条双后端分支断言）、`tests/test_alembic_v010_context_digest.py`（3 条迁移结构）、`tests/test_db_pool_config.py`（1 条池参数契约），扩展 `tests/test_projection_sync_state.py` 旧库补列断言与 `tests/test_storage_tenant_and_locking.py` 的 INSERT 参数断言。全量 `893 passed, 1 skipped`（SQLite + memory + mock，26.2s）；Ruff、mypy（164 files）、doc-check、version-check 通过。部署环境需执行 `alembic upgrade head`（V009 → V010）。
 - 升级工作区与根目录治理整理（2026-10-31）：按 lifecycle 路由执行 `health-check`（0 错误）→ `git-audit --include-artifacts` / `git-policy-review`（158 条全部为 confirm，无 `add-ignore` 建议）→ `cleanup-review/apply`（计划 `fce93f63...`，将过期 `cleanup-plan-20261031-final.json` 移入回收站）→ `purge-review/apply`（计划 `e0f38ee9...`，永久清理回收站 39 个历史临时文件约 127 KB，保留 `.trash/.gitkeep`）→ `decision-review/apply`（`DEC-B1811F986E66`：确认 `.env.example` / `.env.demo` / `secrets.example/*` 为有意跟踪模板，`.uv-cache` 等生成目录保持忽略，不新增 git-policy 规则）。根目录整理：`frontend_improvement_plan.txt` 归档为 `.upgrade/archive/plans/frontend_improvement_plan-20261031.txt`；两个前端回滚快照目录 `frontend_mvc_20261031` / `frontend_wip_20261029` 移入 `.upgrade/archive/`，`git status` 不再出现 `?? .upgrade/backup/`；删除 `.upgrade/tmp` 下 `scripts`、`uv-cache`、`uv-cache-checkpoint-v006` 三个空壳目录。`MANIFEST.md` 已由 CLI 刷新。
 - GitHub CI 修复（2026-10-31）：远端 `ci` 自 `834226e`（2026-09-22）起在 “Unit tests with coverage” 失败；根因为 `cp .env.demo .env` 后 `Settings` 对 `SQLITE_PATH` / `DEMO_AUTO_AUTH` / `DEMO_USER_EMAIL` / `DEMO_USER_PASSWORD` 报 `extra_forbidden`。修复：`core/config.py` 的 `SettingsConfigDict` 增加 `extra="ignore"`（共享 env 文件允许前端/容器专用键），新增回归测试 `test_demo_env_file_loads_with_frontend_only_keys`；`ci.yml` 的依赖审计改为 `uv export --no-emit-project` + `pip-audit -r`（仍 non-blocking，本地实测可发现 `pyasn1` / `python-jose` / `python-multipart` 告警），并新增 `make version-check` 步骤；Node 20 弃用对应的 action 升级（checkout v7 / setup-python v7 / setup-uv v7 / upload-artifact v7 / codeql-action v4），`codeql.yml` 改为 main push + PR 触发（仓库已公开；required check 仍需远端设置）。全量 `894 passed, 1 skipped`（46.7s）；Ruff、version-check、doc-check 与三个 workflow 的 YAML 解析通过。远端验证：run 41181832705 的 docker-lite / docker-full 已通过，lint job 因 `astral-sh/setup-uv` 不存在 `v10` 引用在 Set up job 失败；改用可解析的 `v7` 后 run 41182280795 三个 job 全部通过（lint 含新增 version-check 与可出信号的 pip-audit），codeql run 41182280815 通过。
+- Milestone 1 Production Safety Baseline（2026-10-31）：版本升至 `1.4.0`。新增 `core/workflow_state_service.py`（`BLOCKED_STATES` / `assert_advanceable` / `mark_invalid_state` / `sanitize_persisted_state` / `recover_workflow`），未知或非法状态一律改写为 `RECOVERY_REQUIRED` 并阻断推进，唯一出口是 `POST /sessions/{session_id}/workflow/recover`（阻断态 API 返回 409）；新增 `core/data_protection.py`（`FREE_TEXT_KEYS` / `redacted_envelope` / `redact_payload`），`session_events` / `audit_events` 自由文本按分级脱敏，用户消息只落 `input_sha256` / `input_length`；`storage/field_security.py` 解密改为 fail-closed（`FieldDecryptionError`，`app_env=production` 或非 sqlite 后端）；`core/ids.py` 统一完整 UUID，移除短 UUID 标识；HIGH/CRITICAL 场景结构化解析、监督策略生成与 Gate 数据异常全部阻断（`GateDataError` / critical blocker）。新增 8 个测试文件（`test_workflow_state_fail_closed.py`、`test_high_risk_fail_closed.py`、`test_data_protection_redaction.py`、`test_field_security_extended.py`、`test_retention_tenant_scope.py`、`test_ids_unique.py`、`test_migration_upgrade_path.py`、`test_postgres_redis_workflow_e2e.py`）与 `scripts/e2e_business_flow.py`。CI 新增 blocking `production-safety` job（PG16 + Redis7、V008→V010 迁移升级/回滚、production safety 测试集、PG/Redis 业务 E2E，`PRODUCTION_SAFETY_REQUIRED=1`），`docker-full-integration` 转 blocking 并运行 `scripts/e2e_business_flow.py`。全量 `959 passed, 3 skipped`（SQLite + memory + mock，26.7s；两个 PG/Redis 测试离线 skip，CI 中 required 失败而非跳过）。
+- Milestone 2 Domain Simplification（2026-10-31）：版本升至 `1.5.0`。新增 `core/risk` 六因子确定性风险模型（`impact/autonomy/data_sensitivity/reversibility/scale/external_exposure` + 固定权重/分带/floor），关键词库降级为 `legacy_inference` 输入适配器，LLM 仅提供解释；`ProjectContext` 新增可选 `risk_profile` / `risk_overrides`，人工 override 记录原/请求/生效等级、floor、原因、操作者、角色、租户并写 `risk_tier_overridden` 审计事件，降级仅 admin 且受 floor clamp；新增 `GET/PUT /sessions/{id}/risk-profile` 与 `POST /sessions/{id}/risk-profile/override`。新增 `core/coverage/policy.py`：HIGH/CRITICAL 全覆盖高风险节点、CRITICAL 全节点、LOW/MEDIUM 预算 `max(sample, ceil(min_ratio*n))`，gate 按 `STAGE3_MIN_CASES_PER_HIGH_RISK_NODE` 强制最低覆盖。`SessionService` 拆为 `core/services/` 五域 + 兼容 facade，`oversight_service` 拆为 `core/governance/` 四模块 + re-export，readiness 删除 3 个死 collector。新增 6 个测试文件并扩展 PG/Redis E2E（rerun/乐观锁/override 租户隔离）。离线全量 `1016 passed, 3 skipped`（62.7s）。
 
 ## Current Blockers
 
@@ -80,11 +82,11 @@ Phase 4: In progress
 
 ## current_task
 
-Obtain remote governance evidence and prepare release configuration
+Milestone 2 Domain Simplification completed; remote governance actions remain
 
 ## last_completed_task
 
-Synced Git/Docker ignore rules and pushed main to origin over SSH on 2026-10-31
+Milestone 2 Domain Simplification (v1.5.0): six-factor risk model, risk override audit, risk-driven coverage policy, domain service split and domain-boundary tests on 2026-10-31
 
 ## next_action
 
@@ -92,9 +94,9 @@ Verify branch protection, private vulnerability reporting, and CodeQL required c
 
 ## last_update
 
-- Date: 2026-10-31T16:25:00+08:00
-- Updated by: CI/CD workflow repair for shared demo env settings, remote verified
-- Summary: Fixed the long-red remote ci job caused by Settings rejecting frontend-only keys from .env.demo (extra="ignore" + regression test), made pip-audit audit exported locked requirements instead of the local editable project, added make version-check to ci, and bumped Node-20-deprecated actions (checkout v7 / setup-python v7 / setup-uv v7 / upload-artifact v7 / codeql-action v4); enabled CodeQL on main push and pull requests now that the repository is public. Local baseline 894 passed, 1 skipped; remote run 41182280795 (all three jobs) and codeql run 41182280815 are green on d1934bb.
+- Date: 2026-10-31T21:30:00+08:00
+- Updated by: Milestone 2 Domain Simplification implementation
+- Summary: Version bumped to 1.5.0. Added core/risk deterministic six-factor model with floor-clamped human overrides and audit, core/coverage risk-driven Stage 3 policy, five SessionService domain services behind a compatibility facade, governance action split with compatibility re-exports, removed dead readiness collectors, and extended PG/Redis E2E with rerun/optimistic-lock/override assertions. Local baseline 1016 passed, 3 skipped.
 
 ## last_validation
 

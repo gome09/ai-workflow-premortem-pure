@@ -9,10 +9,9 @@
 
 from __future__ import annotations
 
-import uuid
-
 import core.stage_readiness_service as readiness
 from core.gates.risk_profile import build_stage3_gate_profile
+from core.ids import new_id
 from core.models import PendingHumanAction, ProjectContext
 
 
@@ -55,7 +54,7 @@ class ExpertReviewRule:
             )
             if action_id is None:
                 action = PendingHumanAction(
-                    action_id=str(uuid.uuid4())[:8],
+                    action_id=new_id(),
                     session_id=ctx.session_id,
                     stage_id=stage,
                     source_type="expert_review",

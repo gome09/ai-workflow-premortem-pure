@@ -14,10 +14,17 @@ from typing import Any
 
 from core.migrations import migrate_context
 from core.models import ProjectContext
+from core.workflow_state_service import sanitize_persisted_state
 from storage.access import SystemAccess, resolve_system_access
 from storage.context_digest import compute_context_digest
 from storage.errors import TenantIsolationError
-from storage.field_security import decrypt_fields_after_load, encrypt_fields_for_storage
+from storage.field_security import (
+    decrypt_fields_after_load,
+    decrypt_text_field,
+    encrypt_fields_for_storage,
+    encrypt_json_field,
+    encrypt_text_field,
+)
 from storage.projection_read import build_projection_rows, get_projection_spec
 from storage.projection_state import compute_state, plan_sync
 
@@ -583,6 +590,7 @@ class SQLiteSessionStore:
     # ── Save helpers ──────────────────────────────────────────────────────────
 
     def _sync_human_actions(self, conn: sqlite3.Connection, ctx: ProjectContext) -> None:
+        classification = ctx.data_classification
         for action in ctx.pending_actions:
             conn.execute(
                 """
@@ -608,16 +616,14 @@ class SQLiteSessionStore:
                     action.action_type,
                     action.status,
                     action.risk_level,
-                    action.title,
-                    action.description,
-                    action.trigger_reason,
+                    encrypt_text_field(action.title, classification),
+                    encrypt_text_field(action.description, classification),
+                    encrypt_text_field(action.trigger_reason, classification),
                     int(action.blocking),
-                    json.dumps(action.payload_before, default=str),
-                    json.dumps(action.payload_after, default=str)
-                    if action.payload_after is not None
-                    else None,
+                    encrypt_json_field(action.payload_before, classification),
+                    encrypt_json_field(action.payload_after, classification),
                     action.reviewer_decision,
-                    action.reviewer_note,
+                    encrypt_text_field(action.reviewer_note, classification),
                     action.stage_output_version,
                     action.superseded_by,
                     action.action_contract_id,
@@ -736,6 +742,7 @@ class SQLiteSessionStore:
             )
 
     def _sync_evidence_sources(self, conn: sqlite3.Connection, ctx: ProjectContext) -> None:
+        classification = ctx.data_classification
         for ev in ctx.evidence_sources:
             conn.execute(
                 """
@@ -753,8 +760,8 @@ class SQLiteSessionStore:
                     ev.url,
                     ev.source_type,
                     ev.credibility_score,
-                    ev.summary,
-                    json.dumps(ev.claims, default=str),
+                    encrypt_text_field(ev.summary, classification),
+                    encrypt_json_field(ev.claims, classification),
                     json.dumps(ev.used_by_failure_mode_ids, default=str),
                     int(ev.verified),
                     ev.verified_by,
@@ -798,6 +805,7 @@ class SQLiteSessionStore:
             )
 
     def _sync_report_artifacts(self, conn: sqlite3.Connection, ctx: ProjectContext) -> None:
+        classification = ctx.data_classification
         for artifact in ctx.report_artifacts:
             truncated = self._truncate_report_content_json(artifact.content_json)
             conn.execute(
@@ -811,8 +819,8 @@ class SQLiteSessionStore:
                     artifact.report_id,
                     ctx.session_id,
                     artifact.version,
-                    json.dumps(truncated, default=str),
-                    artifact.content_markdown,
+                    encrypt_json_field(truncated, classification),
+                    encrypt_text_field(artifact.content_markdown, classification),
                     _dt(artifact.generated_at),
                 ),
             )
@@ -1116,7 +1124,7 @@ class SQLiteSessionStore:
                             updated_at       = ?
                         WHERE session_id = ?
                         """,
-                        (ctx.current_state.value, state_json, now, ctx.session_id),
+                        (str(data.get("current_state") or "init"), state_json, now, ctx.session_id),
                     )
                 else:
                     conn.execute(
@@ -1136,7 +1144,7 @@ class SQLiteSessionStore:
                         (
                             ctx.session_id,
                             ctx.tenant_id or None,
-                            ctx.current_state.value,
+                            str(data.get("current_state") or "init"),
                             context_json,
                             state_json,
                             digest,
@@ -1241,7 +1249,7 @@ class SQLiteSessionStore:
                     ).fetchone()
         if not row:
             return None
-        ctx = migrate_context(json.loads(row["context_json"]))
+        ctx = migrate_context(sanitize_persisted_state(json.loads(row["context_json"])))
         if ctx:
             decrypt_fields_after_load(ctx)
             if row["tenant_id"]:
@@ -1381,9 +1389,17 @@ class SQLiteSessionStore:
                     ),
                 )
                 archived += 1
-                conn.execute(
-                    "DELETE FROM gate_evaluation_records WHERE session_id = ?", (session_id,)
-                )
+                # 租户谓词防止同名 session_id 的跨租户残留被误删。
+                if tenant_id:
+                    conn.execute(
+                        "DELETE FROM gate_evaluation_records WHERE session_id = ? "
+                        "AND (tenant_id = ? OR tenant_id IS NULL OR tenant_id = '')",
+                        (session_id, tenant_id),
+                    )
+                else:
+                    conn.execute(
+                        "DELETE FROM gate_evaluation_records WHERE session_id = ?", (session_id,)
+                    )
                 if tenant_id:
                     cursor = conn.execute(
                         "DELETE FROM sessions WHERE session_id = ? AND tenant_id = ?",
@@ -1660,6 +1676,13 @@ class SQLiteSessionStore:
                 rows = conn.execute(sql, tuple(params)).fetchall()
         return build_projection_rows(table, [dict(row) for row in rows])
 
+    @staticmethod
+    def _decrypt_report_content(value: Any) -> Any:
+        """report_artifacts.content_json 可能是明文 JSON 或加密字符串。"""
+        if isinstance(value, str):
+            return decrypt_text_field(value, field="report_artifacts.content_json") or "{}"
+        return value or "{}"
+
     def list_report_artifacts(self, session_id: str) -> list[dict]:
         with self._lock:
             with self._get_conn() as conn:
@@ -1670,7 +1693,7 @@ class SQLiteSessionStore:
                 ).fetchall()
         artifacts: list[dict] = []
         for row in rows:
-            content_raw = row["content_json"] or "{}"
+            content_raw = self._decrypt_report_content(row["content_json"])
             content = json.loads(content_raw) if isinstance(content_raw, str) else content_raw
             artifacts.append(
                 {
@@ -1679,7 +1702,10 @@ class SQLiteSessionStore:
                     "version": row["version"],
                     "generated_at": row["generated_at"],
                     "content_json": content,
-                    "content_markdown": row["content_markdown"] or "",
+                    "content_markdown": decrypt_text_field(
+                        row["content_markdown"], field="report_artifacts.content_markdown"
+                    )
+                    or "",
                     "ai_generated": content.get("ai_generated", {}),
                     "human_reviewed": content.get("human_reviewed", {}),
                     "evidence": content.get("evidence_sources", []),
@@ -1702,7 +1728,7 @@ class SQLiteSessionStore:
                 ).fetchone()
         if not row:
             return None
-        content_raw = row["content_json"] or "{}"
+        content_raw = self._decrypt_report_content(row["content_json"])
         content = json.loads(content_raw) if isinstance(content_raw, str) else content_raw
         return {
             "report_id": row["report_id"],
@@ -1710,7 +1736,10 @@ class SQLiteSessionStore:
             "version": row["version"],
             "generated_at": row["generated_at"],
             "content_json": content,
-            "content_markdown": row["content_markdown"] or "",
+            "content_markdown": decrypt_text_field(
+                row["content_markdown"], field="report_artifacts.content_markdown"
+            )
+            or "",
             "ai_generated": content.get("ai_generated", {}),
             "human_reviewed": content.get("human_reviewed", {}),
             "evidence": content.get("evidence_sources", []),

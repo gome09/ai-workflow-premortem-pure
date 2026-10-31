@@ -4,6 +4,16 @@
 > 远程 `origin`（github.com/gome09/ai-workflow-premortem-pure）与本地共享同一根提交，**不包含更早的历史**，无法用于追溯 v1.0 之前的开发过程。
 > 截至 2026-09-01，本地 `main` 已与 `origin/main` 同步（当日推送 10 次提交，至 `08f8a99`）。
 
+## 1.5.0 — Milestone 2: Domain Simplification (2026-10-31)
+
+- **六因子确定性风险模型**：新增 `core/risk/`（`RiskFactorScores` / `RiskOverrideRecord` / `RiskAssessment` / 确定性加权规则与 floor）。最终等级只由 `impact` / `autonomy` / `data_sensitivity` / `reversibility` / `scale` / `external_exposure` 六因子规则产生；旧关键词库降级为确定性 `legacy_inference` 输入适配器，LLM 仅提供 `llm_explanation`，不参与等级计算。
+- **风险 override 与审计**：`ProjectContext.risk_overrides` append-only 记录原等级、请求等级、生效等级、floor、原因、操作者、角色与租户；`risk_tier_overridden` 审计事件写入同一信息。降级仅 admin 可执行且被确定性 floor clamp。
+- **风险 Profile API**：新增 `GET/PUT /sessions/{id}/risk-profile` 与 `POST /sessions/{id}/risk-profile/override`；全部 additive，现有路由与返回契约不变。
+- **风险驱动 Stage 3 coverage**：新增 `core/coverage/policy.py`，HIGH/CRITICAL 必选全部高风险节点，CRITICAL 选择全部节点；LOW/MEDIUM 预算 = `max(configured_sample, ceil(min_coverage_ratio * total_nodes))`。Gate 对每个高风险节点的 EvalCase 最低数量由 `STAGE3_MIN_CASES_PER_HIGH_RISK_NODE` 控制（默认 1，与旧行为等价）。高风险节点口径在 Stage 3、gate、readiness、Redteam、Eval summary 中统一。
+- **God Service 拆分**：`core/session_service.py` 从 2211 行降为兼容 facade，内部拆为 `core/services/{session_workflow,governance,evidence,evaluation,audit_trace}.py`，共享 `SessionAccess` 保持 `core.session_service.session_store/context_cache/execute_one_turn` patch 点。`core/oversight_service.py` 拆为 `core/governance/{action_state,action_factory,action_effects,action_resolution}.py` 并保留 re-export。`core/stage_readiness_service.py` 删除 3 个未引用的历史 collector。
+- **测试**：新增 `test_risk_model_deterministic.py`、`test_risk_override_service.py`、`test_risk_profile_api.py`、`test_coverage_policy.py`、`test_domain_services.py`、`test_domain_boundaries.py`；扩展 PostgreSQL/Redis E2E（rerun、乐观锁 stale save、override 审计与跨租户隔离）。离线全量 `1016 passed, 3 skipped`（SQLite + memory + mock，62.7s）；Ruff、mypy、doc-check、version-check 通过。
+- **版本**：`1.5.0`（`core/version.py` / `pyproject.toml` / `uv.lock` 同步）。ProjectContext schema 保持 `0.9.0`，新增风险字段为可选默认字段，无需迁移。
+
 ## 未发布维护记录 (2026-10-31)
 
 - **前端 MVC 拆分**：`frontend/app.py`（2515 行）拆分为 `frontend/models/`（`config` / `auth` / `api_client` / `stage_envelope` / `session_state` / `mappings`）、`frontend/controllers/`（auth / session / stage / governance / eval / report 六个按业务域控制器）与 `frontend/views/`（`sidebar` / `workbench` / `welcome` / `live_oversight` / `panels/*`）。`app.py` 仅保留 `set_page_config`、认证守卫、状态初始化与侧栏/工作区装配；依赖方向固定为 models ← controllers ← views ← app.py。

@@ -104,6 +104,56 @@ The interrupt path uses a fail-closed runtime contract:
 - `CHECKPOINT_BACKEND=memory` is restricted to SQLite/local development. It is non-persistent and cannot recover an interrupt after process restart.
 - Checkpoint payload encryption is separate from business-field encryption. `CHECKPOINT_ENCRYPTION_KEY` and `DATA_ENCRYPTION_KEY` have different key lifecycles and must not share values.
 
+## Domain Boundaries (v1.5.0)
+
+`SessionService` remains the compatibility facade for API and frontend callers. Internally it delegates to five lifecycle domains:
+
+```text
+api/routers
+-> core/session_service.py (SessionAccess + thin facade)
+   -> core/services/session_workflow.py   Session / Workflow
+   -> core/services/governance.py         Governance / Review / Gate
+   -> core/services/evidence.py           Evidence
+   -> core/services/evaluation.py         Evaluation / Redteam
+   -> core/services/audit_trace.py        Audit / Trace
+```
+
+Dependency rules:
+
+- Domain services only read/write `ProjectContext`; storage and cache access is shared through `SessionAccess`, which deliberately reads the globals from `core/session_service.py` so existing test patch points keep working.
+- Domain services never import each other or `core/session_service.py` at module scope; cross-domain effects are orchestrated explicitly by the facade or `core/governance/action_effects.py`.
+- `core/risk/*` and `core/coverage/*` are pure domain modules. `core/gates/*` may depend on them, never the reverse.
+- Human-action creation, resolution state machine, and cross-domain effects live in `core/governance/{action_factory,action_resolution,action_effects}.py`; `core/oversight_service.py` is a compatibility re-export surface only.
+
+## Deterministic Risk Model (v1.5.0)
+
+Project risk is derived from six structured factors, each on a 0–3 ordinal scale: `impact`, `autonomy`, `data_sensitivity`, `reversibility`, `scale`, `external_exposure`.
+
+- Input priority: explicit human factors (`ProjectContext.risk_profile`), scenario-manifest factors, then a deterministic legacy inference adapter for old sessions. Keyword banks are only used by the legacy adapter; they no longer decide the tier directly.
+- Aggregation: weighted score (`impact=3, autonomy=4, data_sensitivity=2, reversibility=2, scale=1, external_exposure=2`) with fixed score bands (LOW 0–4, MEDIUM 5–14, HIGH 15–21, CRITICAL 22–42) plus hard floors (for example `sensitive_personal` → at least HIGH, severe impact with autonomous action → CRITICAL).
+- LLM output may only supply explanatory text (`llm_explanation`); it never changes the tier.
+- Human override is append-only: original tier, requested tier, effective tier, floor tier, reason, actor, role, tenant and audit event are recorded. Downgrades require admin and are clamped to the deterministic floor.
+- `core/gates/risk_profile.py` is a compatibility import surface for `core.risk`.
+
+## Risk-Driven Stage 3 Coverage (v1.5.0)
+
+`core/coverage/policy.py` is the single source of truth for high-risk workflow nodes and Stage 3 node selection.
+
+- LOW requires coverage for nodes addressing `critical` failure modes; MEDIUM/HIGH/CRITICAL require nodes addressing `high` or `critical` failure modes.
+- HIGH/CRITICAL always select every required high-risk node regardless of budget; CRITICAL selects every workflow node.
+- LOW/MEDIUM/HIGH non-required nodes are sampled with `budget = max(configured_sample, ceil(min_coverage_ratio * total_nodes))` (HIGH/Critical required nodes are never truncated).
+- The Stage 3 gate enforces `STAGE3_MIN_CASES_PER_HIGH_RISK_NODE` (default 1) for each required node; LOW/MEDIUM keep the historical minimum of 1.
+- The same high-risk node definition is shared by Stage 3 selection, the `stage3_eval_failure` gate, readiness coverage warnings, Redteam coverage, and eval summaries.
+
+## Workflow State Fail-Closed
+
+未知或非法 `current_state` 不允许自动回退到 `INIT`：
+
+- 运行路径：`graph.runner.run_one_step` 与 `core.execution_service.execute_one_turn` 在进入节点前调用 `core.workflow_state_service.assert_advanceable`；未知状态由 `mark_invalid_state` 改写为 `RECOVERY_REQUIRED`，不执行任何节点。
+- 存储路径：PostgreSQL 与 SQLite 后端的 `load()` 先经 `sanitize_persisted_state`，把旧版本或人工改库留下的未知状态改写为 `RECOVERY_REQUIRED` 并保留原始值到 `last_error`。
+- 阻断态：`ERROR` / `RECOVERY_REQUIRED` 下任何推进入口抛 `WorkflowBlockedError`，API 返回 409；唯一出口是 `POST /sessions/{session_id}/workflow/recover`，目标状态必须属于 `RESUMABLE_STATES`，恢复动作写 `workflow_recovered` 审计事件。
+- 确定性：判定只依赖当前状态值，不调用 LLM、不读取外部服务。
+
 ## Review and Action Resolution Path
 
 Human review actions are resolved through service-layer coordination rather than by support modules advancing stages directly:
@@ -147,6 +197,9 @@ Stage rerun, revise, rollback, and sync-review-actions are explicit stage operat
 - `FailureMode.evidence_ids` preserves structured evidence references.
 - User materials are represented as `EvidenceSource(source_type="user_material")`.
 - Eval coverage and high-risk eval review are part of the Stage 3 gate.
+- `core/risk` is the deterministic six-factor risk authority; `core/gates/risk_profile.py` is a compatibility re-export.
+- `core/coverage/policy.py` is the shared high-risk node / Stage 3 sampling authority.
+- `core/session_service.py` is a compatibility facade over the five lifecycle domain services; domain services must not import each other or the facade at module scope.
 - `core/gates/rules/manifest.py` is the authoritative source for gate rule metadata (owner / version / changelog / safety_bottom_line).
 - `gate_evaluation_records` table (alembic V005) is the baseline data source for governance pass-rate trends. Its rows are projections of `sessions` and are deleted with the session on admin delete or retention purge; tenant backfill covers legacy NULL rows.
 - LangGraph checkpoint tables are owned by Alembic V006; the durable resume outbox is owned by V007; V008 adds `sessions.version` (optimistic locking), JSONB generated columns for list/governance queries, tenant indexes and `human_actions.tenant_id`.

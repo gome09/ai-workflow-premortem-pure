@@ -37,6 +37,8 @@ BLOCKER_TYPES: Final[tuple[str, ...]] = (
     "trace_backfill_gap",
     "final_governance",
     "expert_review",
+    "gate_rule_error",
+    "gate_data_error",
 )
 
 REQUIRED_RESOLUTIONS: Final[tuple[str, ...]] = (
@@ -62,6 +64,7 @@ REQUIRED_RESOLUTIONS: Final[tuple[str, ...]] = (
     "trace_to_eval_case",
     "create_trace_backfill_dataset",
     "approve_expert_review",
+    "retry_gate_persistence",
 )
 
 # Source of truth for blocker -> expected resolution semantics.
@@ -140,6 +143,16 @@ STAGE_ADVANCEMENT_CONTRACT: Final[dict[str, dict[str, object]]] = {
         "required_resolution": "approve_expert_review",
         "description": "CRITICAL 风险项目必须经专家复核批准后才能通过 Stage 3。",
         "approval_override_allowed": True,
+    },
+    "gate_rule_error": {
+        "required_resolution": "rerun_stage",
+        "description": "Gate 规则执行异常，评估结果不确定，必须阻断并重跑。",
+        "approval_override_allowed": False,
+    },
+    "gate_data_error": {
+        "required_resolution": "retry_gate_persistence",
+        "description": "HIGH/CRITICAL 会话的 Gate 评估记录写入失败，治理证据缺失，必须阻断。",
+        "approval_override_allowed": False,
     },
 }
 
@@ -338,6 +351,14 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         "api_method": "POST",
         "api_path_template": "/sessions/{session_id}/actions/{action_id}/resolve",
         "payload_hint": {"decision": "approve", "note": "专家复核已批准"},
+    },
+    "retry_gate_persistence": {
+        "frontend_hint": "Gate 评估记录写入失败，请重试推进或检查存储健康状态后重新评估。",
+        "api_hint": "Retry the stage gate evaluation after storage health is restored.",
+        "can_execute_via_api": False,
+        "api_method": None,
+        "api_path_template": None,
+        "payload_hint": {},
     },
 }
 

@@ -6,6 +6,7 @@ from typing import Literal, cast
 
 from core.config import settings
 from core.context_manager import build_stage_context_injection
+from core.coverage.policy import select_target_node_ids
 from core.eval_service import sync_eval_cases_from_stage3
 from core.models import ProjectContext, Stage3Output, StressTestResult, WorkflowNode
 from core.scenario_context import current_domain_profile
@@ -29,37 +30,25 @@ def _infer_scenario_type(text: str) -> Literal["normal", "edge", "adversarial"]:
 class Stage3Executor(BaseStageExecutor):
     stage_id = 3
 
-    def _select_target_nodes(self, ctx: ProjectContext, max_nodes: int = 5) -> list[WorkflowNode]:
-        """Select stress-test nodes with high-risk coverage first.
+    def _select_target_nodes(self, ctx: ProjectContext) -> list[WorkflowNode]:
+        """Select stress-test nodes through the risk-driven coverage policy.
 
-        Stage 3 used to target a single node. v0.5 keeps the deterministic runner
-        but asks the LLM to produce cases across the most risk-bearing nodes.
+        HIGH/CRITICAL projects always include every high-risk node; LOW/MEDIUM
+        use the configured budget with the minimum coverage ratio applied.
         """
         if not ctx.stage_2_output or not ctx.stage_2_output.workflow_nodes:
             return []
 
-        severity_weight = {"critical": 4, "high": 3, "medium": 1, "low": 0}
-        fm_weights = {
-            fm.id: severity_weight.get(str(fm.severity).lower(), 0)
-            for fm in (ctx.stage_1_output.failure_modes if ctx.stage_1_output else [])
-        }
-
-        scored: list[tuple[int, int, WorkflowNode]] = []
-        for index, node in enumerate(ctx.stage_2_output.workflow_nodes):
-            addressed = node.failure_modes_addressed or []
-            score = sum(fm_weights.get(fm_id, 0) for fm_id in addressed)
-            high_risk_hits = sum(1 for fm_id in addressed if fm_weights.get(fm_id, 0) >= 3)
-            scored.append((score, high_risk_hits, node))
-
-        scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
-        selected = [node for score, hits, node in scored if score > 0 or hits > 0]
-        if not selected:
-            selected = [node for _, _, node in scored]
-        return selected[:max_nodes]
+        nodes_by_id = {node.node_id: node for node in ctx.stage_2_output.workflow_nodes}
+        return [
+            nodes_by_id[node_id]
+            for node_id in select_target_node_ids(ctx)
+            if node_id in nodes_by_id
+        ]
 
     def _select_target_node(self, ctx: ProjectContext) -> WorkflowNode | None:
         """Backward-compatible helper for Markdown fallback parsing."""
-        nodes = self._select_target_nodes(ctx, max_nodes=1)
+        nodes = self._select_target_nodes(ctx)
         return nodes[0] if nodes else None
 
     def _format_target_nodes(self, nodes: list[WorkflowNode]) -> str:

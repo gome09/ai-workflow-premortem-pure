@@ -127,6 +127,14 @@ class Settings(BaseSettings):
     # T3.3 门禁规则禁用治理：显式禁用规则需配置；安全底线规则不可禁用（配置也忽略+告警）
     gate_rules_disabled: str = ""  # 逗号分隔 rule_id
 
+    # Milestone 2 风险驱动 Stage 3 coverage policy。
+    # LOW/MEDIUM 才允许预算型抽样；HIGH/CRITICAL 的高风险节点必须全覆盖。
+    stage3_low_risk_sample_nodes: int = 3
+    stage3_medium_risk_sample_nodes: int = 5
+    stage3_high_risk_sample_nodes: int = 5
+    stage3_min_coverage_ratio: float = 0.2
+    stage3_min_cases_per_high_risk_node: int = 1
+
     # T3.6 LLM Judge（spec governance-platform §5）：LLM 仅建议判分，不终裁。
     # eval_llm_judge=on 时对规则层 needs_review 的 run 生成结构化建议
     eval_llm_judge: bool = False
@@ -174,6 +182,16 @@ class Settings(BaseSettings):
             raise ValueError("SESSION_RETENTION_DAYS must be >= 0")
         if self.audit_retention_days < 0:
             raise ValueError("AUDIT_RETENTION_DAYS must be >= 0")
+        if self.stage3_low_risk_sample_nodes < 0:
+            raise ValueError("STAGE3_LOW_RISK_SAMPLE_NODES must be >= 0")
+        if self.stage3_medium_risk_sample_nodes < 0:
+            raise ValueError("STAGE3_MEDIUM_RISK_SAMPLE_NODES must be >= 0")
+        if self.stage3_high_risk_sample_nodes < 0:
+            raise ValueError("STAGE3_HIGH_RISK_SAMPLE_NODES must be >= 0")
+        if not 0.0 <= self.stage3_min_coverage_ratio <= 1.0:
+            raise ValueError("STAGE3_MIN_COVERAGE_RATIO must be between 0 and 1")
+        if self.stage3_min_cases_per_high_risk_node < 1:
+            raise ValueError("STAGE3_MIN_CASES_PER_HIGH_RISK_NODE must be >= 1")
 
         execution_mode = WorkflowExecutionMode.normalize(self.workflow_execution_mode)
         if execution_mode == WorkflowExecutionMode.LANGGRAPH_INTERRUPT:

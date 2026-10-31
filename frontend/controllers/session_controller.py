@@ -15,6 +15,9 @@ from models.api_client import (
     rename_session,
     send_message,
 )
+from models.api_client import (
+    recover_workflow as recover_workflow_api,
+)
 from models.session_state import (
     _activate_created_session,
     _append_bootstrap_exchange,
@@ -121,6 +124,22 @@ def add_materials(materials: list[str]) -> bool:
     else:
         st.error("上传失败，请重试。")
     return ok
+
+
+def recover_workflow(target_state: str, note: str = "") -> None:
+    """从阻断态显式恢复到可推进状态，并同步前端状态。"""
+    with st.spinner("正在恢复工作流..."):
+        result = recover_workflow_api(
+            st.session_state.session_id,
+            target_state,
+            note,
+        )
+    if result:
+        st.session_state.current_state = result["after"]
+        st.toast(f"工作流已恢复到：{result['after']}")
+        refresh_flags()
+        refresh_actions()
+        st.rerun()
 
 
 def handle_send(user_input: str, materials: list[str] | None = None) -> None:

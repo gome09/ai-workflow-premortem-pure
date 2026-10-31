@@ -227,6 +227,18 @@ def get_session(session_id: str) -> dict | None:
     return api_get(f"/sessions/{session_id}")
 
 
+def recover_workflow(session_id: str, target_state: str, note: str = "") -> dict | None:
+    """从 ERROR / RECOVERY_REQUIRED 显式恢复；失败返回 None 由视图层提示。"""
+    result = api_post(
+        f"/sessions/{session_id}/workflow/recover",
+        {"target_state": target_state, "note": note},
+    )
+    if result is not None:
+        invalidate_api_cache("sessions:")
+        invalidate_session_cache(session_id)
+    return result
+
+
 def list_sessions() -> list[dict]:
     result = _cached_get("sessions:list", "/sessions/", _SESSION_LIST_TTL)
     return result if isinstance(result, list) else []

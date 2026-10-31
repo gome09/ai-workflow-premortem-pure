@@ -1,9 +1,8 @@
 # tools/evidence_ranker.py
 from __future__ import annotations
 
-import uuid
-
 from core.config import settings
+from core.ids import new_id
 from core.models import EvidenceSource, ProjectContext, SourceType
 from tools.evidence_filters import is_low_quality_source
 from tools.search import SearchResult
@@ -43,7 +42,7 @@ def result_to_evidence(ctx: ProjectContext, result: SearchResult) -> EvidenceSou
         if tail.startswith("EVID-"):
             evidence_id = tail
     return EvidenceSource(
-        evidence_id=evidence_id or f"EVID-{str(uuid.uuid4())[:8]}",
+        evidence_id=evidence_id or new_id("EVID-"),
         session_id=ctx.session_id,
         title=result.title or result.url or "Untitled evidence",
         url=result.url,

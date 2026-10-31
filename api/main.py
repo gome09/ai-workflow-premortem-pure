@@ -46,6 +46,7 @@ from core.retention_service import (
     stop_retention_scheduler,
 )
 from core.version import APP_STATUS, APP_VERSION
+from core.workflow_state_service import WorkflowBlockedError
 from graph.checkpoint_manager import (
     close_interrupt_runtime,
     get_interrupt_adapter_health,
@@ -208,8 +209,23 @@ async def _tenant_isolation_handler(request: Request, exc: Exception) -> JSONRes
     return JSONResponse(status_code=404, content={"detail": "Session not found"})
 
 
+async def _workflow_blocked_handler(request: Request, exc: Exception) -> JSONResponse:
+    """工作流处于阻断态或未知状态：返回 409，调用方须走恢复入口。"""
+    blocked = exc if isinstance(exc, WorkflowBlockedError) else None
+    return JSONResponse(
+        status_code=409,
+        content={
+            "detail": "Workflow state does not allow advancement; recover the session first",
+            "state": blocked.state if blocked else "",
+            "last_error": blocked.last_error if blocked else "",
+            "recovery_endpoint": f"/sessions/{(blocked.session_id if blocked else '')}/workflow/recover",
+        },
+    )
+
+
 app.add_exception_handler(StaleContextError, _stale_context_handler)
 app.add_exception_handler(TenantIsolationError, _tenant_isolation_handler)
+app.add_exception_handler(WorkflowBlockedError, _workflow_blocked_handler)
 
 origins = [o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()]
 app.add_middleware(

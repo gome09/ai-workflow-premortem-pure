@@ -66,10 +66,9 @@ def _high_risk_failure_modes(ctx: ProjectContext) -> list[Any]:
 
 
 def _high_risk_node_ids(ctx: ProjectContext) -> set[str]:
-    mapping = _stage2_nodes_by_failure_mode(ctx)
-    node_ids: set[str] = set()
-    for fm in _high_risk_failure_modes(ctx):
-        node_ids.update(mapping.get(fm.id, []))
+    from core.coverage.policy import required_high_risk_node_ids
+
+    node_ids = set(required_high_risk_node_ids(ctx))
     if ctx.stage_2_output:
         for node in ctx.stage_2_output.workflow_nodes:
             policy = getattr(node, "oversight_policy", None)

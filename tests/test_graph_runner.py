@@ -42,8 +42,18 @@ def test_latest_reply_can_be_from_previous_stage():
     assert SessionService()._extract_latest_reply(ctx) == "阶段一确认回复"
 
 
-# def test_run_one_step_handles_unknown_state():
-#     """未知状态应该 fallback 到 INIT 节点"""
-#     # 这个测试不太好写，因为 node_init 会调 LLM
-#     # 先跳过了，后面想清楚怎么 mock 再补
-#     pass
+def test_run_one_step_unknown_state_fails_closed_without_init_fallback():
+    """未知状态必须进入 RECOVERY_REQUIRED，绝不 fallback 到 INIT 节点。"""
+    ctx = ProjectContext()
+    ctx.current_state = "legacy_state_from_old_release"  # type: ignore[assignment]
+    ctx.pending_input = "任意输入"
+
+    init_node = Mock(side_effect=AssertionError("INIT node must not be used as a fallback"))
+    with patch.dict("graph.runner.NODE_BY_STATE", {SessionState.INIT: init_node}, clear=True):
+        updated = run_one_step(ctx)
+
+    init_node.assert_not_called()
+    assert updated.current_state == SessionState.RECOVERY_REQUIRED
+    assert "invalid workflow state" in updated.last_error
+    assert updated.pending_input == ""
+    assert "workflow_state_invalid" in [event.event_type for event in updated.audit_events]

@@ -5,6 +5,13 @@ import logging
 from collections.abc import Callable
 
 from core.models import ProjectContext, SessionState
+from core.workflow_state_service import (
+    BLOCKED_STATES,
+    is_known_state,
+    mark_advancement_blocked,
+    mark_invalid_state,
+    state_value,
+)
 from graph.nodes import (
     node_init,
     node_s1_review,
@@ -52,14 +59,37 @@ def run_one_step(ctx: ProjectContext) -> ProjectContext:
         ctx.pending_input = ""
         return ctx
 
-    node_fn = NODE_BY_STATE.get(ctx.current_state)
-    if node_fn is None:
+    # Fail closed: blocked states and unknown states never execute a node and
+    # never fall back to INIT.
+    if ctx.current_state in BLOCKED_STATES:
         logger.warning(
-            "[%s] Unknown state %s; fallback to INIT node.",
+            "[%s] Workflow blocked in state %s; advancement refused.",
             ctx.session_id,
             ctx.current_state,
         )
-        node_fn = node_init
+        ctx.pending_input = ""
+        return mark_advancement_blocked(
+            ctx, f"state {state_value(ctx.current_state)} does not allow advancement"
+        )
+    if not is_known_state(ctx.current_state):
+        logger.error(
+            "[%s] Invalid workflow state %r; entering RECOVERY_REQUIRED.",
+            ctx.session_id,
+            ctx.current_state,
+        )
+        ctx.pending_input = ""
+        return mark_invalid_state(ctx, ctx.current_state)
+
+    node_fn = NODE_BY_STATE.get(ctx.current_state)
+    if node_fn is None:
+        # Known state without a registered node is still a fail-closed condition.
+        logger.error(
+            "[%s] No node registered for state %s; entering RECOVERY_REQUIRED.",
+            ctx.session_id,
+            ctx.current_state,
+        )
+        ctx.pending_input = ""
+        return mark_invalid_state(ctx, ctx.current_state)
 
     user_input = ctx.pending_input or "开始"
     ctx.pending_input = ""  # 避免同一轮输入被重复执行

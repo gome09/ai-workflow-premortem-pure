@@ -4,6 +4,7 @@ from typing import Any
 
 from core.config import settings
 from core.models import ProjectContext
+from core.risk.models import RiskFactorScores
 from scenarios import get_scenario
 
 
@@ -42,4 +43,15 @@ def attach_scenario_to_context(ctx: ProjectContext, scenario_id: str | None) -> 
     merged_config["input_sample_path"] = scenario.input_sample_path
     merged_config["applicable_stages"] = list(scenario.applicable_stages)
     ctx.scenario_config = merged_config
+
+    risk_profile = merged_config.get("risk_profile")
+    if isinstance(risk_profile, dict):
+        try:
+            ctx.risk_profile = RiskFactorScores.model_validate(
+                {**risk_profile, "source": "scenario"}
+            )
+        except Exception:
+            # Invalid manifest data must not prevent session creation; the
+            # deterministic legacy inference remains the fallback.
+            ctx.risk_profile = None
     return ctx

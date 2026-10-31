@@ -1,7 +1,7 @@
 # API 接口参考
 
 > 本文档按当前源码静态提取整理。
-> 当前仓库可直接识别的 HTTP 路由总数为 `84`（`api/routers/*.py` 76 条 + `auth/router.py` 5 条 + `/health*`/`/health` 3 条；`/metrics` 由监控组件在运行时挂载）。
+> 当前仓库可直接识别的 HTTP 路由总数为 `86`（`api/routers/*.py` 78 条 + `auth/router.py` 5 条 + `/health*`/`/health` 3 条；`/metrics` 由监控组件在运行时挂载）。
 
 > Status: Implemented（HTTP 路由按当前源码静态提取）
 
@@ -41,11 +41,17 @@
 | GET | `/sessions/{session_id}` | 获取完整会话上下文 |
 | PATCH | `/sessions/{session_id}/name` | 修改会话名称（editor / admin；租户隔离并记录审计事件） |
 | PATCH | `/sessions/{session_id}/data-classification` | 覆写会话数据分级（editor+；降级须 admin 并写审计事件） |
+| GET | `/sessions/{session_id}/risk-profile` | 读取六因子风险画像、结构/floor/生效等级与 override 历史（viewer+） |
+| PUT | `/sessions/{session_id}/risk-profile` | 显式设置六因子（0–3；editor+；写 `risk_profile_updated` 审计事件） |
+| POST | `/sessions/{session_id}/risk-profile/override` | 人工覆写风险等级（editor+；降级须 admin 且不得低于确定性 floor；写 `risk_tier_overridden` 审计事件，含原等级/请求等级/生效等级/floor/原因/操作者/租户） |
 | DELETE | `/sessions/{session_id}` | 删除会话（admin；审计归档保留，写 `session_purged` 处置事件） |
-| POST | `/chat/{session_id}` | 发送消息并推进一个执行回合 |
+| POST | `/chat/{session_id}` | 发送消息并推进一个执行回合；会话处于 `ERROR` / `RECOVERY_REQUIRED` 时返回 409 |
+| POST | `/sessions/{session_id}/workflow/recover` | 将 `ERROR` / `RECOVERY_REQUIRED` 会话显式恢复到可推进状态（editor / admin）；`target_state` 必须属于可恢复集合，写 `workflow_recovered` 审计事件 |
 | POST | `/sessions/{session_id}/materials` | 追加用户材料 |
 | POST | `/sessions/{session_id}/flags/resolve` | 处理需核验项 |
 | GET | `/sessions/{session_id}/export` | 导出报告（`json` 或 `markdown`） |
+
+阻断语义：`/chat`、阶段推进与动作处理入口会在服务层调用 `core.workflow_state_service.assert_advanceable`。会话处于 `ERROR` / `RECOVERY_REQUIRED`（含存储层发现未知持久化状态后自动改写为 `RECOVERY_REQUIRED` 的情形）时返回 HTTP 409 `WorkflowBlockedError`，不执行任何节点；唯一出口是上述 `/workflow/recover` 端点。目标状态非法返回 400、目标状态合法但当前未阻断返回 409、会话不存在返回 404。
 
 ---
 

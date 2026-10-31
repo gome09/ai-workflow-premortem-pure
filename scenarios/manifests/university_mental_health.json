@@ -7,7 +7,16 @@
   "mock_fixture": "university_ai",
   "default_config": {
     "auto_bootstrap_input": true,
-    "stage_context_note": "演示重点：敏感学生数据、心理干预、公平性与高风险人工复核要求。"
+    "stage_context_note": "演示重点：敏感学生数据、心理干预、公平性与高风险人工复核要求。",
+    "risk_profile": {
+      "impact": 2,
+      "autonomy": 1,
+      "data_sensitivity": 2,
+      "reversibility": 2,
+      "scale": 1,
+      "external_exposure": 1,
+      "rationale": "高校心理健康预警：误报/漏报影响学生，处理敏感行为数据，预警由咨询师跟进而非自动干预。"
+    }
   },
   "applicable_stages": [
     "init",

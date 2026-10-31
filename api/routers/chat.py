@@ -14,6 +14,7 @@ from core.stage_resolution_service import (
     get_next_required_operation,
 )
 from core.stage_scope_service import current_stage_id
+from core.workflow_state_service import WorkflowBlockedError
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -51,5 +52,9 @@ def send_message(
             next_required_operation=get_next_required_operation(project_ctx, stage_id),
             stage_resolution_summary=build_stage_resolution_summary(project_ctx),
         )
+    except WorkflowBlockedError:
+        # 阻断态必须冒泡到全局 handler，返回 409 + 恢复入口；
+        # 不能被下面的 ValueError 分支降级成 404。
+        raise
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

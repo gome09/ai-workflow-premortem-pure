@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import streamlit as st
-from controllers.session_controller import add_materials, handle_send
-from models.mappings import CHAT_PLACEHOLDER
+from controllers.session_controller import add_materials, handle_send, recover_workflow
+from models.mappings import BLOCKED_STATES, CHAT_PLACEHOLDER, RECOVERABLE_STATES, STATE_LABELS
 
 from views.live_oversight import render_message_with_oversight
 from views.welcome import render_welcome
@@ -67,8 +67,26 @@ def _render_chat_workspace() -> None:
             else:
                 st.warning("请先输入或上传资料内容。")
 
-    # ── 快捷操作按钮（仅在 review 状态显示）────────────────────────────────
+    # ── 阻断态恢复表单（error / recovery_required）─────────────────────────
     state = st.session_state.current_state
+    if state in BLOCKED_STATES:
+        st.markdown("---")
+        st.error("当前工作流已阻断，不会自动推进。请选择目标状态后显式恢复。")
+        with st.form("workflow_recovery_form"):
+            target_state = st.selectbox(
+                "恢复到哪个状态",
+                options=list(RECOVERABLE_STATES),
+                format_func=lambda value: "{} {}".format(
+                    STATE_LABELS.get(value, ("⚪", value))[0],
+                    STATE_LABELS.get(value, ("⚪", value))[1],
+                ),
+            )
+            note = st.text_area("恢复说明（可选）", height=80, key="recovery_note")
+            submitted = st.form_submit_button("🛠️ 恢复工作流", use_container_width=True)
+        if submitted:
+            recover_workflow(target_state, note)
+
+    # ── 快捷操作按钮（仅在 review 状态显示）────────────────────────────────
     review_states = {"s1_review", "s2_review", "s3_review", "s4_review"}
 
     if state in review_states:
@@ -94,7 +112,7 @@ def _render_chat_workspace() -> None:
 
     # ── 输入框 ────────────────────────────────────────────────────────────────
     placeholder = CHAT_PLACEHOLDER.get(state, "输入消息...")
-    disabled = state == "complete"
+    disabled = state == "complete" or state in BLOCKED_STATES
 
     if user_input := st.chat_input(placeholder, disabled=disabled):
         handle_send(user_input)

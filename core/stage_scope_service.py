@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.models import ProjectContext
+from core.models import ProjectContext, SessionState
 
 _STATE_TO_STAGE: dict[str, int] = {
     "init": 1,
@@ -35,17 +35,17 @@ def _state_value(ctx: ProjectContext) -> str:
 def current_stage_id(ctx: ProjectContext) -> int:
     """Return the stage currently responsible for user-facing advancement.
 
-    INIT still maps to stage 1 because the first actionable operation is to run
-    Stage 1. Unknown states fall back to the highest generated output stage, or
-    Stage 1 when no outputs exist.
+    INIT maps to stage 1 because the first actionable operation is to run
+    Stage 1. Blocked states (`ERROR` / `RECOVERY_REQUIRED`) and unknown states
+    return 0 (no actionable stage) — they must never silently fall back to
+    Stage 1 or the highest generated output stage.
     """
+    if ctx.current_state in {SessionState.ERROR, SessionState.RECOVERY_REQUIRED}:
+        return 0
     state_stage = _STATE_TO_STAGE.get(_state_value(ctx))
     if state_stage is not None:
         return state_stage
-    generated = [
-        stage for stage in range(1, 5) if getattr(ctx, f"stage_{stage}_output", None) is not None
-    ]
-    return max(generated) if generated else 1
+    return 0
 
 
 def reached_stage_ids(ctx: ProjectContext) -> list[int]:

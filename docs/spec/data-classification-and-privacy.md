@@ -1,12 +1,12 @@
 # 数据分类分级与隐私保护设计规格
 
-> Status: Implemented（自 v1.0.3 起落地 T1.1–T1.9：数据分级 / 字段加密 / PII 掩码 / AI 生成标识 / PIA，沿用至今。落地任务见 [../archive/plan/phase-1-security-compliance.md](../archive/plan/phase-1-security-compliance.md)）
-> Last updated: 2026-09-21
+> Status: Implemented（自 v1.0.3 起落地 T1.1–T1.9：数据分级 / 字段加密 / PII 掩码 / AI 生成标识 / PIA，沿用至今；v1.4.0 增加解密 fail-closed 与事件/审计统一脱敏。落地任务见 [../archive/plan/phase-1-security-compliance.md](../archive/plan/phase-1-security-compliance.md)）
+> Last updated: 2026-10-31
 > 合规依据：PIPL 第 28/51/55/56/57 条、DSL 第 21 条、《人工智能生成合成内容标识办法》（2025-09-01 施行）、EU AI Act Art.50 透明度义务（2026-08-02 生效）、GB/T 22239-2019 日志留存要求
 
 ---
 
-> **阅读提示**：第 1 节是 2026-07-13 落地前历史基线，不代表当前实现；当前能力及其启用条件见第 3–6 节。字段加密代码已实现，但默认生产初始化不会生成 `DATA_ENCRYPTION_KEY`，未配置时仍为明文存储。
+> **阅读提示**：第 1 节是 2026-07-13 落地前历史基线，不代表当前实现；当前能力及其启用条件见第 3–6 节。字段加密自 v1.4.0 起为 fail-closed：PostgreSQL 后端或 `APP_ENV=production` 下缺失或错误 `DATA_ENCRYPTION_KEY` 会抛 `FieldDecryptionError`，不会静默返回明文；Docker 部署由 `make setup` 生成密钥，非 Docker 部署仍须显式配置。
 
 ## 1. 落地前历史基线（2026-07-13）
 
@@ -62,9 +62,18 @@
 ### 4.1 字段级静态加密
 
 - **方案**：应用层对称加密（`cryptography.Fernet`），密钥来自环境变量 `DATA_ENCRYPTION_KEY`（走 `.env`/secrets，与 `JWT_SECRET` 同级管理）。
-- **加密范围**：`data_classification ∈ {business_internal, sensitive_personal}` 会话的用户材料字段——`user_materials`、`evidence_sources.summary/claims`（source_type=user_material 的记录）。`public_demo` 保持明文（保住"零配置离线演示"这一核心亮点）。
-- **实现位置**：`storage/backends/` 的 `_build_context_json_for_storage`（写侧）与 `load()`（读侧）各加一层 encode/decode 钩子，密文带 `enc:v1:` 前缀以便识别与将来轮换；PostgreSQL 与 SQLite 两个后端行为一致。
-- **降级行为**：未配置密钥时——demo/lite 模式静默明文（现状不回退）；生产模式（postgres backend）启动时打 WARNING 并在 `/health` 暴露 `data_encryption: disabled`。
+- **加密范围**（`data_classification ∈ {business_internal, sensitive_personal}`；`public_demo` 保持明文）：`research_target`、`research_goal`、`user_materials`、`evidence_sources[*].summary/claims`（仅 `source_type=user_material`）、`conversation_history[*][*].content`、`pending_actions[*]` 的自由文本与 `payload_before/payload_after`、`report_artifacts[*].content_markdown/content_json`；投影表列级加密由 `ENCRYPTED_COLUMNS` 注册（`human_actions`、`evidence_sources`、`report_artifacts`）。权威实现见 `storage/field_security.py`。
+- **实现位置**：上下文写入侧 `encrypt_fields_for_storage`（`_build_context_json_for_storage` 截断之后、`json.dumps` 之前）、读取侧 `decrypt_fields_after_load`（`migrate_context` 之后）；投影表用 `encrypt_row_columns` / `decrypt_row_columns`。密文带 `enc:v1:` 前缀以便识别与将来轮换；PostgreSQL 与 SQLite 两个后端行为一致。
+- **fail-closed（v1.4.0 起）**：`APP_ENV=production` 或 `storage_backend != sqlite` 时，检测到 `enc:v1:` 密文但无密钥、或密钥错误/密文损坏，一律抛 `FieldDecryptionError`，不会把密文当明文返回，也不会静默降级为明文读取。SQLite 离线演示允许无密钥明文。
+
+### 3.x 六因子风险模型与数据敏感性（v1.5.0）
+
+- `ProjectContext.risk_profile` 记录 `impact` / `autonomy` / `data_sensitivity` / `reversibility` / `scale` / `external_exposure` 六个 0–3 因子；`data_sensitivity` 与 `data_classification` 共同参与确定性风险等级计算。
+- `data_classification=sensitive_personal` 是硬性风险地板（至少 HIGH）；与高风险结构因子组合时升为 CRITICAL，任何人工 override 都不应突破该 floor。
+- 人工风险 override 以 append-only `RiskOverrideRecord` 记录原等级、请求等级、生效等级、floor、原因、操作者、角色与 `tenant_id`，并写入 `risk_tier_overridden` 审计事件；降级仅 admin 可执行且仍受 floor 限制。
+- LLM 仅可提供 `llm_explanation` 解释文本，不参与因子或最终等级计算。
+
+- **降级行为**：未配置密钥时——demo/lite 模式静默明文；生产模式（postgres backend）启动时打 WARNING 并在 `/health` 暴露 `data_encryption: disabled`。
 - **当前部署事实（2026-10-27）**：`.env.example` 的 `DATA_ENCRYPTION_KEY` 默认为空，但 `make setup` / `scripts/gen_secrets.sh` 会生成 `secrets/data_encryption_key` 并以 Docker secrets 注入；环境变量仍然优先于 secret 文件。非 Docker 部署仍需显式设置 `DATA_ENCRYPTION_KEY`，并在启动后确认 `/health` 返回 `data_encryption=enabled`。
 - **不做**：全库透明加密（TDE 属部署层，不属应用层）、可搜索加密（当前无按材料内容检索的需求）。
 
@@ -83,6 +92,16 @@
 - SQLite/local 可使用 memory checkpoint，但它不持久化、进程重启后不可恢复，不得用于生产。
 - 删除会话时先按 tenant-scoped thread ID 清理 checkpoint；清理失败则保留权威业务会话并返回失败，避免出现“业务记录已删除但敏感执行快照残留”的假性成功。
 
+### 4.4 事件/审计脱敏（v1.4.0）
+
+事件与审计是独立的持久化路径（`session_events` / `audit_events`），不能沿用上下文加密假设，因此统一在写入层脱敏：
+
+- 入口：`core/session_service.py::_log_event` 与 `core/audit_service.py` 在落库前调用 `core/data_protection.py::redact_payload` / `snapshot`。
+- 规则：`business_internal` / `sensitive_personal` 的自由文本键（`user_input` / `summary` / `claims` / `description` / `trigger_reason` / `reviewer_note` / `content` / `payload_before` / `payload_after` / `title` 等，权威清单见 `FREE_TEXT_KEYS`）整值替换为确定性摘要信封 `{"_redacted": true, "sha256": ..., "length": ...}`；非敏感字符串超过 `MAX_PLAIN_STRING`（200）截断。
+- 用户消息事件只记录 `input_sha256` / `input_length` / 状态，不落原文。
+- `public_demo` 保持可读，保住离线演示的审计可观测性。
+- 确定性：同一输入与同一分级必得同一信封，不依赖随机数或外部服务，便于测试与审计比对。
+
 ## 5. 子系统③：AI 生成内容标识（《标识办法》+ EU AI Act Art.50）
 
 - **Markdown 报告**：标题后首屏插入双语显式标识块（现有"## 19. Disclaimer"保留不动，保证向后兼容）：
@@ -99,6 +118,7 @@
 
 - **留存策略执行化**：`core/config.py` 提供 `audit_retention_days`（默认 **183**）与 `session_retention_days`（默认 0=永久）。`core/retention_service.py` 在应用 lifespan 启动后按 `RETENTION_SWEEP_INTERVAL_SECONDS`（默认 86400 秒）周期扫描，首次扫描在启动后一个周期执行。`RETENTION_DRY_RUN` 默认 `true`，只统计候选不写库；显式设为 `false` 才实际删除。到期会话走与管理员删除一致的链路（checkpoint → 审计归档 → 投影表级联 → 缓存失效）；到期审计事件同时删除活动表与归档表，按 `RETENTION_BATCH_SIZE`（默认 1000）分批。`/health` 暴露 `retention_enabled`、`retention_dry_run` 与 `retention_scheduler` 状态。
 - **删除能力**：新增 `DELETE /sessions/{id}`（admin），级联删除各独立表记录，但**审计事件不删除**（改为写入一条 `session_purged` 审计事件保留处置痕迹）——PIPL 删除权与审计完整性的平衡点。
+- **派生数据与租户边界（v1.4.0）**：`purge_session` 除 `sessions` 外还删除 `gate_evaluation_records` 等投影/派生化数据；所有删除谓词都带 `tenant_id`（PostgreSQL 为 `session_id = %s AND tenant_id = %s::uuid`），仅在 `tenant_id` 为空的历史行上退化为按会话 ID 删除，避免跨租户误删。留存执行器从 `list_expired_sessions` 逐行取 `session_id` + `tenant_id` 后调用同一删除链路，因此 retention 与管理员删除的数据覆盖范围一致，且不会跨租户删除。回归测试见 `tests/test_retention_tenant_scope.py`。
 - **备份指引**：`docs/` 补充生产部署备份章节（`pg_dump` 定时 + volume 快照 + 恢复演练清单），属文档交付，不写代码。
 
 ## 7. 子系统⑤：PIA 支持（PIPL 55/56 条）
@@ -113,15 +133,17 @@
 ```
 用户粘贴材料
   → 四类正则 PII 扫描 → sensitive_info finding + 命中时自动数据升级（其他敏感语义需人工标级）
-  → 落库：business_internal 及以上字段级加密（新）
+  → 落库：business_internal 及以上字段级加密；生产/PG 缺密钥或密钥错误 fail-closed
+  → 事件/审计：自由文本改写为 {"_redacted", "sha256", "length"}，用户消息只留 input_sha256/input_length
   → 可选中断执行：完整 ProjectContext 写入独立 Fernet 加密的 PostgreSQL checkpoint
   → 进 prompt：evidence/user_materials 路径可选 PII 掩码；直接消息/历史当前不覆盖 → DeepSeek API
   → 报告导出：首屏双语 AI 标识（新）+ 分级标签展示
-  → 生命周期：留存策略声明 / admin 删除 + checkpoint 清理 + 审计痕迹（新）
+  → 生命周期：retention 定期清理 / admin 删除（checkpoint → 派生表 → 租户谓词）+ 审计痕迹
 ```
 
 ## 9. 兼容性与验证
 
 - `data_classification` 字段经 `core/migrations/` 的 ProjectContext schema 迁移添加（默认 `business_internal`，存量演示会话由场景 ID 回填 `public_demo`）；数据库表结构无新表，PostgreSQL 侧无 alembic 变更。
 - 加密开关关闭时全部现有测试不回退；开启时新增读写往返测试（两后端各一组）。
+- v1.4.0 新增回归测试：`tests/test_field_security_extended.py`（加密 round-trip、错误密钥/错误租户 fail-closed）、`tests/test_data_protection_redaction.py`（事件/审计脱敏确定性）、`tests/test_retention_tenant_scope.py`（retention 覆盖派生表且不跨租户）。
 - 验收口径（对应路线图阶段 1）：存储层指定敏感字段的加密代码已实现（是否启用取决于密钥）；高敏场景 PIA 已按当前实现边界复核；报告标识中文化且首屏可见。

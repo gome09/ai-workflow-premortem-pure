@@ -125,16 +125,9 @@ def build_eval_summary(ctx: ProjectContext) -> dict:
         fm.id for fm in (ctx.stage_1_output.failure_modes if ctx.stage_1_output else [])
     }
 
-    high_risk_failure_modes = {
-        fm.id
-        for fm in (ctx.stage_1_output.failure_modes if ctx.stage_1_output else [])
-        if str(fm.severity).lower() in {"high", "critical"}
-    }
-    high_risk_nodes = set()
-    if ctx.stage_2_output:
-        for node in ctx.stage_2_output.workflow_nodes:
-            if high_risk_failure_modes.intersection(set(node.failure_modes_addressed or [])):
-                high_risk_nodes.add(node.node_id)
+    from core.coverage.policy import required_high_risk_node_ids
+
+    high_risk_nodes = required_high_risk_node_ids(ctx)
 
     human_actions = ctx.pending_actions
     resolved_actions = [a for a in human_actions if a.status == "resolved"]

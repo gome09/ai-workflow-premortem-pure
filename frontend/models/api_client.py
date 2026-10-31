@@ -8,12 +8,19 @@ from models.auth import _auth_headers, _refresh_access_token
 from models.config import API_BASE
 from models.stage_envelope import apply_stage_operation_result, stage_operation_items
 
+# 模块级共享 HTTP 连接池：一次页面渲染内会发起多次后端调用，复用同一 TCP
+# 连接（keep-alive），避免每次 api_* 调用都新建连接。
+_http_session = requests.Session()
+_http_adapter = requests.adapters.HTTPAdapter(pool_connections=10, pool_maxsize=20)
+_http_session.mount("http://", _http_adapter)
+_http_session.mount("https://", _http_adapter)
+
 
 def api_post(path: str, body: dict) -> dict | None:
     try:
-        r = requests.post(f"{API_BASE}{path}", json=body, headers=_auth_headers(), timeout=120)
+        r = _http_session.post(f"{API_BASE}{path}", json=body, headers=_auth_headers(), timeout=120)
         if r.status_code == 401 and _refresh_access_token():
-            r = requests.post(f"{API_BASE}{path}", json=body, headers=_auth_headers(), timeout=120)
+            r = _http_session.post(f"{API_BASE}{path}", json=body, headers=_auth_headers(), timeout=120)
         r.raise_for_status()
         return r.json()
     except requests.exceptions.Timeout:
@@ -41,9 +48,9 @@ def api_post(path: str, body: dict) -> dict | None:
 
 def api_get(path: str) -> dict | list | None:
     try:
-        r = requests.get(f"{API_BASE}{path}", headers=_auth_headers(), timeout=30)
+        r = _http_session.get(f"{API_BASE}{path}", headers=_auth_headers(), timeout=30)
         if r.status_code == 401 and _refresh_access_token():
-            r = requests.get(f"{API_BASE}{path}", headers=_auth_headers(), timeout=30)
+            r = _http_session.get(f"{API_BASE}{path}", headers=_auth_headers(), timeout=30)
         r.raise_for_status()
         return r.json()
     except requests.exceptions.Timeout:
@@ -63,9 +70,9 @@ def api_get(path: str) -> dict | list | None:
 
 def api_patch(path: str, body: dict) -> dict | None:
     try:
-        r = requests.patch(f"{API_BASE}{path}", json=body, headers=_auth_headers(), timeout=30)
+        r = _http_session.patch(f"{API_BASE}{path}", json=body, headers=_auth_headers(), timeout=30)
         if r.status_code == 401 and _refresh_access_token():
-            r = requests.patch(f"{API_BASE}{path}", json=body, headers=_auth_headers(), timeout=30)
+            r = _http_session.patch(f"{API_BASE}{path}", json=body, headers=_auth_headers(), timeout=30)
         r.raise_for_status()
         return r.json()
     except requests.exceptions.RequestException as e:
@@ -76,9 +83,9 @@ def api_patch(path: str, body: dict) -> dict | None:
 
 def api_delete(path: str) -> dict | None:
     try:
-        r = requests.delete(f"{API_BASE}{path}", headers=_auth_headers(), timeout=30)
+        r = _http_session.delete(f"{API_BASE}{path}", headers=_auth_headers(), timeout=30)
         if r.status_code == 401 and _refresh_access_token():
-            r = requests.delete(f"{API_BASE}{path}", headers=_auth_headers(), timeout=30)
+            r = _http_session.delete(f"{API_BASE}{path}", headers=_auth_headers(), timeout=30)
         r.raise_for_status()
         try:
             return r.json()

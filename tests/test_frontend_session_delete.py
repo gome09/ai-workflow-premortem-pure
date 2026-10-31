@@ -54,7 +54,7 @@ def test_api_delete_exists_and_retries_on_401():
     fn, path = _extract_function("api_delete")
     src = ast.get_source_segment(FRONTEND_SOURCES[path], fn)
     assert src is not None
-    assert "requests.delete(" in src, "api_delete 必须发起 DELETE 请求"
+    assert "_http_session.delete(" in src, "api_delete 必须通过共享连接池发起 DELETE 请求"
     assert "r.status_code == 401 and _refresh_access_token()" in src, (
         "api_delete 必须在 401 时用 refresh token 重试（与 api_post/api_get 同模式）"
     )

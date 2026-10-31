@@ -28,18 +28,17 @@ services:
   frontend:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.frontend
     command: streamlit run frontend/app.py --server.port 8501 --server.address 0.0.0.0
-    env_file: .env
+    # Lite 为演示模式：显式开启免登录，且不再通过 env_file 注入后端配置与密钥。
     environment:
       - API_BASE=http://api:8000
-      - STORAGE_BACKEND=sqlite
+      - DEMO_AUTO_AUTH=true
       - HOME=/tmp
     ports:
       - "8501:8501"
     volumes:
       - ./frontend:/app/frontend
-      - ./config:/app/config
       - streamlit_tmp:/tmp
     depends_on:
       - api

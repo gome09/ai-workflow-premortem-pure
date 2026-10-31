@@ -102,17 +102,14 @@ services:
   frontend:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.frontend
       target: runtime
     container_name: aiwf_frontend
     restart: unless-stopped
     command: streamlit run frontend/app.py --server.port 8501 --server.address 0.0.0.0
-    secrets:
-      - jwt_secret
-    env_file: .env
+    # 前端镜像只消费 API_BASE 与演示开关：不挂载业务密钥、不读取 .env、
+    # 也不注入 POSTGRES_HOST/REDIS_HOST，避免 UI 容器持有数据库凭据。
     environment:
-      POSTGRES_HOST: postgres
-      REDIS_HOST: redis
       API_BASE: http://api:8000
       DEMO_AUTO_AUTH: "false"
     depends_on:

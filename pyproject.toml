@@ -55,6 +55,20 @@ dev = [
     "pytest-cov>=6.0",  # CI 覆盖率产出（Wave E Task 16）
 ]
 
+# 前端镜像依赖组（PEP 735）。生产前端镜像只执行
+# `uv sync --frozen --no-install-project --only-group frontend`，
+# 不携带 API 依赖（psycopg / langchain / fastapi 等），实现镜像级前后端隔离。
+# 上方主依赖保留同名前端的包，是为了本地 `uv run pytest` 的 AppTest 冒烟测试
+# 与 `make demo-ui` 仍能在完整开发环境中运行。
+[dependency-groups]
+frontend = [
+    "streamlit>=1.40.0",
+    "altair>=5.0.0",
+    "pandas>=2.0.0",
+    "requests>=2.31.0",
+    "python-dotenv>=1.0.0",
+]
+
 [project.urls]
 Repository = "https://github.com/gome09/ai-workflow-premortem-pure"
 Changelog = "https://github.com/gome09/ai-workflow-premortem-pure/blob/main/CHANGELOG.md"

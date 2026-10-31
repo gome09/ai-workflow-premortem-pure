@@ -182,5 +182,6 @@ uv run pytest tests/ -q
 ├── docker-compose.yml          # Docker 生产部署配置
 ├── docker-compose.override.yml # Docker 开发覆盖（HTTP 无 TLS、热重载、端口直连，与 yml 自动合并）
 ├── docker-compose.lite.yml     # Docker 轻量演示配置
-└── Dockerfile
+├── Dockerfile                  # API 镜像（含存储 / LLM 运行时）
+└── Dockerfile.frontend         # 前端镜像（仅 Streamlit 依赖组，不含后端代码与凭据）
 ```

@@ -58,6 +58,15 @@ dev = [
     { name = "ruff" },
 ]
 
+[package.dev-dependencies]
+frontend = [
+    { name = "altair" },
+    { name = "pandas" },
+    { name = "python-dotenv" },
+    { name = "requests" },
+    { name = "streamlit" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.13.0" },
@@ -93,6 +102,15 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
 ]
 provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+frontend = [
+    { name = "altair", specifier = ">=5.0.0" },
+    { name = "pandas", specifier = ">=2.0.0" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
+    { name = "requests", specifier = ">=2.31.0" },
+    { name = "streamlit", specifier = ">=1.40.0" },
+]
 
 [[package]]
 name = "aiohappyeyeballs"

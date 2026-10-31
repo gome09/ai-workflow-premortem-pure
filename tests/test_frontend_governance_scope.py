@@ -18,10 +18,17 @@ def test_governance_page_explicitly_marks_real_business_scope() -> None:
 
 
 def test_governance_page_distinguishes_empty_data_from_request_failure() -> None:
-    assert "response.raise_for_status()" in SOURCE
+    assert "get_governance_overview()" in SOURCE
     assert "这不是正常的空数据状态" in SOURCE
     assert "当前暂无真实业务会话数据" in SOURCE
     assert "演示会话即使存在，也不会计入治理总览" in SOURCE
+
+
+def test_governance_page_reads_via_api_client_without_direct_requests() -> None:
+    assert "import requests" not in SOURCE
+    assert "requests.get" not in SOURCE
+    assert "get_governance_gate_trends()" in SOURCE
+    assert "get_governance_actions_backlog()" in SOURCE
 
 
 def test_governance_charts_keep_axes_readable_for_sparse_real_data() -> None:

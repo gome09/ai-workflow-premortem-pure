@@ -29,6 +29,14 @@ from models.api_client import (
 
 def render_redteam_section() -> None:
     with st.expander("🛡️ 红队覆盖", expanded=False):
+        if not st.toggle(
+            "加载红队数据",
+            key=f"redteam_load_{st.session_state.session_id}",
+            help="默认不请求红队接口；打开后按现有逻辑加载用例与覆盖率。",
+        ):
+            st.caption("红队数据默认懒加载，打开上方开关后加载。")
+            return
+
         redteam_cases = list_redteam_cases(st.session_state.session_id)
         redteam_coverage = get_redteam_coverage(st.session_state.session_id)
         render_redteam_panel(cases=redteam_cases, coverage=redteam_coverage)
@@ -71,6 +79,14 @@ def render_redteam_section() -> None:
 
 def render_eval_panel() -> None:
     with st.expander("🧪 评测用例 / 数据集 / 实验", expanded=False):
+        if not st.toggle(
+            "加载评测与红队数据",
+            key=f"eval_load_{st.session_state.session_id}",
+            help="默认不请求评测接口；打开后加载用例、数据集与实验。",
+        ):
+            st.caption("评测数据默认懒加载，打开上方开关后加载。")
+            return
+
         eval_cases = list_eval_cases(st.session_state.session_id)
         eval_runs = list_eval_runs(st.session_state.session_id)
         eval_datasets = list_eval_datasets(st.session_state.session_id)

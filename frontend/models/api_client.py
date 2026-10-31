@@ -24,6 +24,7 @@ _HEALTH_TTL = 30.0
 _STATIC_READ_TTL = 600.0
 _SESSION_LIST_TTL = 10.0
 _SESSION_READ_TTL = 5.0
+_GOVERNANCE_TTL = 30.0
 
 
 def _cached_get(cache_key: str, path: str, ttl: float):
@@ -229,6 +230,24 @@ def get_session(session_id: str) -> dict | None:
 def list_sessions() -> list[dict]:
     result = _cached_get("sessions:list", "/sessions/", _SESSION_LIST_TTL)
     return result if isinstance(result, list) else []
+
+
+def get_governance_overview() -> dict | None:
+    """治理总览聚合指标；30 秒 TTL，失败返回 None 交由视图层提示。"""
+    result = _cached_get("governance:overview", "/governance/overview", _GOVERNANCE_TTL)
+    return result if isinstance(result, dict) else None
+
+
+def get_governance_gate_trends() -> list[dict] | None:
+    result = _cached_get("governance:gate-trends", "/governance/gate-trends", _GOVERNANCE_TTL)
+    return result if isinstance(result, list) else None
+
+
+def get_governance_actions_backlog() -> list[dict] | None:
+    result = _cached_get(
+        "governance:actions-backlog", "/governance/actions-backlog", _GOVERNANCE_TTL
+    )
+    return result if isinstance(result, list) else None
 
 
 def rename_session(session_id: str, name: str) -> dict | None:

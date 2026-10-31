@@ -126,49 +126,77 @@ def _render_session_management() -> None:
     _render_session_list()
 
 
+_SESSION_PAGE_SIZE = 20
+_SESSION_SEARCH_FIELDS = ("session_name", "research_target", "scenario_name", "domain")
+
+
 def _render_session_list() -> None:
     sessions = list_sessions()
     is_admin = st.session_state.get("user_role") == "admin"
-    if sessions:
-        st.caption(f"最近 {len(sessions)} 个会话")
-        for s in sessions[:10]:
-            icon, state_label = STATE_LABELS.get(s["current_state"], ("⚪", ""))
-            raw_label = (
-                s.get("session_name")
-                or s.get("research_target")
-                or s.get("scenario_name")
-                or "未命名会话"
-            )
-            domain = s.get("domain") or ""
-
-            # 高亮当前会话
-            is_current = s["session_id"] == st.session_state.session_id
-
-            session_event = consume_session_event(
-                render_session_item(
-                    session_id=s["session_id"],
-                    label=raw_label,
-                    icon=icon,
-                    state_label=state_label,
-                    domain=domain,
-                    is_current=is_current,
-                    disabled=st.session_state.get("user_role") == "viewer",
-                    can_delete=is_admin,
-                )
-            )
-            if session_event and session_event.get("action") == "rename":
-                rename_session_event(s["session_id"], session_event.get("name", ""))
-            elif session_event and session_event.get("action") == "delete":
-                confirm_delete_session(
-                    s["session_id"],
-                    raw_label,
-                    s.get("current_state", ""),
-                    is_current,
-                )
-            elif session_event and session_event.get("action") == "select":
-                select_session(s)
-    else:
+    if not sessions:
         st.caption("暂无历史会话")
+        return
+
+    keyword = st.text_input(
+        "搜索会话",
+        key="session_filter",
+        placeholder="按会话名 / 场景 / 领域筛选",
+        label_visibility="collapsed",
+    ).strip().lower()
+
+    if keyword:
+        visible_sessions = [
+            s
+            for s in sessions
+            if keyword in " ".join(str(s.get(field) or "") for field in _SESSION_SEARCH_FIELDS).lower()
+        ]
+    else:
+        visible_sessions = sessions
+
+    limit = max(int(st.session_state.get("session_list_limit", _SESSION_PAGE_SIZE)), _SESSION_PAGE_SIZE)
+    st.caption(f"显示 {min(limit, len(visible_sessions))} / {len(visible_sessions)} 个会话")
+
+    for s in visible_sessions[:limit]:
+        icon, state_label = STATE_LABELS.get(s["current_state"], ("⚪", ""))
+        raw_label = (
+            s.get("session_name")
+            or s.get("research_target")
+            or s.get("scenario_name")
+            or "未命名会话"
+        )
+        domain = s.get("domain") or ""
+
+        # 高亮当前会话
+        is_current = s["session_id"] == st.session_state.session_id
+
+        session_event = consume_session_event(
+            render_session_item(
+                session_id=s["session_id"],
+                label=raw_label,
+                icon=icon,
+                state_label=state_label,
+                domain=domain,
+                is_current=is_current,
+                disabled=st.session_state.get("user_role") == "viewer",
+                can_delete=is_admin,
+            )
+        )
+        if session_event and session_event.get("action") == "rename":
+            rename_session_event(s["session_id"], session_event.get("name", ""))
+        elif session_event and session_event.get("action") == "delete":
+            confirm_delete_session(
+                s["session_id"],
+                raw_label,
+                s.get("current_state", ""),
+                is_current,
+            )
+        elif session_event and session_event.get("action") == "select":
+            select_session(s)
+
+    if len(visible_sessions) > limit:
+        if st.button("显示更多（+20）", key="load_more_sessions", use_container_width=True):
+            st.session_state.session_list_limit = limit + _SESSION_PAGE_SIZE
+            st.rerun()
 
 
 def _render_current_progress() -> None:

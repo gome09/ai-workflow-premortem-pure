@@ -29,33 +29,26 @@ def _translate_labels(data: dict, label_map: dict) -> dict:
     return {label_map.get(k, k): v for k, v in data.items()}
 
 
-def render_governance_overview(api_base: str, token: str) -> None:
+def render_governance_overview() -> None:
     """治理总览页：指标卡片 + 状态/风险分布 + 通过率趋势 + 积压动作表。"""
     import altair as alt
     import pandas as pd
-    import requests
     import streamlit as st
+    from models.api_client import (
+        get_governance_actions_backlog,
+        get_governance_gate_trends,
+        get_governance_overview,
+    )
 
-    headers = {"Authorization": f"Bearer {token}"}
     st.header("治理总览")
     st.info(
         "统计口径：仅统计当前租户的真实业务会话；四个内置场景及其他 "
         "public_demo 演示会话均已排除，不会进入下方指标、趋势或积压动作。"
     )
 
-    try:
-        response = requests.get(f"{api_base}/governance/overview", headers=headers, timeout=10)
-        response.raise_for_status()
-        overview = response.json()
-    except requests.exceptions.JSONDecodeError:
-        st.error("治理总览数据加载失败：接口返回了无法解析的数据。")
-        return
-    except requests.exceptions.HTTPError as exc:
-        status_code = exc.response.status_code if exc.response is not None else "未知"
-        st.error(f"治理总览数据加载失败（HTTP {status_code}），这不是正常的空数据状态。")
-        return
-    except requests.exceptions.RequestException as exc:
-        st.error(f"治理总览数据加载失败：无法连接治理接口（{exc}）。")
+    overview = get_governance_overview()
+    if overview is None:
+        st.error("治理总览数据加载失败：无法获取治理接口数据，这不是正常的空数据状态。")
         return
 
     col1, col2, col3, col4 = st.columns(4)
@@ -185,12 +178,9 @@ def render_governance_overview(api_base: str, token: str) -> None:
 
     st.subheader("门禁通过率趋势（8 周）")
     trends_failed = False
-    try:
-        response = requests.get(f"{api_base}/governance/gate-trends", headers=headers, timeout=10)
-        response.raise_for_status()
-        trends = response.json()
-    except (requests.exceptions.RequestException, ValueError) as exc:
-        st.warning(f"真实业务门禁趋势加载失败：{exc}")
+    trends = get_governance_gate_trends()
+    if trends is None:
+        st.warning("真实业务门禁趋势加载失败。")
         trends = []
         trends_failed = True
 
@@ -228,14 +218,9 @@ def render_governance_overview(api_base: str, token: str) -> None:
 
     st.subheader("积压动作")
     backlog_failed = False
-    try:
-        response = requests.get(
-            f"{api_base}/governance/actions-backlog", headers=headers, timeout=10
-        )
-        response.raise_for_status()
-        backlog = response.json()
-    except (requests.exceptions.RequestException, ValueError) as exc:
-        st.warning(f"真实业务积压动作加载失败：{exc}")
+    backlog = get_governance_actions_backlog()
+    if backlog is None:
+        st.warning("真实业务积压动作加载失败。")
         backlog = []
         backlog_failed = True
     if backlog:

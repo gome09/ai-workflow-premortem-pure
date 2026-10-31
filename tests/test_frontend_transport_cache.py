@@ -146,3 +146,16 @@ def test_session_panel_reads_go_through_cache():
         assert src is not None
         assert "_cached_get(" in src, f"{name} 必须走会话级缓存读取"
         assert "_session_cache_key(" in src, f"{name} 的缓存键必须按会话隔离"
+
+
+def test_governance_reads_go_through_cache():
+    for name in (
+        "get_governance_overview",
+        "get_governance_gate_trends",
+        "get_governance_actions_backlog",
+    ):
+        fn, path = _extract_function(name)
+        src = ast.get_source_segment(FRONTEND_SOURCES[path], fn)
+        assert src is not None
+        assert "_cached_get(" in src, f"{name} 必须走统一的读取缓存"
+        assert "_GOVERNANCE_TTL" in src, f"{name} 必须使用 30 秒治理读缓存"

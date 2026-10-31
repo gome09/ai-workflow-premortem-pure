@@ -106,7 +106,7 @@ render_governance_page()
 
 
 def _seed_auth(at: AppTest) -> None:
-    at.session_state["access_token"] = "test-token"
+    at.session_state["access_token"] = "test-token"  # noqa: S105 — 测试用假令牌
     at.session_state["user_role"] = "admin"
 
 

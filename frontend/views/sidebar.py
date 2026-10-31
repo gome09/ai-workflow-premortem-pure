@@ -137,23 +137,30 @@ def _render_session_list() -> None:
         st.caption("暂无历史会话")
         return
 
-    keyword = st.text_input(
-        "搜索会话",
-        key="session_filter",
-        placeholder="按会话名 / 场景 / 领域筛选",
-        label_visibility="collapsed",
-    ).strip().lower()
+    keyword = (
+        st.text_input(
+            "搜索会话",
+            key="session_filter",
+            placeholder="按会话名 / 场景 / 领域筛选",
+            label_visibility="collapsed",
+        )
+        .strip()
+        .lower()
+    )
 
     if keyword:
         visible_sessions = [
             s
             for s in sessions
-            if keyword in " ".join(str(s.get(field) or "") for field in _SESSION_SEARCH_FIELDS).lower()
+            if keyword
+            in " ".join(str(s.get(field) or "") for field in _SESSION_SEARCH_FIELDS).lower()
         ]
     else:
         visible_sessions = sessions
 
-    limit = max(int(st.session_state.get("session_list_limit", _SESSION_PAGE_SIZE)), _SESSION_PAGE_SIZE)
+    limit = max(
+        int(st.session_state.get("session_list_limit", _SESSION_PAGE_SIZE)), _SESSION_PAGE_SIZE
+    )
     st.caption(f"显示 {min(limit, len(visible_sessions))} / {len(visible_sessions)} 个会话")
 
     for s in visible_sessions[:limit]:

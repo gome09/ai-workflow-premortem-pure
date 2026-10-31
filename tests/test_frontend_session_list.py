@@ -4,11 +4,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SIDEBAR_SOURCE = (ROOT / "frontend" / "views" / "sidebar.py").read_text(encoding="utf-8")
-EVAL_SOURCE = (ROOT / "frontend" / "views" / "panels" / "eval_panels.py").read_text(encoding="utf-8")
+EVAL_SOURCE = (ROOT / "frontend" / "views" / "panels" / "eval_panels.py").read_text(
+    encoding="utf-8"
+)
 
 
 def test_session_list_supports_local_search():
-    assert "key=\"session_filter\"" in SIDEBAR_SOURCE
+    assert 'key="session_filter"' in SIDEBAR_SOURCE
     assert "_SESSION_SEARCH_FIELDS" in SIDEBAR_SOURCE
     assert "visible_sessions" in SIDEBAR_SOURCE
 

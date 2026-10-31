@@ -1146,6 +1146,11 @@ class SessionService:
     def list_eval_runs(
         self, session_id: str, eval_id: str | None = None, tenant_id: str = ""
     ) -> list[dict]:
+        rows = self._projection_rows(
+            "eval_runs", session_id, tenant_id, {"eval_id": eval_id} if eval_id else None
+        )
+        if rows is not None:
+            return rows
         ctx = self.get_session(session_id, tenant_id)
         if not ctx:
             raise ValueError(f"Session not found: {session_id}")

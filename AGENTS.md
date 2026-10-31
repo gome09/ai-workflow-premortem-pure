@@ -8,11 +8,11 @@
 
 - 项目：AI Workflow Premortem，AI 工作流预验尸与人机监督平台；源于本科毕业设计，当前按长期维护的开源项目演进。
 - 当前应用版本：`1.3.0`；版本元数据必须同时保持 `core/version.py` 与 `pyproject.toml` 一致。
-- 当前数据库迁移头：Alembic `V008`；当前 `ProjectContext` schema：`0.9.0`。
-- 真实业务库 `ai_workflow` 已升级至 V008（20 会话 / 90 人工动作 / 144 审计事件保留）；历史行 `tenant_id` 仍为 NULL，回填前不会进入租户作用域查询与治理统计。旧库升级顺序与备份路径见 `storage/README.md` 与 `.upgrade/backup/`。
+- 当前数据库迁移头：Alembic `V009`（`sessions.projection_state` 差分同步状态 + `eval_runs.pass_criteria` / `llm_judge_suggestion`）；当前 `ProjectContext` schema：`0.9.0`。
+- 真实业务库 `ai_workflow` 已升级至 V008（20 会话 / 90 人工动作 / 144 审计事件保留）；V009 为新增列迁移，部署环境需执行 `alembic upgrade head`。历史行 `tenant_id` 仍为 NULL，回填前不会进入租户作用域查询与治理统计。旧库升级顺序与备份路径见 `storage/README.md` 与 `.upgrade/backup/`。
 - Phase 0–4 代码侧已完成；`docs/archive/plan/phase-*.md` 与 `phase-*-design.md` 是历史实施/设计基线（已归档），不得把其中旧版本、旧行号或未勾选项当作当前事实。
 - formal-project-uplift Wave A–E 已完成；剩余工作主要是仓库公开后的远端治理动作，如 CodeQL 转正、main 分支保护和发布设置。权威状态见 `.upgrade/STATE.md`。
-- 最近一次本地全量测试基线：`800 passed, 1 skipped`（2026-10-31 复核；项目 `.venv` pytest，`STORAGE_BACKEND=sqlite` + `CHECKPOINT_BACKEND=memory` + `LLM_MODE=mock`，30.7s）。本轮新增 2 条前端 MVC 模块导入与入口顺序测试；另有 12 条用例来自 API `response_model` 契约与服务层数据分级规则测试。此前基线依次为 `798 passed, 1 skipped`（2026-10-29）、`786 passed, 1 skipped`（2026-10-29）、`731 passed, 1 skipped`（2026-09-21）。测试数量会随测试集合变化，不应硬编码为永久断言。
+- 最近一次本地全量测试基线：`844 passed, 1 skipped`（2026-10-31 复核；项目 `.venv` pytest，`STORAGE_BACKEND=sqlite` + `CHECKPOINT_BACKEND=memory` + `LLM_MODE=mock`，12.6s）。本轮新增 18 条用例：14 条 save() 差分同步（`projection_state` 计划逻辑、SQLite 落库与旧库补列）、3 条 V009 迁移结构测试、1 条 `eval_runs` 投影一致性参数化。此前基线依次为 `826 passed, 1 skipped`（2026-10-31，B1 投影直读）、`800 passed, 1 skipped`（2026-10-31）、`798 passed, 1 skipped`（2026-10-29）、`786 passed, 1 skipped`（2026-10-29）、`731 passed, 1 skipped`（2026-09-21）。测试数量会随测试集合变化，不应硬编码为永久断言。
 - 本地跑全量测试前需确认 `.env` 的存储后端：若仍是 Docker PostgreSQL 且该库未启动，`uv run pytest tests/` 会因连接等待长时间假死。离线基线须按 `.env.demo` 注入 `STORAGE_BACKEND=sqlite`、`CHECKPOINT_BACKEND=memory`、`LLM_MODE=mock`。
 - 前端按 MVC 分层：`frontend/models/`（配置、认证、API 客户端、状态投影）、`frontend/controllers/`（按业务域编排动作）、`frontend/views/`（侧栏、工作台与各面板）；`frontend/app.py` 仅做入口装配，`frontend/components/` 为可复用视图组件。依赖方向固定为 models ← controllers ← views ← app。
 - 治理总览当前只聚合真实业务会话（`business_internal` / `sensitive_personal`）；四个内置场景及其他 `public_demo` 会话必须与总览、趋势、积压动作和对应业务 Gauge 隔离。前端必须明确展示该统计口径，正常零数据不得表述为加载失败。

@@ -17,20 +17,30 @@ from core.models import ProjectContext
 from storage.access import SystemAccess, resolve_system_access
 from storage.field_security import decrypt_fields_after_load, encrypt_fields_for_storage
 from storage.projection_read import build_projection_rows, get_projection_spec
+from storage.projection_state import compute_state, plan_sync
 
 logger = logging.getLogger(__name__)
 
 # Default DB path; can be overridden via SQLITE_PATH env var.
 _DEFAULT_DB_PATH = "data/workflow.db"
 
+# V009 columns added after the initial DDL; existing SQLite files are upgraded
+# in place by initialize() (CREATE TABLE IF NOT EXISTS does not add columns).
+_V009_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("sessions", "projection_state", "TEXT NOT NULL DEFAULT '{}'"),
+    ("eval_runs", "pass_criteria", "TEXT NOT NULL DEFAULT '[]'"),
+    ("eval_runs", "llm_judge_suggestion", "TEXT"),
+)
+
 _INIT_DDL = """
 CREATE TABLE IF NOT EXISTS sessions (
-    session_id    TEXT PRIMARY KEY,
-    current_state TEXT NOT NULL DEFAULT 'init',
-    context_json  TEXT NOT NULL DEFAULT '{}',
-    tenant_id     TEXT,
-    created_at    TEXT NOT NULL,
-    updated_at    TEXT NOT NULL
+    session_id       TEXT PRIMARY KEY,
+    current_state    TEXT NOT NULL DEFAULT 'init',
+    context_json     TEXT NOT NULL DEFAULT '{}',
+    projection_state TEXT NOT NULL DEFAULT '{}',
+    tenant_id        TEXT,
+    created_at       TEXT NOT NULL,
+    updated_at       TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_state   ON sessions (current_state);
 CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions (updated_at DESC);
@@ -222,6 +232,8 @@ CREATE TABLE IF NOT EXISTS eval_runs (
     judge_reason             TEXT NOT NULL DEFAULT '',
     judge_mode               TEXT NOT NULL DEFAULT 'inherited',
     violated_criteria        TEXT NOT NULL DEFAULT '[]',
+    pass_criteria            TEXT NOT NULL DEFAULT '[]',
+    llm_judge_suggestion     TEXT,
     status                   TEXT NOT NULL DEFAULT 'created',
     error_message            TEXT NOT NULL DEFAULT '',
     trace_id                 TEXT,
@@ -447,8 +459,18 @@ class SQLiteSessionStore:
         with self._lock:
             with self._get_conn() as conn:
                 conn.executescript(_INIT_DDL)
+                self._ensure_v009_columns(conn)
                 conn.commit()
         logger.info("SQLite schema initialized at %s", self._db_path)
+
+    @staticmethod
+    def _ensure_v009_columns(conn: sqlite3.Connection) -> None:
+        """对已存在的旧库幂等补齐 V009 列。"""
+        for table, column, ddl in _V009_COLUMNS:
+            existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}  # noqa: S608
+            if column in existing:
+                continue
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")  # noqa: S608
 
     def close(self) -> None:
         """No-op: SQLite uses short-lived per-call connections."""
@@ -457,8 +479,11 @@ class SQLiteSessionStore:
     # ── Static helpers ──────────────────────────────────────────────────────
 
     @staticmethod
-    def _build_context_json_for_storage(ctx: ProjectContext) -> str:
-        data = ctx.model_dump(mode="json")
+    def _build_context_json_for_storage(
+        ctx: ProjectContext, data: dict[str, Any] | None = None
+    ) -> str:
+        # save() 传入同一次 model_dump 结果，避免重复序列化；投影哈希已在截断前计算。
+        data = dict(data) if data is not None else ctx.model_dump(mode="json")
         # Truncate to summaries — same logic as Postgres backend
         truncated_traces = []
         for trace in data.get("llm_traces", []):
@@ -608,8 +633,10 @@ class SQLiteSessionStore:
                 ),
             )
 
-    def _sync_action_resolution_logs(self, conn: sqlite3.Connection, ctx: ProjectContext) -> None:
-        for log in getattr(ctx, "action_resolution_logs", []) or []:
+    def _sync_action_resolution_logs(
+        self, conn: sqlite3.Connection, ctx: ProjectContext, start: int = 0
+    ) -> None:
+        for log in (getattr(ctx, "action_resolution_logs", []) or [])[start:]:
             conn.execute(
                 """
                 INSERT OR IGNORE INTO action_resolution_logs (
@@ -632,8 +659,10 @@ class SQLiteSessionStore:
                 ),
             )
 
-    def _sync_llm_traces(self, conn: sqlite3.Connection, ctx: ProjectContext) -> None:
-        for trace in getattr(ctx, "llm_traces", []) or []:
+    def _sync_llm_traces(
+        self, conn: sqlite3.Connection, ctx: ProjectContext, start: int = 0
+    ) -> None:
+        for trace in (getattr(ctx, "llm_traces", []) or [])[start:]:
             conn.execute(
                 """
                 INSERT OR IGNORE INTO llm_traces (
@@ -670,8 +699,10 @@ class SQLiteSessionStore:
                 ),
             )
 
-    def _sync_audit_events(self, conn: sqlite3.Connection, ctx: ProjectContext) -> None:
-        for event in ctx.audit_events:
+    def _sync_audit_events(
+        self, conn: sqlite3.Connection, ctx: ProjectContext, start: int = 0
+    ) -> None:
+        for event in ctx.audit_events[start:]:
             conn.execute(
                 """
                 INSERT OR IGNORE INTO audit_events (
@@ -826,9 +857,10 @@ class SQLiteSessionStore:
                     target_node_id, covered_failure_mode_ids,
                     stage_output_version, run_mode, input_payload, expected_behavior,
                     actual_output, judge_result, judge_reason, judge_mode, violated_criteria,
+                    pass_criteria, llm_judge_suggestion,
                     status, error_message, trace_id, latency_ms, estimated_cost, created_at, completed_at
                 )
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     run.run_id,
@@ -848,6 +880,10 @@ class SQLiteSessionStore:
                     run.judge_reason,
                     run.judge_mode,
                     json.dumps(run.violated_criteria, default=str),
+                    json.dumps(run.pass_criteria, default=str),
+                    json.dumps(run.llm_judge_suggestion, default=str)
+                    if run.llm_judge_suggestion is not None
+                    else None,
                     run.status,
                     run.error_message,
                     run.trace_id,
@@ -1039,42 +1075,86 @@ class SQLiteSessionStore:
     # ── Public API ────────────────────────────────────────────────────────────
 
     def save(self, ctx: ProjectContext) -> None:
-        """Create or update a session."""
+        """Create or update a session.
+
+        UPSERT 而非 INSERT OR REPLACE：REPLACE 会先删除旧行并触发投影表的
+        ON DELETE CASCADE，导致差分同步跳过的集合数据丢失。
+        投影集合按 `projection_state` 差分同步，状态缺失或损坏时回退全量。
+        """
         ctx.updated_at = datetime.utcnow()
         now = _dt(ctx.updated_at)
         created = _dt(ctx.created_at)
+        data = ctx.model_dump(mode="json")
+        current_state = compute_state(data)
+        state_json = json.dumps(current_state, default=str)
+        context_json = self._build_context_json_for_storage(ctx, data)
         with self._lock:
             with self._get_conn() as conn:
+                row = conn.execute(
+                    "SELECT projection_state FROM sessions WHERE session_id=?",
+                    (ctx.session_id,),
+                ).fetchone()
+                previous_state = (
+                    json.loads(row["projection_state"]) if row and row["projection_state"] else {}
+                )
+                plans = plan_sync(previous_state, current_state, data)
                 conn.execute(
                     """
-                    INSERT OR REPLACE INTO sessions
-                        (session_id, tenant_id, current_state, context_json, created_at, updated_at)
-                    VALUES (?,?,?,?,?,?)
+                    INSERT INTO sessions
+                        (session_id, tenant_id, current_state, context_json, projection_state,
+                         created_at, updated_at)
+                    VALUES (?,?,?,?,?,?,?)
+                    ON CONFLICT(session_id) DO UPDATE SET
+                        tenant_id        = excluded.tenant_id,
+                        current_state    = excluded.current_state,
+                        context_json     = excluded.context_json,
+                        projection_state = excluded.projection_state,
+                        updated_at       = excluded.updated_at
                     """,
                     (
                         ctx.session_id,
                         ctx.tenant_id or None,
                         ctx.current_state.value,
-                        self._build_context_json_for_storage(ctx),
+                        context_json,
+                        state_json,
                         created,
                         now,
                     ),
                 )
-                self._sync_human_actions(conn, ctx)
-                self._sync_action_resolution_logs(conn, ctx)
-                self._sync_llm_traces(conn, ctx)
-                self._sync_audit_events(conn, ctx)
-                self._sync_evidence_sources(conn, ctx)
-                self._sync_safety_findings(conn, ctx)
-                self._sync_report_artifacts(conn, ctx)
-                self._sync_eval_cases(conn, ctx)
-                self._sync_eval_runs(conn, ctx)
-                self._sync_eval_judgments(conn, ctx)
-                self._sync_human_calibrations(conn, ctx)
-                self._sync_eval_datasets(conn, ctx)
-                self._sync_eval_experiments(conn, ctx)
-                self._sync_redteam_cases(conn, ctx)
-                self._sync_interrupt_records(conn, ctx)
+                if not plans["human_actions"].skip:
+                    self._sync_human_actions(conn, ctx)
+                plan = plans["action_resolution_logs"]
+                if not plan.skip:
+                    self._sync_action_resolution_logs(conn, ctx, start=plan.start)
+                plan = plans["llm_traces"]
+                if not plan.skip:
+                    self._sync_llm_traces(conn, ctx, start=plan.start)
+                plan = plans["audit_events"]
+                if not plan.skip:
+                    self._sync_audit_events(conn, ctx, start=plan.start)
+                if not plans["evidence_sources"].skip:
+                    self._sync_evidence_sources(conn, ctx)
+                if not plans["safety_findings"].skip:
+                    self._sync_safety_findings(conn, ctx)
+                if not plans["report_artifacts"].skip:
+                    self._sync_report_artifacts(conn, ctx)
+                if not plans["eval_cases"].skip:
+                    self._sync_eval_cases(conn, ctx)
+                if not plans["eval_runs"].skip:
+                    self._sync_eval_runs(conn, ctx)
+                if not plans["eval_judgments"].skip:
+                    self._sync_eval_judgments(conn, ctx)
+                if not plans["human_calibrations"].skip:
+                    self._sync_human_calibrations(conn, ctx)
+                if not plans["eval_datasets"].skip:
+                    self._sync_eval_datasets(conn, ctx)
+                if not plans["eval_experiments"].skip:
+                    self._sync_eval_experiments(conn, ctx)
+                if not plans["redteam_cases"].skip:
+                    self._sync_redteam_cases(conn, ctx)
+                if not plans["interrupt_records"].skip:
+                    self._sync_interrupt_records(conn, ctx)
+                # outbox 行量很小，每次同步以保持 pending → completed 状态推进。
                 self._sync_interrupt_resume_outbox(conn, ctx)
                 conn.commit()
 

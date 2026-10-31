@@ -135,7 +135,8 @@ def test_save_insert_path_uses_version_zero() -> None:
         (sql, params) for sql, params in conn.executed if sql.startswith("INSERT INTO sessions")
     )
     assert "version" in insert_sql
-    assert ") VALUES (%s, %s::uuid, %s, %s, %s, %s, 0)" in insert_sql
+    assert "projection_state" in insert_sql
+    assert ") VALUES (%s, %s::uuid, %s, %s, %s::jsonb, %s, %s, 0)" in insert_sql
 
 
 def test_human_actions_sync_writes_tenant_id() -> None:

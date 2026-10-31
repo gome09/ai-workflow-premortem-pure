@@ -17,6 +17,7 @@ from core.models import (
     EvalCase,
     EvalDataset,
     EvalExperiment,
+    EvalRun,
     EvidenceSource,
     InterruptRecord,
     PendingHumanAction,
@@ -78,6 +79,16 @@ def _ctx_with_collections() -> ProjectContext:
         pass_criteria=["must refuse"],
     )
     ctx.eval_cases.append(eval_case)
+    ctx.eval_runs.append(
+        EvalRun(
+            session_id=ctx.session_id,
+            eval_id=eval_case.eval_id,
+            input_payload="p",
+            expected_behavior="e",
+            pass_criteria=["must refuse"],
+            llm_judge_suggestion={"label": "passed", "rationale": "matched criteria"},
+        )
+    )
     dataset = EvalDataset(session_id=ctx.session_id, name="ds")
     ctx.eval_datasets.append(dataset)
     ctx.eval_experiments.append(
@@ -120,6 +131,7 @@ def _by_key(rows: list[dict], key: str) -> list[dict]:
         ("safety_findings", "safety_findings", "finding_id"),
         ("audit_events", "audit_events", "event_id"),
         ("eval_cases", "eval_cases", "eval_id"),
+        ("eval_runs", "eval_runs", "run_id"),
         ("eval_datasets", "eval_datasets", "dataset_id"),
         ("eval_experiments", "eval_experiments", "experiment_id"),
         ("redteam_cases", "redteam_cases", "redteam_case_id"),

@@ -24,6 +24,7 @@ from storage.access import SystemAccess, resolve_system_access
 from storage.errors import StaleContextError, TenantIsolationError
 from storage.field_security import decrypt_fields_after_load, encrypt_fields_for_storage
 from storage.projection_read import build_projection_rows, get_projection_spec
+from storage.projection_state import compute_state, plan_sync
 
 logger = logging.getLogger(__name__)
 
@@ -229,13 +230,16 @@ class PostgresSessionStore:
         logger.info("Database migrations applied. %s", result.stdout.strip())
 
     @staticmethod
-    def _build_context_json_for_storage(ctx: ProjectContext) -> str:
+    def _build_context_json_for_storage(
+        ctx: ProjectContext, data: dict[str, Any] | None = None
+    ) -> str:
         """序列化 context_json，截断大字段以避免超过 PostgreSQL JSONB 256MB 限制。
 
         LLM traces、eval runs、audit events 等已通过 _sync_* 方法写入独立表，
-        context_json 只保留摘要信息。
+        context_json 只保留摘要信息。save() 传入同一次 model_dump 结果，
+        投影哈希已在截断/加密前计算。
         """
-        data = ctx.model_dump(mode="json")
+        data = dict(data) if data is not None else ctx.model_dump(mode="json")
 
         # Truncate LLM trace metadata — full traces are in llm_traces table
         truncated_traces = []
@@ -307,28 +311,35 @@ class PostgresSessionStore:
         - 乐观锁：保存时校验 `_storage_version`，并发保存不会静默丢失更新。
         """
         ctx.updated_at = datetime.utcnow()
-        context_json = self._build_context_json_for_storage(ctx)
+        data = ctx.model_dump(mode="json")
+        current_state = compute_state(data)
+        state_json = json.dumps(current_state, default=str)
+        context_json = self._build_context_json_for_storage(ctx, data)
         expected_version = int(getattr(ctx, "_storage_version", 0))
         incoming_tenant = ctx.tenant_id or ""
         with self._get_conn() as conn:
             row = conn.execute(
-                "SELECT version, tenant_id::text FROM sessions WHERE session_id = %s FOR UPDATE",
+                "SELECT version, tenant_id::text, projection_state "
+                "FROM sessions WHERE session_id = %s FOR UPDATE",
                 (ctx.session_id,),
             ).fetchone()
+            previous_state = row.get("projection_state") if row else None
+            plans = plan_sync(previous_state, current_state, data)
             if row is None:
                 conn.execute(
                     """
                     INSERT INTO sessions (
-                        session_id, tenant_id, current_state, context_json,
+                        session_id, tenant_id, current_state, context_json, projection_state,
                         created_at, updated_at, version
                     )
-                    VALUES (%s, %s::uuid, %s, %s, %s, %s, 0)
+                    VALUES (%s, %s::uuid, %s, %s, %s::jsonb, %s, %s, 0)
                     """,
                     (
                         ctx.session_id,
                         ctx.tenant_id or None,
                         ctx.current_state.value,
                         context_json,
+                        state_json,
                         ctx.created_at,
                         ctx.updated_at,
                     ),
@@ -344,35 +355,56 @@ class PostgresSessionStore:
                 conn.execute(
                     """
                     UPDATE sessions
-                    SET current_state = %s,
-                        context_json  = %s,
-                        updated_at    = %s,
-                        version       = version + 1
+                    SET current_state    = %s,
+                        context_json     = %s,
+                        projection_state = %s::jsonb,
+                        updated_at       = %s,
+                        version          = version + 1
                     WHERE session_id = %s
                     """,
                     (
                         ctx.current_state.value,
                         context_json,
+                        state_json,
                         ctx.updated_at,
                         ctx.session_id,
                     ),
                 )
                 new_version = current_version + 1
-            self._sync_human_actions(conn, ctx)
-            self._sync_action_resolution_logs(conn, ctx)
-            self._sync_llm_traces(conn, ctx)
-            self._sync_audit_events(conn, ctx)
-            self._sync_evidence_sources(conn, ctx)
-            self._sync_safety_findings(conn, ctx)
-            self._sync_report_artifacts(conn, ctx)
-            self._sync_eval_cases(conn, ctx)
-            self._sync_eval_runs(conn, ctx)
-            self._sync_eval_judgments(conn, ctx)
-            self._sync_human_calibrations(conn, ctx)
-            self._sync_eval_datasets(conn, ctx)
-            self._sync_eval_experiments(conn, ctx)
-            self._sync_redteam_cases(conn, ctx)
-            self._sync_interrupt_records(conn, ctx)
+            if not plans["human_actions"].skip:
+                self._sync_human_actions(conn, ctx)
+            plan = plans["action_resolution_logs"]
+            if not plan.skip:
+                self._sync_action_resolution_logs(conn, ctx, start=plan.start)
+            plan = plans["llm_traces"]
+            if not plan.skip:
+                self._sync_llm_traces(conn, ctx, start=plan.start)
+            plan = plans["audit_events"]
+            if not plan.skip:
+                self._sync_audit_events(conn, ctx, start=plan.start)
+            if not plans["evidence_sources"].skip:
+                self._sync_evidence_sources(conn, ctx)
+            if not plans["safety_findings"].skip:
+                self._sync_safety_findings(conn, ctx)
+            if not plans["report_artifacts"].skip:
+                self._sync_report_artifacts(conn, ctx)
+            if not plans["eval_cases"].skip:
+                self._sync_eval_cases(conn, ctx)
+            if not plans["eval_runs"].skip:
+                self._sync_eval_runs(conn, ctx)
+            if not plans["eval_judgments"].skip:
+                self._sync_eval_judgments(conn, ctx)
+            if not plans["human_calibrations"].skip:
+                self._sync_human_calibrations(conn, ctx)
+            if not plans["eval_datasets"].skip:
+                self._sync_eval_datasets(conn, ctx)
+            if not plans["eval_experiments"].skip:
+                self._sync_eval_experiments(conn, ctx)
+            if not plans["redteam_cases"].skip:
+                self._sync_redteam_cases(conn, ctx)
+            if not plans["interrupt_records"].skip:
+                self._sync_interrupt_records(conn, ctx)
+            # outbox 行量很小，每次同步以保持 pending → completed 状态推进。
             self._sync_interrupt_resume_outbox(conn, ctx)
             conn.commit()
         # 只有事务提交成功后才回写版本，异常路径保持原版本以便调用方重试。
@@ -507,7 +539,9 @@ class PostgresSessionStore:
             rows,
         )
 
-    def _sync_action_resolution_logs(self, conn: DictConnection, ctx: ProjectContext) -> None:
+    def _sync_action_resolution_logs(
+        self, conn: DictConnection, ctx: ProjectContext, start: int = 0
+    ) -> None:
         """同步 action resolution logs。append-only：已存在 log_id 不覆盖。"""
         rows = [
             (
@@ -522,7 +556,7 @@ class PostgresSessionStore:
                 log.error_message,
                 log.created_at,
             )
-            for log in getattr(ctx, "action_resolution_logs", []) or []
+            for log in (getattr(ctx, "action_resolution_logs", []) or [])[start:]
         ]
         if not rows:
             return
@@ -539,7 +573,7 @@ class PostgresSessionStore:
             rows,
         )
 
-    def _sync_llm_traces(self, conn: DictConnection, ctx: ProjectContext) -> None:
+    def _sync_llm_traces(self, conn: DictConnection, ctx: ProjectContext, start: int = 0) -> None:
         """同步 LLM traces。append-only：已存在 trace_id 不覆盖。"""
         rows = [
             (
@@ -565,7 +599,7 @@ class PostgresSessionStore:
                 json.dumps(trace.metadata, default=str),
                 trace.created_at,
             )
-            for trace in getattr(ctx, "llm_traces", []) or []
+            for trace in (getattr(ctx, "llm_traces", []) or [])[start:]
         ]
         if not rows:
             return
@@ -604,7 +638,7 @@ class PostgresSessionStore:
         truncated["_original_size_bytes"] = len(raw.encode("utf-8"))
         return truncated
 
-    def _sync_audit_events(self, conn: DictConnection, ctx: ProjectContext) -> None:
+    def _sync_audit_events(self, conn: DictConnection, ctx: ProjectContext, start: int = 0) -> None:
         """同步审计事件。append-only：已存在 event_id 不覆盖、不删除。"""
         rows = [
             (
@@ -625,7 +659,7 @@ class PostgresSessionStore:
                 json.dumps(event.metadata, default=str),
                 event.created_at,
             )
-            for event in ctx.audit_events
+            for event in ctx.audit_events[start:]
         ]
         if not rows:
             return
@@ -858,6 +892,10 @@ class PostgresSessionStore:
                 run.judge_reason,
                 run.judge_mode,
                 json.dumps(run.violated_criteria, default=str),
+                json.dumps(run.pass_criteria, default=str),
+                json.dumps(run.llm_judge_suggestion, default=str)
+                if run.llm_judge_suggestion is not None
+                else None,
                 run.status,
                 run.error_message,
                 run.trace_id,
@@ -878,9 +916,10 @@ class PostgresSessionStore:
                 target_node_id, covered_failure_mode_ids,
                 stage_output_version, run_mode, input_payload, expected_behavior,
                 actual_output, judge_result, judge_reason, judge_mode, violated_criteria,
+                pass_criteria, llm_judge_suggestion,
                 status, error_message, trace_id, latency_ms, estimated_cost, created_at, completed_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (run_id) DO UPDATE SET
                 dataset_id = EXCLUDED.dataset_id,
                 experiment_id = EXCLUDED.experiment_id,
@@ -890,6 +929,8 @@ class PostgresSessionStore:
                 judge_reason = EXCLUDED.judge_reason,
                 judge_mode = EXCLUDED.judge_mode,
                 violated_criteria = EXCLUDED.violated_criteria,
+                pass_criteria = EXCLUDED.pass_criteria,
+                llm_judge_suggestion = EXCLUDED.llm_judge_suggestion,
                 status = EXCLUDED.status,
                 error_message = EXCLUDED.error_message,
                 trace_id = EXCLUDED.trace_id,

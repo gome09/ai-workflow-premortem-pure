@@ -44,69 +44,18 @@ def render_sidebar() -> None:
                 f" · 中断适配器：{adapter_status_zh(st.session_state.health.get('interrupt_adapter_status', 'unknown'))}"
             )
 
-        # ── 页面导航：会话工作台 / 治理总览 ────────────────────────────────────────
-        nav_choice = st.radio(
-            "页面",
-            options=["会话工作台", "治理总览"],
-            horizontal=True,
-            key="nav_page_choice",
-            label_visibility="collapsed",
-        )
-
-        # 检测导航切换，强制 clean rerun 以清除 Streamlit widget 残留
-        if st.session_state.get("_last_nav_choice") != nav_choice:
-            st.session_state._last_nav_choice = nav_choice
-            st.session_state.nav_page = nav_choice if nav_choice == "治理总览" else None
-            # 清除所有 widget keys 以确保干净渲染
-            for key in list(st.session_state.keys()):
-                if key not in (
-                    "_last_nav_choice",
-                    "nav_page",
-                    "access_token",
-                    "refresh_token",
-                    "health",
-                    "session_id",
-                    "current_state",
-                    "messages",
-                    "pending_flags",
-                    "pending_actions",
-                    "interrupt_records",
-                    "stage_readiness",
-                    "selected_scenario_id",
-                ):
-                    if key.startswith(
-                        (
-                            "sess_",
-                            "flag_note_",
-                            "ev_note_",
-                            "finding_note_",
-                            "selected_scenario",
-                            "eval_",
-                            "material_",
-                            "file_uploader",
-                            "export_",
-                            "create_artifact",
-                            "report_snapshot_",
-                            "selected_report_label",
-                            "dataset_name",
-                            "experiment_name",
-                        )
-                    ):
-                        del st.session_state[key]
-            st.rerun()
-
-        st.session_state.nav_page = nav_choice if nav_choice == "治理总览" else None
+        # ── 页面导航由 app.py 的 st.navigation 负责，侧栏只渲染当前页内容 ─────────
         st.divider()
 
-        if nav_choice == "治理总览":
-            st.info("📊 治理总览模式")
-            st.caption("请在主区域查看全局治理数据")
-        else:
+        if st.session_state.get("active_page", "workbench") == "workbench":
             _render_session_management()
             st.divider()
 
             if st.session_state.session_id:
                 _render_current_progress()
+        else:
+            st.info("📊 治理总览模式")
+            st.caption("请在主区域查看全局治理数据")
 
 
 def _render_session_management() -> None:

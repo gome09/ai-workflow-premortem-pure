@@ -23,6 +23,7 @@ MODULES = [
     "controllers.governance_controller",
     "controllers.eval_controller",
     "controllers.report_controller",
+    "views.pages",
 ]
 
 
@@ -41,16 +42,22 @@ def test_app_entry_calls_in_order():
     tree = ast.parse(APP_PATH.read_text(encoding="utf-8"))
     calls = []
     for node in tree.body:
+        call = None
         if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
-            func = node.value.func
-            if isinstance(func, ast.Attribute):
-                calls.append(func.attr)
-            elif isinstance(func, ast.Name):
-                calls.append(func.id)
+            call = node.value
+        elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+            call = node.value
+        if call is None:
+            continue
+        func = call.func
+        if isinstance(func, ast.Attribute):
+            calls.append(func.attr)
+        elif isinstance(func, ast.Name):
+            calls.append(func.id)
     assert calls == [
         "set_page_config",
         "ensure_auth",
         "init_session_state",
-        "render_sidebar",
-        "render_workbench",
+        "navigation",
+        "run",
     ]

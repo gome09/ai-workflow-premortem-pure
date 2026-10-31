@@ -42,7 +42,7 @@ graph TD
 
 ### 前端分层（Streamlit）
 
-`frontend/app.py` 只做入口装配：`st.set_page_config` → 认证守卫 → 状态初始化 → 侧栏与工作台渲染。业务代码按 MVC 分层：`frontend/models/`（环境配置、认证令牌、API 客户端、StageOperation 状态投影、展示映射表）、`frontend/controllers/`（auth / session / stage / governance / eval / report 六个业务域动作编排）、`frontend/views/`（侧栏、工作台、实时监督与各业务面板），`frontend/components/` 为可复用视图组件。依赖方向固定为 `models ← controllers ← views ← app.py`；状态转换仍由后端服务与门禁引擎决定，前端只负责协议适配、状态投影与渲染。
+`frontend/app.py` 只做入口装配：`st.set_page_config` → 认证守卫 → 状态初始化 → `st.navigation` 双页面（会话工作台 / 治理总览）→ `pages.run()`。业务代码按 MVC 分层：`frontend/models/`（环境配置、认证令牌、API 客户端、StageOperation 状态投影、展示映射表）、`frontend/controllers/`（auth / session / stage / governance / eval / report 六个业务域动作编排）、`frontend/views/`（`pages.py` 装配页面、侧栏、工作台、实时监督与各业务面板），`frontend/components/` 为可复用视图组件。依赖方向固定为 `models ← controllers ← views ← app.py`；状态转换仍由后端服务与门禁引擎决定，前端只负责协议适配、状态投影与渲染。
 
 ---
 

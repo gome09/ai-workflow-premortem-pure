@@ -2,9 +2,7 @@
 from __future__ import annotations
 
 import streamlit as st
-from components.governance_overview import render_governance_overview
 from controllers.session_controller import add_materials, handle_send
-from models.config import API_BASE
 from models.mappings import CHAT_PLACEHOLDER
 
 from views.live_oversight import render_message_with_oversight
@@ -12,10 +10,7 @@ from views.welcome import render_welcome
 
 
 def render_workbench() -> None:
-    if st.session_state.get("nav_page") == "治理总览":
-        token = st.session_state.get("access_token") or ""
-        render_governance_overview(API_BASE, token)
-    elif not st.session_state.session_id:
+    if not st.session_state.session_id:
         render_welcome()
     else:
         _render_chat_workspace()

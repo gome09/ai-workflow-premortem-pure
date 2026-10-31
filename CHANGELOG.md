@@ -4,6 +4,12 @@
 > 远程 `origin`（github.com/gome09/ai-workflow-premortem-pure）与本地共享同一根提交，**不包含更早的历史**，无法用于追溯 v1.0 之前的开发过程。
 > 截至 2026-09-01，本地 `main` 已与 `origin/main` 同步（当日推送 10 次提交，至 `08f8a99`）。
 
+## 未发布维护记录 (2026-10-31)
+
+- **前端 MVC 拆分**：`frontend/app.py`（2515 行）拆分为 `frontend/models/`（`config` / `auth` / `api_client` / `stage_envelope` / `session_state` / `mappings`）、`frontend/controllers/`（auth / session / stage / governance / eval / report 六个按业务域控制器）与 `frontend/views/`（`sidebar` / `workbench` / `welcome` / `live_oversight` / `panels/*`）。`app.py` 仅保留 `set_page_config`、认证守卫、状态初始化与侧栏/工作区装配；依赖方向固定为 models ← controllers ← views ← app.py。
+- **行为等价约束**：`st.session_state` 键、widget key、渲染顺序、提示文案、`st.rerun()` / `st.stop()` 语义、API 路径与超时全部保持原样；70 个原样迁移函数经 AST 对比与拆分前备份逐函数一致。后端 `api/`、`core/`、`storage/`、`graph/` 与 `frontend/components/`、`frontend/labels.py` 未改动。
+- **测试同步**：4 个前端契约测试改为聚合扫描 `frontend/**/*.py`；新增 `tests/test_frontend_mvc_imports.py`（MVC 模块可导入 + 入口调用顺序）。全量 `800 passed, 1 skipped`（SQLite + memory + mock，30.7s）；Ruff、mypy（161 文件）、doc-check、version-check 通过。
+
 ## 未发布维护记录 (2026-10-29)
 
 - **中断恢复 outbox 周期重试**：`langgraph_interrupt` 模式下，启动对账之后新增进程内调度器，按 `INTERRUPT_RESUME_RETRY_INTERVAL_SECONDS`（默认 600 秒，0=只做启动对账）周期重试 pending/failed 行，批量上限 `INTERRUPT_RESUME_RETRY_BATCH_SIZE`（默认 100）。运行期瞬时失败不再依赖进程重启。`/health` 新增 `interrupt_resume_scheduler`；非中断模式该调度器不启动。

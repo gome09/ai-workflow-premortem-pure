@@ -3,7 +3,11 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-APP_SOURCE = (ROOT / "frontend" / "app.py").read_text(encoding="utf-8")
+FRONTEND_DIR = ROOT / "frontend"
+FRONTEND_SOURCES = {
+    path: path.read_text(encoding="utf-8") for path in sorted(FRONTEND_DIR.rglob("*.py"))
+}
+SOURCE = "\n".join(FRONTEND_SOURCES.values())
 COMPONENT_SOURCE = (
     ROOT / "frontend" / "components" / "session_item_component" / "index.html"
 ).read_text(encoding="utf-8")
@@ -26,9 +30,9 @@ def test_session_item_saves_on_enter_or_blur():
 
 
 def test_frontend_calls_rename_endpoint_and_prefers_session_name():
-    assert 'api_patch(f"/sessions/{session_id}/name", {"name": name})' in APP_SOURCE
-    assert 's.get("session_name")' in APP_SOURCE
-    assert "consume_session_event(" in APP_SOURCE
+    assert 'api_patch(f"/sessions/{session_id}/name", {"name": name})' in SOURCE
+    assert 's.get("session_name")' in SOURCE
+    assert "consume_session_event(" in SOURCE
 
 
 def test_delete_button_matches_session_height_and_is_square():
@@ -36,7 +40,7 @@ def test_delete_button_matches_session_height_and_is_square():
     assert "flex: 0 0 38px" in COMPONENT_SOURCE
     assert "width: 38px" in COMPONENT_SOURCE
     assert 'deleteButton.addEventListener("click", () => emit("delete"))' in COMPONENT_SOURCE
-    assert "can_delete=is_admin" in APP_SOURCE
+    assert "can_delete=is_admin" in SOURCE
 
 
 def test_session_and_delete_boxes_share_gray_theme_with_visible_gap():

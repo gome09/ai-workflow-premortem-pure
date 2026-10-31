@@ -23,7 +23,7 @@ import labels  # noqa: E402
 from core.oversight_service import _ACTION_SOURCE_LABEL  # noqa: E402
 from graph.nodes import live_oversight_marker  # noqa: E402
 
-# 与 frontend/app.py::LIVE_OVERSIGHT_RE 保持一致。
+# 与 frontend/views/live_oversight.py::LIVE_OVERSIGHT_RE 保持一致。
 _FRONTEND_MARKER_RE = re.compile(r"\[\[LIVE_OVERSIGHT(?:\s+stage=(\d+))?\]\]")
 
 

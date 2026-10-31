@@ -166,8 +166,8 @@ core, planning, phase, validation, reporting, review, lifecycle
 
 ## Last Maintenance Report
 
-- Action type: phase-update
-- Timestamp: 2026-10-29T11:27:56+00:00
-- Changed: 1
+- Action type: cleanup-apply
+- Timestamp: 2026-10-31T02:13:40+00:00
+- Changed: 5
 - Skipped: 0
 <!-- project-upgrade-maintainer:manifest:end -->

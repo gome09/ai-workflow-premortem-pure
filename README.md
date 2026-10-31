@@ -163,8 +163,11 @@ uv run pytest tests/ -q
 │   └── taxonomies/         #   风险分类体系
 ├── storage/                # 存储层（PostgreSQL / SQLite）
 │   └── backends/           #   存储后端实现
-├── frontend/               # Streamlit 前端
-│   └── components/         #   UI 组件
+├── frontend/               # Streamlit 前端（MVC 分层）
+│   ├── models/             #   配置、认证、API 客户端与状态投影
+│   ├── controllers/        #   按业务域编排用户动作
+│   ├── views/              #   侧栏、工作台与业务面板
+│   └── components/         #   可复用 UI 组件
 ├── scenarios/              # 可插拔 Demo 场景机制
 │   └── manifests/          #   场景定义文件
 ├── docs/                   # 项目文档

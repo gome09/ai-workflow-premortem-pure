@@ -1,3 +1,4 @@
+# tests/test_frontend_scenario_loading.py
 """会话工作台内置场景加载与空白新建的前端契约测试。"""
 
 from __future__ import annotations
@@ -6,23 +7,30 @@ import ast
 from pathlib import Path
 from types import SimpleNamespace
 
-APP_PATH = Path(__file__).resolve().parent.parent / "frontend" / "app.py"
-SOURCE = APP_PATH.read_text(encoding="utf-8")
-TREE = ast.parse(SOURCE)
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+FRONTEND_SOURCES = {
+    path: path.read_text(encoding="utf-8") for path in sorted(FRONTEND_DIR.rglob("*.py"))
+}
+SOURCE = "\n".join(FRONTEND_SOURCES.values())
+FRONTEND_TREES = {path: ast.parse(src) for path, src in FRONTEND_SOURCES.items()}
 
 
 def _extract_function(name: str) -> ast.FunctionDef:
-    for node in ast.walk(TREE):
-        if isinstance(node, ast.FunctionDef) and node.name == name:
-            return node
-    raise AssertionError(f"frontend/app.py 中未找到函数 {name}")
+    for tree in FRONTEND_TREES.values():
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == name:
+                return node
+    raise AssertionError(f"frontend/**/*.py 中未找到函数 {name}")
 
 
 def _exec_function(name: str, extra_globals: dict) -> object:
     fn = _extract_function(name)
+    path = next(
+        path for path, tree in FRONTEND_TREES.items() if any(node is fn for node in ast.walk(tree))
+    )
     namespace = {"__builtins__": __builtins__, **extra_globals}
     # noqa: S102 — 执行仓库内已解析的受控函数，而非外部输入。
-    exec(compile(ast.Module(body=[fn], type_ignores=[]), str(APP_PATH), "exec"), namespace)  # noqa: S102
+    exec(compile(ast.Module(body=[fn], type_ignores=[]), str(path), "exec"), namespace)  # noqa: S102
     return namespace[name]
 
 

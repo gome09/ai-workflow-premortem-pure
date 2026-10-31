@@ -19,6 +19,7 @@
 | `graph/` | LangGraph 状态机 |
 | `tools/taxonomies/` | 风险分类体系（NIST AI RMF / OWASP LLM Top 10 等） |
 | `storage/backends/` | PostgreSQL / SQLite 存储实现 |
+| `frontend/` | Streamlit 前端：`models/`（配置 / 认证 / API 客户端 / 状态投影）、`controllers/`（按业务域编排动作）、`views/`（侧栏 / 工作台 / 面板）；`app.py` 仅入口装配，`components/` 为可复用视图组件 |
 | `scenarios/manifests/` | 可插拔 Demo 场景定义（JSON） |
 | `docs/` | 项目文档，索引见 [docs/README.md](docs/README.md) |
 | `.upgrade/` | 升级工作区；当前状态看 `STATE.md`，生命周期看 `MANIFEST.md` |

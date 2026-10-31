@@ -1,8 +1,8 @@
 # tests/test_frontend_session_delete.py
 """侧栏「会话删除」功能的前端契约测试。
 
-frontend/app.py 在 import 时会执行 Streamlit UI 代码，不便直接单测（与
-test_live_oversight_frontend_contract.py 同理）。这里采用两种手段：
+frontend/app.py 只是入口装配，具体逻辑位于 frontend/models 与
+frontend/controllers。这里扫描 frontend/**/*.py 聚合源码做契约断言：
   1) AST 源码契约：断言 api_delete / 删除按钮 / 确认弹窗的关键结构存在且
      角色门控正确；
   2) 函数抽取执行：把纯逻辑函数 _role_from_token / _reset_session_state
@@ -17,24 +17,28 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-APP_PATH = Path(__file__).resolve().parent.parent / "frontend" / "app.py"
-SOURCE = APP_PATH.read_text(encoding="utf-8")
-TREE = ast.parse(SOURCE)
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+FRONTEND_SOURCES = {
+    path: path.read_text(encoding="utf-8") for path in sorted(FRONTEND_DIR.rglob("*.py"))
+}
+SOURCE = "\n".join(FRONTEND_SOURCES.values())
+FRONTEND_TREES = {path: ast.parse(src) for path, src in FRONTEND_SOURCES.items()}
 
 
-def _extract_function(name: str) -> ast.FunctionDef:
-    for node in ast.walk(TREE):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
-            return node
-    raise AssertionError(f"frontend/app.py 中未找到函数 {name}")
+def _extract_function(name: str) -> tuple[ast.FunctionDef, Path]:
+    for path, tree in FRONTEND_TREES.items():
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
+                return node, path
+    raise AssertionError(f"frontend/**/*.py 中未找到函数 {name}")
 
 
 def _exec_function(name: str, extra_globals: dict) -> object:
-    """抽取 app.py 中的单个函数源码，在受控命名空间中编译执行并返回。"""
-    fn = _extract_function(name)
+    """抽取前端源码中的单个函数，在受控命名空间中编译执行并返回。"""
+    fn, path = _extract_function(name)
     namespace = {"__builtins__": __builtins__, **extra_globals}
-    # noqa: S102 — 执行的是本仓库 app.py 抽取出的受控函数源码，非不可信输入
-    exec(compile(ast.Module(body=[fn], type_ignores=[]), str(APP_PATH), "exec"), namespace)  # noqa: S102
+    # noqa: S102 — 执行的是本仓库前端抽取出的受控函数源码，非不可信输入
+    exec(compile(ast.Module(body=[fn], type_ignores=[]), str(path), "exec"), namespace)  # noqa: S102
     return namespace[name]
 
 
@@ -47,8 +51,8 @@ def _jwt_with_payload(payload: dict) -> str:
 
 
 def test_api_delete_exists_and_retries_on_401():
-    fn = _extract_function("api_delete")
-    src = ast.get_source_segment(SOURCE, fn)
+    fn, path = _extract_function("api_delete")
+    src = ast.get_source_segment(FRONTEND_SOURCES[path], fn)
     assert src is not None
     assert "requests.delete(" in src, "api_delete 必须发起 DELETE 请求"
     assert "r.status_code == 401 and _refresh_access_token()" in src, (

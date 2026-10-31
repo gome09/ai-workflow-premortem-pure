@@ -6,6 +6,7 @@ import streamlit as st
 from models.api_client import (
     get_session,
     get_stage_readiness,
+    invalidate_session_cache,
     list_actions,
     list_interrupt_records,
 )
@@ -118,6 +119,7 @@ def consume_session_event(event: dict | None) -> dict | None:
 def refresh_flags() -> None:
     if not st.session_state.session_id:
         return
+    invalidate_session_cache(st.session_state.session_id)
     ctx = get_session(st.session_state.session_id)
     if ctx:
         st.session_state.pending_flags = [
@@ -131,6 +133,7 @@ def refresh_flags() -> None:
 def refresh_actions() -> None:
     if not st.session_state.session_id:
         return
+    invalidate_session_cache(st.session_state.session_id)
     st.session_state.pending_actions = list_actions(
         st.session_state.session_id,
         status="pending",

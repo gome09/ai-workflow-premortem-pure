@@ -1,6 +1,8 @@
 # frontend/models/api_client.py
 from __future__ import annotations
 
+import time
+
 import requests
 import streamlit as st
 
@@ -15,12 +17,60 @@ _http_adapter = requests.adapters.HTTPAdapter(pool_connections=10, pool_maxsize=
 _http_session.mount("http://", _http_adapter)
 _http_session.mount("https://", _http_adapter)
 
+# 会话级读取缓存：存放在 st.session_state，天然按浏览器会话（=租户）隔离，
+# 不使用 st.cache_data 的进程级全局缓存。
+_API_CACHE_KEY = "_api_cache"
+_HEALTH_TTL = 30.0
+_STATIC_READ_TTL = 600.0
+_SESSION_LIST_TTL = 10.0
+_SESSION_READ_TTL = 5.0
+
+
+def _cached_get(cache_key: str, path: str, ttl: float):
+    """带 TTL 的只读 GET：命中直接返回；失败结果（None）不入缓存。"""
+    store = st.session_state.get(_API_CACHE_KEY)
+    if store is None:
+        store = {}
+        st.session_state[_API_CACHE_KEY] = store
+    entry = store.get(cache_key)
+    now = time.monotonic()
+    if entry is not None and now - entry[0] < ttl:
+        return entry[1]
+    result = api_get(path)
+    if result is not None:
+        store[cache_key] = (now, result)
+    return result
+
+
+def invalidate_api_cache(prefix: str = "") -> None:
+    """清空前端读取缓存；传 prefix 时只清匹配键。"""
+    store = st.session_state.get(_API_CACHE_KEY)
+    if not store:
+        return
+    if not prefix:
+        store.clear()
+        return
+    for key in [k for k in store if k.startswith(prefix)]:
+        del store[key]
+
+
+def invalidate_session_cache(session_id: str) -> None:
+    """清空某个会话的只读面板缓存（证据/安全/红队/评测/审计/报告）。"""
+    if session_id:
+        invalidate_api_cache(f"session:{session_id}:")
+
+
+def _session_cache_key(session_id: str, name: str) -> str:
+    return f"session:{session_id}:{name}"
+
 
 def api_post(path: str, body: dict) -> dict | None:
     try:
         r = _http_session.post(f"{API_BASE}{path}", json=body, headers=_auth_headers(), timeout=120)
         if r.status_code == 401 and _refresh_access_token():
-            r = _http_session.post(f"{API_BASE}{path}", json=body, headers=_auth_headers(), timeout=120)
+            r = _http_session.post(
+                f"{API_BASE}{path}", json=body, headers=_auth_headers(), timeout=120
+            )
         r.raise_for_status()
         return r.json()
     except requests.exceptions.Timeout:
@@ -72,7 +122,9 @@ def api_patch(path: str, body: dict) -> dict | None:
     try:
         r = _http_session.patch(f"{API_BASE}{path}", json=body, headers=_auth_headers(), timeout=30)
         if r.status_code == 401 and _refresh_access_token():
-            r = _http_session.patch(f"{API_BASE}{path}", json=body, headers=_auth_headers(), timeout=30)
+            r = _http_session.patch(
+                f"{API_BASE}{path}", json=body, headers=_auth_headers(), timeout=30
+            )
         r.raise_for_status()
         return r.json()
     except requests.exceptions.RequestException as e:
@@ -115,7 +167,7 @@ def api_delete(path: str) -> dict | None:
 
 
 def get_health() -> dict:
-    result = api_get("/health")
+    result = _cached_get("health", "/health", _HEALTH_TTL)
     return result if isinstance(result, dict) else {}
 
 
@@ -124,16 +176,24 @@ def create_session(scenario_id: str | None = None) -> dict | None:
     if scenario_id:
         body["scenario_id"] = scenario_id
     result = api_post("/sessions/", body)
-    return result if isinstance(result, dict) else None
+    if isinstance(result, dict):
+        invalidate_api_cache("sessions:")
+        return result
+    return None
 
 
 def list_builtin_scenarios() -> list[dict]:
-    result = api_get("/sessions/scenarios")
+    result = _cached_get("scenarios:list", "/sessions/scenarios", _STATIC_READ_TTL)
     return result if isinstance(result, list) else []
 
 
 def get_builtin_scenario(scenario_id: str) -> dict | None:
-    return api_get(f"/sessions/scenarios/{scenario_id}")
+    result = _cached_get(
+        f"scenarios:{scenario_id}",
+        f"/sessions/scenarios/{scenario_id}",
+        _STATIC_READ_TTL,
+    )
+    return result if isinstance(result, dict) else None
 
 
 def bootstrap_scenario_input(session_id: str, scenario_input: str) -> dict | None:
@@ -155,7 +215,11 @@ def send_message(
     body: dict = {"user_input": user_input}
     if materials:
         body["user_materials"] = materials
-    return api_post(f"/chat/{session_id}", body)
+    result = api_post(f"/chat/{session_id}", body)
+    if result is not None:
+        # 会话状态推进后，侧栏会话列表的 current_state / updated_at 已变化。
+        invalidate_api_cache("sessions:")
+    return result
 
 
 def get_session(session_id: str) -> dict | None:
@@ -163,14 +227,15 @@ def get_session(session_id: str) -> dict | None:
 
 
 def list_sessions() -> list[dict]:
-    result = api_get("/sessions/")
-    if isinstance(result, list):
-        return result
-    return []
+    result = _cached_get("sessions:list", "/sessions/", _SESSION_LIST_TTL)
+    return result if isinstance(result, list) else []
 
 
 def rename_session(session_id: str, name: str) -> dict | None:
-    return api_patch(f"/sessions/{session_id}/name", {"name": name})
+    result = api_patch(f"/sessions/{session_id}/name", {"name": name})
+    if result is not None:
+        invalidate_api_cache("sessions:")
+    return result
 
 
 def export_report(session_id: str, format: str = "json") -> dict | None:
@@ -178,7 +243,11 @@ def export_report(session_id: str, format: str = "json") -> dict | None:
 
 
 def list_audit_events(session_id: str) -> list[dict]:
-    result = api_get(f"/sessions/{session_id}/audit-events")
+    result = _cached_get(
+        _session_cache_key(session_id, "audit-events"),
+        f"/sessions/{session_id}/audit-events",
+        _SESSION_READ_TTL,
+    )
     if isinstance(result, list):
         return result
     return []
@@ -273,7 +342,11 @@ def resolve_flag(
 
 
 def list_evidence(session_id: str) -> list[dict]:
-    result = api_get(f"/sessions/{session_id}/evidence")
+    result = _cached_get(
+        _session_cache_key(session_id, "evidence"),
+        f"/sessions/{session_id}/evidence",
+        _SESSION_READ_TTL,
+    )
     if isinstance(result, list):
         return result
     return []
@@ -292,7 +365,11 @@ def list_safety_findings(session_id: str, status: str | None = "open") -> list[d
     path = f"/sessions/{session_id}/safety-findings"
     if status:
         path += f"?status={status}"
-    result = api_get(path)
+    result = _cached_get(
+        _session_cache_key(session_id, f"safety-findings:{status or 'all'}"),
+        path,
+        _SESSION_READ_TTL,
+    )
     if isinstance(result, list):
         return result
     return []
@@ -308,14 +385,22 @@ def resolve_safety_finding(session_id: str, finding_id: str, status: str, note: 
 
 
 def list_eval_cases(session_id: str) -> list[dict]:
-    result = api_get(f"/sessions/{session_id}/eval-cases")
+    result = _cached_get(
+        _session_cache_key(session_id, "eval-cases"),
+        f"/sessions/{session_id}/eval-cases",
+        _SESSION_READ_TTL,
+    )
     if isinstance(result, list):
         return result
     return []
 
 
 def list_eval_runs(session_id: str) -> list[dict]:
-    result = api_get(f"/sessions/{session_id}/eval-runs")
+    result = _cached_get(
+        _session_cache_key(session_id, "eval-runs"),
+        f"/sessions/{session_id}/eval-runs",
+        _SESSION_READ_TTL,
+    )
     if isinstance(result, list):
         return result
     return []
@@ -361,7 +446,11 @@ def score_eval_case(
 
 
 def list_eval_datasets(session_id: str) -> list[dict]:
-    result = api_get(f"/sessions/{session_id}/eval-datasets")
+    result = _cached_get(
+        _session_cache_key(session_id, "eval-datasets"),
+        f"/sessions/{session_id}/eval-datasets",
+        _SESSION_READ_TTL,
+    )
     return result if isinstance(result, list) else []
 
 
@@ -378,17 +467,29 @@ def create_eval_dataset_from_stage3(
 
 
 def list_eval_experiments(session_id: str) -> list[dict]:
-    result = api_get(f"/sessions/{session_id}/eval-experiments")
+    result = _cached_get(
+        _session_cache_key(session_id, "eval-experiments"),
+        f"/sessions/{session_id}/eval-experiments",
+        _SESSION_READ_TTL,
+    )
     return result if isinstance(result, list) else []
 
 
 def list_redteam_cases(session_id: str) -> list[dict]:
-    result = api_get(f"/sessions/{session_id}/redteam/cases")
+    result = _cached_get(
+        _session_cache_key(session_id, "redteam-cases"),
+        f"/sessions/{session_id}/redteam/cases",
+        _SESSION_READ_TTL,
+    )
     return result if isinstance(result, list) else []
 
 
 def get_redteam_coverage(session_id: str) -> dict:
-    result = api_get(f"/sessions/{session_id}/redteam/coverage")
+    result = _cached_get(
+        _session_cache_key(session_id, "redteam-coverage"),
+        f"/sessions/{session_id}/redteam/coverage",
+        _SESSION_READ_TTL,
+    )
     return result if isinstance(result, dict) else {}
 
 
@@ -457,14 +558,23 @@ def create_report_artifact(session_id: str) -> dict | None:
 
 
 def list_report_artifacts(session_id: str) -> list[dict]:
-    result = api_get(f"/sessions/{session_id}/reports")
+    result = _cached_get(
+        _session_cache_key(session_id, "reports"),
+        f"/sessions/{session_id}/reports",
+        _SESSION_READ_TTL,
+    )
     if isinstance(result, list):
         return result
     return []
 
 
 def get_report_artifact(session_id: str, report_id: str) -> dict | None:
-    return api_get(f"/sessions/{session_id}/reports/{report_id}")
+    # 报告快照是不可变版本化产物，内容不会原地变更，可长缓存避免每次 rerun 重下全文。
+    return _cached_get(
+        _session_cache_key(session_id, f"report:{report_id}"),
+        f"/sessions/{session_id}/reports/{report_id}",
+        _STATIC_READ_TTL,
+    )
 
 
 def add_materials_to_session(session_id: str, materials: list[str]) -> bool:

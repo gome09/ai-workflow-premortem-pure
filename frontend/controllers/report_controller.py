@@ -2,7 +2,12 @@
 from __future__ import annotations
 
 import streamlit as st
-from models.api_client import create_report_artifact, export_report, get_report_artifact
+from models.api_client import (
+    create_report_artifact,
+    export_report,
+    get_report_artifact,
+    invalidate_session_cache,
+)
 
 
 def export_snapshot(fmt: str) -> dict | None:
@@ -14,6 +19,7 @@ def export_snapshot(fmt: str) -> dict | None:
 def create_snapshot() -> None:
     artifact = create_report_artifact(st.session_state.session_id)
     if artifact:
+        invalidate_session_cache(st.session_state.session_id)
         st.success(f"快照已创建：{artifact.get('report_id')}")
     else:
         st.error("创建报告快照失败，请稍后重试。")

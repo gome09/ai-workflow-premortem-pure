@@ -6,6 +6,7 @@ from components.session_item import render_session_item
 from controllers.session_controller import (
     create_blank_session,
     load_builtin_scenario,
+    refresh_current_session,
     rename_session_event,
     select_session,
 )
@@ -143,7 +144,7 @@ def _render_session_management() -> None:
         )
     with col_refresh:
         if st.button("🔄 刷新", use_container_width=True):
-            st.rerun()
+            refresh_current_session()
 
     selected_scenario_id = (
         scenario_options.get(selected_scenario_label) if selected_scenario_label else None

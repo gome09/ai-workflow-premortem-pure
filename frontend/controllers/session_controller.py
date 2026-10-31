@@ -9,6 +9,8 @@ from models.api_client import (
     create_session,
     get_session,
     get_stage_readiness,
+    invalidate_api_cache,
+    invalidate_session_cache,
     list_interrupt_records,
     rename_session,
     send_message,
@@ -91,7 +93,20 @@ def rename_session_event(session_id: str, name: str) -> None:
 
 
 def delete_session(session_id: str) -> dict | None:
-    return api_delete(f"/sessions/{session_id}")
+    result = api_delete(f"/sessions/{session_id}")
+    if result is not None:
+        invalidate_api_cache("sessions:")
+        invalidate_session_cache(session_id)
+    return result
+
+
+def refresh_current_session() -> None:
+    """手动刷新：清空前端读取缓存，并重新拉取当前会话的派生状态。"""
+    invalidate_api_cache()
+    if st.session_state.session_id:
+        refresh_flags()
+        refresh_actions()
+    st.rerun()
 
 
 def add_materials(materials: list[str]) -> bool:

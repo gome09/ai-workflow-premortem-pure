@@ -8,6 +8,7 @@ from models.api_client import (
     create_eval_experiment,
     create_redteam_dataset,
     generate_redteam_cases,
+    invalidate_session_cache,
     reject_redteam_case,
     run_eval_cases,
     run_eval_experiment,
@@ -59,6 +60,7 @@ def create_dataset_from_stage3(dataset_name: str) -> None:
         "由当前阶段三评测用例创建。",
     )
     if dataset:
+        invalidate_session_cache(st.session_state.session_id)
         st.success(f"数据集已创建：{dataset.get('dataset_id')}")
         st.rerun()
 
@@ -77,6 +79,7 @@ def create_experiment(
         baseline_experiment_id,
     )
     if experiment:
+        invalidate_session_cache(st.session_state.session_id)
         st.success(f"实验已创建：{experiment.get('experiment_id')}")
         st.rerun()
 

@@ -33,10 +33,7 @@ def _render_chat_workspace() -> None:
             with st.chat_message("assistant", avatar="🤖"):
                 if reasoning:
                     with st.expander("🧠 查看推理过程（DeepSeek V4 thinking）", expanded=False):
-                        st.markdown(
-                            f"<div style='color:#888;font-size:0.85em;'>{reasoning}</div>",
-                            unsafe_allow_html=True,
-                        )
+                        st.markdown(reasoning)
                 render_message_with_oversight(content)
 
         elif role == "user":

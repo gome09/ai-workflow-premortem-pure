@@ -183,7 +183,7 @@ def _render_session_list() -> None:
     if sessions:
         st.caption(f"最近 {len(sessions)} 个会话")
         for s in sessions[:10]:
-            icon, _ = STATE_LABELS.get(s["current_state"], ("⚪", ""))
+            icon, state_label = STATE_LABELS.get(s["current_state"], ("⚪", ""))
             raw_label = (
                 s.get("session_name")
                 or s.get("research_target")
@@ -200,6 +200,7 @@ def _render_session_list() -> None:
                     session_id=s["session_id"],
                     label=raw_label,
                     icon=icon,
+                    state_label=state_label,
                     domain=domain,
                     is_current=is_current,
                     disabled=st.session_state.get("user_role") == "viewer",

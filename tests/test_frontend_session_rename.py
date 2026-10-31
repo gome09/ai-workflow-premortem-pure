@@ -43,6 +43,29 @@ def test_delete_button_matches_session_height_and_is_square():
     assert "can_delete=is_admin" in SOURCE
 
 
+def test_session_item_is_keyboard_accessible():
+    assert 'role="button"' in COMPONENT_SOURCE
+    assert 'tabindex="0"' in COMPONENT_SOURCE
+    assert 'item.setAttribute("aria-label"' in COMPONENT_SOURCE
+    assert 'event.key === "Enter" || event.key === " "' in COMPONENT_SOURCE
+    assert 'event.key === "F2"' in COMPONENT_SOURCE
+    assert 'renameButton.addEventListener("click", startEditing)' in COMPONENT_SOURCE
+
+
+def test_session_item_renders_visible_rename_button():
+    assert 'id="rename-button"' in COMPONENT_SOURCE
+    assert 'renameButton.style.display = args.disabled ? "none" : "flex"' in COMPONENT_SOURCE
+
+
+def test_session_item_receives_state_label_from_sidebar():
+    assert 'state_label: str = ""' in SOURCE
+    assert "state_label=state_label" in SOURCE
+
+
+def test_reasoning_is_rendered_without_unsafe_html():
+    assert "unsafe_allow_html" not in SOURCE
+
+
 def test_session_and_delete_boxes_share_gray_theme_with_visible_gap():
     assert "gap: 1rem" in COMPONENT_SOURCE
     assert "background: var(--sidebar-background)" in COMPONENT_SOURCE

@@ -35,6 +35,11 @@
         min-width: 0;
       }
       #session-item:hover { border-color: rgb(255, 75, 75); }
+      #session-item:focus-visible {
+        border-color: rgb(255, 75, 75);
+        outline: 2px solid rgba(255, 75, 75, 0.45);
+        outline-offset: 1px;
+      }
       #session-item.current {
         background: transparent;
         border-color: rgba(128, 128, 128, 0.72);
@@ -54,6 +59,7 @@
         padding: 0;
       }
       #editor::selection { background: #355d7d; color: white; }
+      #rename-button,
       #delete-button {
         align-items: center;
         background: transparent;
@@ -70,14 +76,22 @@
         padding: 0;
         width: 38px;
       }
+      #rename-button:hover,
       #delete-button:hover { border-color: rgb(255, 75, 75); }
     </style>
   </head>
   <body>
-    <div id="session-item" title="单击打开，右键重命名">
+    <div
+      id="session-item"
+      role="button"
+      tabindex="0"
+      title="单击打开，右键或 F2 重命名"
+      aria-label="会话条目"
+    >
       <span id="icon"></span>&nbsp;<span id="label"></span><span id="domain"></span>
       <input id="editor" type="text" aria-label="会话名称" />
     </div>
+    <button id="rename-button" type="button" title="重命名会话" aria-label="重命名会话">✏️</button>
     <button id="delete-button" type="button" title="删除会话" aria-label="删除会话">🗑️</button>
     <script>
       const item = document.getElementById("session-item");
@@ -85,6 +99,7 @@
       const label = document.getElementById("label");
       const domain = document.getElementById("domain");
       const editor = document.getElementById("editor");
+      const renameButton = document.getElementById("rename-button");
       const deleteButton = document.getElementById("delete-button");
       let args = {};
       let editing = false;
@@ -114,6 +129,11 @@
         const domainText = String(args.domain || "");
         domain.textContent = domainText ? ` · ${domainText.slice(0, 6)}` : "";
         item.classList.toggle("current", Boolean(args.is_current));
+        const stateText = String(args.state_label || "");
+        const hint = "单击打开，右键或 F2 重命名";
+        item.setAttribute("aria-label", stateText ? `${stateText} · ${hint}` : hint);
+        item.title = stateText ? `${stateText} · ${hint}` : hint;
+        renameButton.style.display = args.disabled ? "none" : "flex";
         deleteButton.style.display = args.can_delete ? "flex" : "none";
         editor.maxLength = Number(args.max_length || 80);
         resize();
@@ -155,8 +175,18 @@
 
       item.addEventListener("click", () => { if (!editing) emit("select"); });
       item.addEventListener("contextmenu", startEditing);
+      item.addEventListener("keydown", (event) => {
+        if (editing) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          if (!args.disabled) emit("select");
+        } else if (event.key === "F2") {
+          startEditing(event);
+        }
+      });
       editor.addEventListener("click", (event) => event.stopPropagation());
       editor.addEventListener("contextmenu", (event) => event.stopPropagation());
+      renameButton.addEventListener("click", startEditing);
       deleteButton.addEventListener("click", () => emit("delete"));
       editor.addEventListener("keydown", (event) => {
         if (event.key === "Enter") {

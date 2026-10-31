@@ -59,6 +59,13 @@ def test_demo_config_explicitly_enables_demo_auth():
     assert "DEMO_AUTO_AUTH=true" in (ROOT / ".env.demo").read_text(encoding="utf-8")
 
 
+def test_demo_env_file_loads_with_frontend_only_keys():
+    """CI 与 make demo-* 会把 .env.demo 复制为 .env；共享 env 文件中的
+    DEMO_* / SQLITE_PATH 等前端/容器专用键必须被 Settings 忽略，而非导入即失败。"""
+    loaded = Settings(_env_file=str(ROOT / ".env.demo"))
+    assert not hasattr(loaded, "demo_auto_auth")
+
+
 def test_example_encryption_secrets_are_placeholders_only():
     for name in ("data_encryption_key", "checkpoint_encryption_key"):
         assert (ROOT / "secrets.example" / name).read_text(encoding="utf-8").strip() == "CHANGE_ME"

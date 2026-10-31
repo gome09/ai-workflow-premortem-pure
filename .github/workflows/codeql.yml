@@ -1,9 +1,15 @@
 name: codeql
 
+# 仓库已公开：main 推送与 PR 均执行静态分析，并保留每周例行扫描。
+# required check 的远端强制设置仍需维护者在 GitHub 后台确认（见 .upgrade/STATE.md）。
 on:
-  workflow_dispatch:   # 阶段 1 先手动触发；仓库公开后改 push/PR + weekly cron
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
   schedule:
     - cron: '22 3 * * 1'  # 每周一 03:22 UTC
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,10 +19,10 @@ jobs:
   analyze:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: github/codeql-action/init@v3
+      - uses: actions/checkout@v7
+      - uses: github/codeql-action/init@v4
         with:
           languages: python
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@v4
         with:
           category: "/language:python"

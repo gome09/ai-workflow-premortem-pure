@@ -1,0 +1,18 @@
+{
+  "approval_basis": "exact-plan-id",
+  "approval_plan_id": "a6b8c19185986d09457d3ca89e43c5dda167ec0e840909cc54eee52c45bf3643",
+  "authority": "user",
+  "decision": "Keep .env.example, .env.demo and secrets.example/* tracked as intentional templates; keep generated caches (.uv-cache, .pytest_cache, .mypy_cache, .ruff_cache) ignored; apply no git-policy add-ignore rules.",
+  "decision_id": "DEC-B1811F986E66",
+  "evidence": [
+    "git-audit --include-artifacts and git-policy-review 2026-10-31; health-check 0 errors"
+  ],
+  "kind": "decision",
+  "rationale": "git-policy-review produced 158 confirm-only entries and zero add-ignore proposals: 146 are source-like files inside already-ignored .uv-cache, and the remaining tracked hits are template/config files the repository intentionally versions. No unignored sensitive material was found.",
+  "record_digest": "0f59ed6944051d23a91c210c533a7a2013516762a145cc05121e9a4790a6c28f",
+  "recorded_at": "2026-10-31T07:11:11+00:00",
+  "schema_version": 2,
+  "scope": "repository root; .env.example, .env.demo, secrets.example/, .uv-cache/, .pytest_cache/",
+  "supersedes": null,
+  "title": "Accept git-audit template and cache confirm findings"
+}

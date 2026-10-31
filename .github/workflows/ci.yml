@@ -18,15 +18,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v10
         with:
           enable-cache: true
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
@@ -43,8 +43,15 @@ jobs:
       - name: Doc consistency check
         run: make doc-check
 
+      - name: Version metadata check
+        run: make version-check
+
+      # 项目自身未发布 PyPI，直接 `pip-audit` 会因本地 editable 项目报错且无审计信号；
+      # 改为审计锁文件导出的第三方依赖集合。
       - name: Dependency vulnerability audit (non-blocking)
-        run: uv run pip-audit --strict
+        run: |
+          uv export --frozen --no-emit-project --format requirements-txt --no-hashes -o requirements-audit.txt
+          uv run pip-audit --strict -r requirements-audit.txt
         continue-on-error: true   # 先告警不阻断，观察一轮后再评估升级
 
       - name: Unit tests with coverage (sqlite + mock)
@@ -61,7 +68,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Prepare env file
         run: cp -f .env.demo .env
@@ -103,7 +110,7 @@ jobs:
     continue-on-error: true
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Prepare env file (postgres backend, mock LLM)
         run: |

@@ -18,6 +18,20 @@ from models.api_client import (
 )
 
 
+def _stage_advancement_decision(stage_id: int) -> dict:
+    """推进判定是只读派生视图：优先复用已缓存结果，缺失时才回源并回填。"""
+    decisions = st.session_state.get("stage_advancement_decisions") or {}
+    cached = decisions.get(f"stage_{stage_id}")
+    if isinstance(cached, dict) and cached:
+        return cached
+    decision = get_stage_advancement_decision(st.session_state.session_id, stage_id)
+    if decision:
+        decisions = dict(st.session_state.get("stage_advancement_decisions", {}))
+        decisions[f"stage_{stage_id}"] = decision
+        st.session_state.stage_advancement_decisions = decisions
+    return decision
+
+
 def render_gate_panel(state: str) -> None:
     """Stage Readiness / Gate Blockers 面板。"""
     readiness = st.session_state.stage_readiness or get_stage_readiness(st.session_state.session_id)
@@ -40,9 +54,7 @@ def render_gate_panel(state: str) -> None:
     current_stage_id = state_stage_map.get(state)
     if current_stage_id:
         current_readiness = readiness.get(f"stage_{current_stage_id}", {})
-        advancement_decision = get_stage_advancement_decision(
-            st.session_state.session_id, current_stage_id
-        )
+        advancement_decision = _stage_advancement_decision(current_stage_id)
         blockers = current_readiness.get("blockers", []) or []
         can_continue = advancement_decision.get(
             "can_advance", current_readiness.get("can_continue", False)

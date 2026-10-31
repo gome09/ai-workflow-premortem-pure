@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 import streamlit as st
-from models.api_client import get_health, list_audit_events, list_interrupt_records
+from models.api_client import get_health, list_audit_events
 
 
 def render_interrupt_panel() -> None:
     with st.expander("🧩 执行 / 中断调试", expanded=False):
-        records = st.session_state.interrupt_records or list_interrupt_records(
-            st.session_state.session_id
-        )
+        # interrupt_records 由 select/mutation/刷新按钮写入；空列表是有效结果，
+        # 不再用 falsy 判断触发第二次请求。
+        records = st.session_state.interrupt_records
         health = st.session_state.health or get_health()
         st.caption(
             "默认 single_step 保持稳定；"

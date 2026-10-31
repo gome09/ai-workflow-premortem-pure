@@ -69,6 +69,10 @@ def select_session(session: dict) -> None:
         return
     st.session_state.session_id = session["session_id"]
     st.session_state.current_state = session["current_state"]
+    # 切换会话必须丢弃上一会话的派生门禁状态。
+    st.session_state.stage_resolution = {}
+    st.session_state.stage_advancement_decisions = {}
+    st.session_state.stage_advancement_decision = None
 
     ctx = get_session(session["session_id"])
     if ctx:

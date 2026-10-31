@@ -140,3 +140,6 @@ def refresh_actions() -> None:
     )
     st.session_state.interrupt_records = list_interrupt_records(st.session_state.session_id)
     st.session_state.stage_readiness = get_stage_readiness(st.session_state.session_id)
+    # 推进判定依赖被刷新的门禁状态，旧值必须丢弃，由面板在下次渲染时回源。
+    st.session_state.stage_advancement_decisions = {}
+    st.session_state.stage_advancement_decision = None

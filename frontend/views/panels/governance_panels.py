@@ -19,12 +19,12 @@ from controllers.governance_controller import (
 from labels import resolution_zh, risk_type_zh, severity_zh
 from models.api_client import list_evidence, list_safety_findings
 from models.mappings import STRUCTURED_EDIT_SOURCE_TYPES
-from models.session_state import refresh_actions
 
 
 def render_action_queue() -> None:
     """Human Oversight 动作队列。"""
-    refresh_actions()
+    # 动作队列直接读取派生状态；pending_actions 由 select/send/mutation/刷新按钮写入，
+    # 不在每次 rerun 时无条件重拉接口。
     actions = st.session_state.pending_actions
     action_title = f"🚦 待处理人工动作 ({len(actions)})" if actions else "✅ 无待处理人工动作"
     st.subheader(action_title)

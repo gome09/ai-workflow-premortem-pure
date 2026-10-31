@@ -41,6 +41,7 @@ Phase 0–4 与 formal-project-uplift Wave A–E 的代码侧工作已完成；P
 - 后端契约与 save() 差分同步（2026-10-31）：两阶段提交 `b4ce65f`（B1 读取契约：新增 `storage/projection_read.py` 投影直读层，`SessionService` 的 actions / audit-events / evidence / safety-findings / eval-cases / eval-datasets / eval-experiments / redteam-cases / interrupt-records / report-artifacts 列表端点改为投影优先、异常回退上下文；新增 `GET /sessions/{session_id}/overview` 轻量概览与 `GZipMiddleware(minimum_size=1024)`）、`2263150`（B2 写入差分：Alembic V009 新增 `sessions.projection_state` 与 `eval_runs.pass_criteria` / `llm_judge_suggestion`；新增 `storage/projection_state.py` 的 hash / append 状态与 fail-safe 同步计划；双后端 `save()` 由 `INSERT OR REPLACE` 改为 UPSERT（避免 SQLite 级联删除投影子行），一次性 `model_dump` 生成状态与 `context_json`，未变化的可变集合跳过重写、追加型集合按 `start` 游标写入，`interrupt_resume_outbox` 每次同步；SQLite `initialize()` 通过 PRAGMA 幂等补齐旧库列；`list_eval_runs` 切换投影直读）。新增 `tests/test_projection_reads.py`、`tests/test_projection_sync_state.py`、`tests/test_alembic_v009_projection_sync_state.py`，扩展 `tests/test_api_response_contract.py` 与 `tests/test_projection_reads.py`。全量 `844 passed, 1 skipped`（SQLite + memory + mock，12.6s）；Ruff、doc-check、version-check 通过。
 - 文档漂移修复与产物注册表复核（2026-10-31）：将 `STATE.md` 过期的“当前测试基线 750 passed”更正为 `844 passed, 1 skipped`（2026-10-31），并明确 Phase 4 剩余项仅为远端治理动作；`health-check` 无错误，`ARTIFACTS.json` 两条 runtime 注册项（旧业务库 SQL 转储、daemon.json 备份）路径存在、Git 与 Docker 忽略规则均命中、registry 哈希与 `CONFIG.json` 一致。`artifact-policy-review` 对 `daemon.json.20261028.bak` 提示分类器建议与已注册策略不同（建议 content/permanent/tracked），按“仅本地回滚、永不提交”的既有决策保留 runtime/ignore，未持久化或应用计划。另发现 `frontend_wip_20261029/`、`frontend_mvc_20261031/` 两个备份目录未注册且未忽略，待后续 `git-policy-review` 或 cleanup 决策。
 - 项目整体整理（2026-10-31）：按业务代码口径扫描 500 个跟踪文件，确认无遗留副本、无异常空文件、无缓存/构建产物误入库（空文件仅为合法的 `__init__.py` / `.gitkeep`）。`cleanup-apply` 应用计划 `6f5d4071...`，将 1 份过期 pytest 日志与 6 个一次性临时/计划文件移入 `.upgrade/tmp/.trash/`（可恢复，7 项，约 88 KB），`MANIFEST.md` 清单由 CLI 刷新。按用户决策保留两个前端备份目录、保留回收站现有 33 个文件，未执行 purge；`.upgrade/backup` 两条已注册 runtime 项维持 Git/Docker 排除。
+- 根目录整理（2026-10-31）：将 3 个已完成实施方案 txt 与 `.trae/documents/frontend-app-mvc-refactor.md` 归档到 `.upgrade/archive/plans/`，并在 `MANIFEST.md` 的 “Moved from Project” 登记；删除空目录 `artifacts/live_e2e_four_stage/`、`.screenshots/`、`.trae/`，`.trae/` 已加入 `.gitignore`。两个根目录 HTML 交付物（README/CHANGELOG 引用）、`config/`（compose 挂载点）及 `.env` / `secrets/` / `data/` 等本地运行时保持不动。
 
 ## Current Blockers
 
@@ -83,9 +84,9 @@ Authenticate GitHub maintainer account, verify branch protection and vulnerabili
 
 ## last_update
 
-- Date: 2026-10-31T03:35:24+00:00
-- Updated by: cleanup-apply + manual state sync
-- Summary: Applied cleanup plan 6f5d4071 (7 recoverable files to .upgrade/tmp/.trash), refreshed MANIFEST inventory, and recorded the business-code scan finding no leftover copies or build artifacts.
+- Date: 2026-10-31T03:52:00+00:00
+- Updated by: manual root tidy + state sync
+- Summary: Archived 3 root-level implementation plans and 1 .trae design doc into .upgrade/archive/plans, registered them in MANIFEST Moved from Project, removed empty local directories, and added .trae/ to .gitignore.
 
 ## last_validation
 

@@ -43,6 +43,7 @@ test-results/
 .vscode/
 .claude/settings.local.json
 .agents/
+.trae/
 .codex/
 .cursor/
 .windsurf/

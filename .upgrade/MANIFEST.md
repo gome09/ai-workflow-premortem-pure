@@ -100,6 +100,10 @@ Before cleanup, classify each file as one of:
 | `release_manifest_v1.0.md` | `.upgrade/archive/release_manifest_v1.0.md` | v1.0 生产文件范围快照，属于一次性发布报告，非持续维护文档 | low (no refs found) | 2026-07-17 Mode 3 已再归档至 `.upgrade/archive/` |
 | `show.md` | `.upgrade/archive/show.md` | v1.0 时期项目展示/答辩文档，与 README 大量重叠且版本号落后（v1.0 vs v1.3.0），全仓无引用，已被 README.md 取代 | low (no refs found; git mv 保留历史) | 无（2026-07-17 Mode 4 扫描归档） |
 | `artifacts_live_e2e.log` | `.upgrade/logs/artifacts_live_e2e.log` | live E2E 四阶段实跑日志（RESULT: PASS），一次性运行产物，本就被 `.gitignore` `*.log` 忽略 | low (no refs; untracked) | 2026-07-20 Mode 3 清理已删除（结论早已固化进后续 E2E 报告） |
+| `前端数据传输链路优化实施方案.txt` | `.upgrade/archive/plans/前端数据传输链路优化实施方案-20261031.txt` | 已完成的前端传输链路优化实施方案；根目录临时文件按升级工作区规则归档 | low (untracked, no refs) | 无 |
+| `后端契约与save差分同步实施方案.txt` | `.upgrade/archive/plans/后端契约与save差分同步实施方案-20261031.txt` | 已完成的后端契约/save 差分同步实施方案；根目录临时文件按升级工作区规则归档 | low (untracked, no refs) | 无 |
+| `数据库查询与读写优化实施方案.txt` | `.upgrade/archive/plans/数据库查询与读写优化实施方案-20261028.txt` | 已完成的数据库查询与读写优化实施方案；根目录临时文件按升级工作区规则归档 | low (untracked, no refs) | 无 |
+| `.trae/documents/frontend-app-mvc-refactor.md` | `.upgrade/archive/plans/frontend-app-mvc-refactor-20261031.md` | IDE 生成的前端 MVC 重构设计文档，非业务源文件；归档后 `.trae/` 已加入 `.gitignore` | low (untracked, no refs) | 无 |
 
 <!-- project-upgrade-maintainer:manifest:start -->
 ## Active Modules

@@ -7,10 +7,10 @@ Based on `UPGRADE_REQUIREMENTS.md`.
 | Phase | 内容 | 状态 |
 |---|---|---|
 | P0 基线核对 | 版本 / 迁移头 / schema / Git 状态 / 本地检查 / 远端 run 41281614067 逐 job 定位 | 完成 |
-| P1 CI 根因修复 | `core/coverage/**` 入库与忽略锚定（`7966f9d`）、动态 Alembic head、`test_postgres_p1_storage.py` 纳入 production-safety、审计拆为 non-blocking | 完成（待同 SHA 远端验证） |
+| P1 CI 根因修复 | `core/coverage/**` 入库与忽略锚定（`7966f9d`）、动态 Alembic head、`test_postgres_p1_storage.py` 纳入 production-safety、审计拆为 non-blocking | 完成（run 41298061928 已验证） |
 | P2 文档对齐 | README / docs 索引 / 验收报告 / 启动指南 / spec / ISSUE_TEMPLATE | 完成（本地） |
 | P3 `.upgrade` 同步 | STATE / MANIFEST / 三份计划 / 决策 / trace | 完成 |
-| P4 提交与远端验收 | 提交 1/2/3 推送，核对每个 SHA 的四个 job | 进行中（代码提交 `3316bb5` / run 41298061928 全绿；文档提交待验证） |
+| P4 提交与远端验收 | 提交 1/2/3 推送，核对每个 SHA 的四个 job | 进行中（代码 `3316bb5` / run 41298061928 与文档 `93b9b71` / run 41298329901 均全绿；回填提交待验证） |
 
 ## Dependencies
 

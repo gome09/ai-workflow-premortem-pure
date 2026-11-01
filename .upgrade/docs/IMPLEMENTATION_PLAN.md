@@ -12,5 +12,5 @@ Plan source: `.upgrade/plans/2026-11-01-doc-ci-upgrade-alignment.md`
 | T5 | 当前规格对齐 | 完成 | governance-platform Status/日期；security-model 邀请与 RBAC；supply-chain 四 job / CodeQL / audit；architecture V009–V012；api-reference 路由数 100 |
 | T6 | `.upgrade` 同步 | 完成 | STATE / MANIFEST / 三份计划 / 决策 / trace |
 | T7 | 提交 1 推送与远端 CI | 完成 | `cd19398` / `6118649` / `3316bb5`；run 41298061928 四 job success，CodeQL success |
-| T8 | 提交 2 推送与远端 CI | 进行中 | 文档 + `.upgrade` 待提交 |
-| T9 | 提交 3 验证回填 | 待执行 | 写入提交 2 的 run ID 与结论 |
+| T8 | 提交 2 推送与远端 CI | 完成 | `93b9b71` / run 41298329901 四 job success，CodeQL success |
+| T9 | 提交 3 验证回填 | 进行中 | 写入 run ID 与结论；其自身 CI 记录在最终答复 |

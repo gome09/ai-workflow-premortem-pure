@@ -18,7 +18,7 @@
 | 数据库迁移链 | ✅ Alembic V001 → V012（V012：`workspace_invitations`、`eval_cases.standard_version`、`eval_runs.case_version_digest` / `target_deployment_version`） |
 | ProjectContext schema | ✅ `0.6.0-alpha.8` → `0.10.0`（`CURRENT_CONTEXT_SCHEMA_VERSION`） |
 | V008→V012 实测 | ✅ 2026-11-01 P1 决策记录：临时 PostgreSQL 18 trust 集群完成升级/回滚/再升级（2 passed）与 `goal` 密文/历史回填/邀请刷新（3 passed）；本轮未重跑 |
-| 远端 CI | ✅ 代码提交 `3316bb5` / run 41298061928：`lint-and-unit-tests`、`docker-lite-integration`、`production-safety`、`docker-full-integration` 四个 job 全部 success，同 SHA CodeQL success；文档对齐提交的 run 待推送后回填 |
+| 远端 CI | ✅ 代码提交 `3316bb5` / run 41298061928 与文档提交 `93b9b71` / run 41298329901 的四个 job 全部 success，两次 CodeQL 均 success；验证回填提交的 run 记录在最终任务答复 |
 | 旧库租户归属 | ⚠️ 旧库 20 个会话与 90 条 `human_actions` 的 `tenant_id` 为 NULL（早于多租户模型），默认租户作用域查询不可见，需按实际归属回填。回填通道：`scripts/backfill_session_tenants.py`（默认 dry-run，仅填 `tenant_id IS NULL` 行） |
 
 ## 历史基线（2026-10-31，v1.3.0）
@@ -55,6 +55,6 @@ v1.3.0（formal-project-uplift Wave A–E）在 v1.2.1 基础上的变更不改�
 
 ---
 
-*当前报告最近更新：2026-11-01（v1.7.0 对齐轮；远端 CI 结果待推送后回填）*
+*当前报告最近更新：2026-11-01（v1.7.0 对齐轮；代码与文档提交 CI 均已通过，验证回填提交记录在最终答复）*
 *当前架构版本：1.7.0*
 *当前测试基线：`1131 passed, 4 skipped`（2026-11-01，SQLite + memory + mock）；历史数字仅作追溯。*

@@ -88,6 +88,11 @@ def _execute(sql: str, params: tuple) -> None:
         conn.execute(sql, params)
 
 
+def _create_tenant(prefix: str) -> str:
+    """Create a real tenant row so sessions satisfy the V008 foreign key."""
+    return str(session_store.create_tenant(f"{prefix}-{uuid.uuid4().hex}")["tenant_id"])
+
+
 def _latest_event_payload_text(session_id: str) -> str:
     with psycopg.connect(_DATABASE_URL) as conn:
         row = conn.execute(
@@ -179,7 +184,7 @@ def service(migrated_database):
 def test_pg_goal_backfill_encrypts_legacy_plaintext():
     """Historical rows written before the goal-encryption fix can be migrated in place."""
     session_id = str(uuid.uuid4())
-    tenant_id = str(uuid.uuid4())
+    tenant_id = _create_tenant("e2e-goal")
     legacy_goal = "历史明文目标-PG"
     context = {
         "context_schema_version": "0.10.0",
@@ -246,8 +251,8 @@ def test_pg_workspace_invitation_and_refresh_role():
 def test_pg_redis_workflow_lifecycle(service, migrated_database):
     svc, create = service
     cache = migrated_database
-    tenant_a = str(uuid.uuid4())
-    tenant_b = str(uuid.uuid4())
+    tenant_a = _create_tenant("e2e-a")
+    tenant_b = _create_tenant("e2e-b")
     scenario_input = read_scenario_input(_SCENARIO_ID)
 
     # ── 1. create: write-through to PostgreSQL + Redis ────────────────────

@@ -52,6 +52,9 @@ jobs:
       - name: Version metadata check
         run: make version-check
 
+      - name: Prepare data directory
+        run: mkdir -p data
+
       - name: Unit tests with coverage (sqlite + mock)
         run: |
           cp -f .env.demo .env

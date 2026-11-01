@@ -126,9 +126,7 @@ def _render_risk_treatments(session_id: str) -> None:
 
             treatment_id = treatment.get("treatment_id") or ""
             if treatment_id and treatment.get("status") in {"completed", "accepted"}:
-                st.caption(
-                    f"复核状态：{treatment.get('reviewed_by') or '尚未复核'}"
-                )
+                st.caption(f"复核状态：{treatment.get('reviewed_by') or '尚未复核'}")
                 review_note = st.text_input("复核备注", key=f"closure_review_note_{index}")
                 col_a, col_b = st.columns(2)
                 with col_a:
@@ -158,8 +156,7 @@ def _render_release_approval(session_id: str) -> None:
     release_approval = summary.get("release_approval") or {}
 
     st.caption(
-        f"报告生成：{report_generation.get('artifact_count', 0)} 份"
-        "（报告可导出 ≠ 审批通过）"
+        f"报告生成：{report_generation.get('artifact_count', 0)} 份（报告可导出 ≠ 审批通过）"
     )
     st.caption(f"评估完成：{evaluation_completion.get('completed')}")
     st.caption(

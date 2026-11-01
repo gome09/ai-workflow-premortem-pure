@@ -33,8 +33,7 @@ def upgrade() -> None:
         "TEXT NOT NULL DEFAULT ''"
     )
     op.execute(
-        "ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS target_endpoint "
-        "TEXT NOT NULL DEFAULT ''"
+        "ALTER TABLE eval_runs ADD COLUMN IF NOT EXISTS target_endpoint TEXT NOT NULL DEFAULT ''"
     )
 
 

@@ -55,7 +55,9 @@ _LOW_RISK = RiskFactorScores(
 )
 
 
-def _ctx(*, data_classification: str = "business_internal", with_treatment: bool = True) -> ProjectContext:
+def _ctx(
+    *, data_classification: str = "business_internal", with_treatment: bool = True
+) -> ProjectContext:
     ctx = ProjectContext(
         tenant_id=_TENANT,
         research_target="Internal policy assistant",
@@ -404,10 +406,16 @@ def test_api_approval_authorization_and_success(api_client_and_store):
 
     path = f"/sessions/{ctx.session_id}/approvals/release"
 
-    response = client.post(path, json={"decision": "approve", "note": "editor"}, headers=_headers("editor", "editor-user"))
+    response = client.post(
+        path,
+        json={"decision": "approve", "note": "editor"},
+        headers=_headers("editor", "editor-user"),
+    )
     assert response.status_code == 403
 
-    response = client.post(path, json={"decision": "approve", "note": "self"}, headers=_headers("admin", _CREATOR))
+    response = client.post(
+        path, json={"decision": "approve", "note": "self"}, headers=_headers("admin", _CREATOR)
+    )
     assert response.status_code == 403
 
     response = client.post(

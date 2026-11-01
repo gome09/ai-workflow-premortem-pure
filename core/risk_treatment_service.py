@@ -152,10 +152,7 @@ def treatment_blockers(ctx: ProjectContext) -> list[dict[str, Any]]:
 
 def _blocker_message(requirement: TreatmentRequirement, state: str) -> str:
     if state == "missing":
-        return (
-            f"高风险项 {requirement.source_id} 缺少风险处置记录："
-            "必须指定责任人并提交缓解措施。"
-        )
+        return f"高风险项 {requirement.source_id} 缺少风险处置记录：必须指定责任人并提交缓解措施。"
     if state == "incomplete_fields":
         return f"高风险项 {requirement.source_id} 的处置记录缺少责任人或有意义的缓解措施。"
     if state == "stale":
@@ -165,8 +162,7 @@ def _blocker_message(requirement: TreatmentRequirement, state: str) -> str:
         )
     if state == "not_final":
         return (
-            f"高风险项 {requirement.source_id} 的处置尚未完成"
-            "（状态必须为 completed 或 accepted）。"
+            f"高风险项 {requirement.source_id} 的处置尚未完成（状态必须为 completed 或 accepted）。"
         )
     return f"高风险项 {requirement.source_id} 的处置尚未经独立复核。"
 
@@ -177,9 +173,7 @@ def _find_requirement(
     for requirement in high_risk_treatment_requirements(ctx):
         if requirement.source_type == source_type and requirement.source_id == source_id:
             return requirement
-    raise RiskTreatmentError(
-        f"Not an open high/critical risk item: {source_type}/{source_id}"
-    )
+    raise RiskTreatmentError(f"Not an open high/critical risk item: {source_type}/{source_id}")
 
 
 def upsert_risk_treatment(
@@ -196,9 +190,7 @@ def upsert_risk_treatment(
 ) -> RiskTreatment:
     """Create or update the treatment record for one high/critical item."""
     if actor_role not in TREATMENT_WRITE_ROLES:
-        raise RiskTreatmentAuthorizationError(
-            "Risk treatment updates require editor or admin role"
-        )
+        raise RiskTreatmentAuthorizationError("Risk treatment updates require editor or admin role")
     if status not in {"planned", "in_progress", "completed", "accepted"}:
         raise RiskTreatmentError(f"Unsupported treatment status: {status}")
 
@@ -282,9 +274,7 @@ def review_risk_treatment(
 ) -> RiskTreatment:
     """Record an independent review decision for one treatment."""
     if actor_role not in TREATMENT_WRITE_ROLES:
-        raise RiskTreatmentAuthorizationError(
-            "Risk treatment review requires editor or admin role"
-        )
+        raise RiskTreatmentAuthorizationError("Risk treatment review requires editor or admin role")
     reviewer = (actor_id or "").strip()
     if not reviewer:
         raise RiskTreatmentAuthorizationError("Reviewer identity is required")

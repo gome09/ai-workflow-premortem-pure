@@ -56,9 +56,7 @@ def _render_governance_section(content: dict) -> None:
         st.markdown("#### 审批状态")
         release = approval.get("release_approval") or {}
         st.caption("报告生成/导出不代表上线批准；评估完成也不等于上线批准。")
-        st.text(
-            f"- 评估完成：{(approval.get('evaluation_completion') or {}).get('completed')}"
-        )
+        st.text(f"- 评估完成：{(approval.get('evaluation_completion') or {}).get('completed')}")
         st.text(
             f"- 上线批准：{approval_status_zh(release.get('status'))} "
             f"· 批准人={release.get('decided_by') or '-'}"

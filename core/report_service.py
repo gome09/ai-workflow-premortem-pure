@@ -886,9 +886,7 @@ def build_markdown_report(ctx: ProjectContext) -> str:
     if release_approval.get("stale_reason"):
         lines.append(f"  - Stale reason: {release_approval.get('stale_reason')}")
     for blocker in (report.get("release_readiness") or {}).get("blockers", [])[:20]:
-        lines.append(
-            f"  - Release blocker `{blocker.get('code')}`: {blocker.get('message')}"
-        )
+        lines.append(f"  - Release blocker `{blocker.get('code')}`: {blocker.get('message')}")
     lines.append(
         "- **报告生成/导出不代表上线批准；评估完成也不代表可上线。** "
         "上线批准是独立的 admin 审批记录。"

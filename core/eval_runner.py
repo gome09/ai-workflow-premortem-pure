@@ -33,11 +33,7 @@ _EXECUTION_KINDS = {
 
 def _execution_kind(run_mode: str) -> str:
     if run_mode == "llm_node":
-        return (
-            "mock_model_execution"
-            if settings.llm_mode == "mock"
-            else "platform_model_execution"
-        )
+        return "mock_model_execution" if settings.llm_mode == "mock" else "platform_model_execution"
     return _EXECUTION_KINDS.get(run_mode, "unknown")
 
 

@@ -207,8 +207,7 @@ def _real_target_blockers(
         ReleaseBlocker(
             code="real_target_test",
             message=(
-                f"高风险节点 {node_id} 缺少当前评估版本的通过真实目标测试"
-                "（模拟执行不计入）。"
+                f"高风险节点 {node_id} 缺少当前评估版本的通过真实目标测试（模拟执行不计入）。"
             ),
             severity="high",
             source_type="eval_node",
@@ -529,8 +528,7 @@ def build_approval_summary(ctx: ProjectContext) -> dict[str, Any]:
         "evaluation_version": current_evaluation_version(ctx),
         "report_generation": _report_generation_status(ctx),
         "evaluation_completion": {
-            "completed": ctx.current_state == SessionState.COMPLETE
-            and _stage_outputs_present(ctx),
+            "completed": ctx.current_state == SessionState.COMPLETE and _stage_outputs_present(ctx),
             "current_state": getattr(ctx.current_state, "value", str(ctx.current_state)),
         },
         "release_approval": {

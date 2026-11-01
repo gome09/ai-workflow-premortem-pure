@@ -166,9 +166,7 @@ class EvaluationService(SessionAccess):
                 "run_mode": run_mode,
                 "created_runs": len(runs),
                 "target_endpoint": (
-                    sanitize_endpoint(target_config.endpoint)
-                    if target_config is not None
-                    else ""
+                    sanitize_endpoint(target_config.endpoint) if target_config is not None else ""
                 ),
             },
         )

@@ -169,7 +169,11 @@ def _ctx_with_eval_case() -> tuple[ProjectContext, EvalCase]:
 @pytest.mark.parametrize(
     ("response", "expected_outcome", "expected_status"),
     [
-        (TargetTestResponse(outcome="success", output="answer", status_code=200), "success", "completed"),
+        (
+            TargetTestResponse(outcome="success", output="answer", status_code=200),
+            "success",
+            "completed",
+        ),
         (
             TargetTestResponse(
                 outcome="failed",
@@ -181,7 +185,11 @@ def _ctx_with_eval_case() -> tuple[ProjectContext, EvalCase]:
             "completed",
         ),
         (TargetTestResponse(outcome="timeout", error_code="target_timeout"), "timeout", "failed"),
-        (TargetTestResponse(outcome="error", error_code="response_contract_error"), "error", "failed"),
+        (
+            TargetTestResponse(outcome="error", error_code="response_contract_error"),
+            "error",
+            "failed",
+        ),
     ],
 )
 def test_run_eval_case_records_target_outcome(

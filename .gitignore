@@ -30,7 +30,7 @@ env/
 .coverage
 .coverage.*
 coverage.xml
-coverage/
+/coverage/
 htmlcov/
 junit*.xml
 pytestdebug.log

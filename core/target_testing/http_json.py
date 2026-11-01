@@ -78,9 +78,7 @@ class HttpJsonTargetAdapter:
     def _allowed(self, sanitized: str) -> bool:
         if self._allowed_hosts is not None:
             allowed = {
-                item.strip().lower()
-                for item in self._allowed_hosts.split(",")
-                if item.strip()
+                item.strip().lower() for item in self._allowed_hosts.split(",") if item.strip()
             }
             if not allowed:
                 return False
@@ -214,8 +212,7 @@ class HttpJsonTargetAdapter:
                 latency_ms=latency_ms,
                 error_code="response_contract_error",
                 error_message=(
-                    f"Target response does not contain string field "
-                    f"{self.config.output_field!r}."
+                    f"Target response does not contain string field {self.config.output_field!r}."
                 ),
                 endpoint=endpoint,
                 response_digest=response_digest,

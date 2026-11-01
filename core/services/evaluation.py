@@ -31,6 +31,7 @@ from core.eval_judgment_service import (
 )
 from core.eval_runner import run_eval_cases as execute_eval_cases
 from core.eval_service import score_eval_case
+from core.eval_service import update_eval_case_standard as update_eval_case_standard_operation
 from core.oversight_service import (
     create_actions_from_eval_failures,
 )
@@ -118,6 +119,34 @@ class EvaluationService(SessionAccess):
             stage=3,
             reason="eval_case_scored",
             metadata={"eval_id": eval_id, "passed": passed},
+        )
+
+    def update_eval_case_standard(
+        self,
+        session_id: str,
+        eval_id: str,
+        *,
+        updates: dict[str, object],
+        tenant_id: str = "",
+    ) -> dict:
+        ctx = self.get_session(session_id, tenant_id)
+        if not ctx:
+            raise ValueError(f"Session not found: {session_id}")
+        case = update_eval_case_standard_operation(ctx, eval_id=eval_id, updates=updates)
+        self._store().save(ctx)
+        self._cache_set(ctx)
+        return self._with_stage_advancement(
+            ctx,
+            operation="eval_case_standard_updated",
+            result=case.model_dump(mode="json"),
+            source="eval_case_standard_updated",
+            stage=3,
+            reason="eval_case_standard_updated",
+            metadata={
+                "eval_id": eval_id,
+                "standard_version": case.standard_version,
+                "changed_fields": sorted(updates),
+            },
         )
 
     def list_eval_runs(

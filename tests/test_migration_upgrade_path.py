@@ -29,6 +29,7 @@ from pathlib import Path  # noqa: E402
 
 import psycopg  # noqa: E402
 from alembic.config import Config  # noqa: E402
+from alembic.script import ScriptDirectory  # noqa: E402
 
 from alembic import command  # noqa: E402
 from core.config import settings  # noqa: E402
@@ -40,6 +41,10 @@ def _normalize(url: str) -> str:
 
 def _alembic_config() -> Config:
     return Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+
+
+def _head() -> str:
+    return str(ScriptDirectory.from_config(_alembic_config()).get_current_head())
 
 
 def _reset_schema() -> None:
@@ -78,6 +83,28 @@ def _eval_run_columns() -> set[str]:
     return {str(row[0]) for row in rows}
 
 
+def _eval_case_columns() -> set[str]:
+    with psycopg.connect(_DATABASE_URL) as conn:
+        rows = conn.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'eval_cases'
+            """
+        ).fetchall()
+    return {str(row[0]) for row in rows}
+
+
+def _table_exists(table: str) -> bool:
+    with psycopg.connect(_DATABASE_URL) as conn:
+        row = conn.execute(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = %s",
+            (table,),
+        ).fetchone()
+    return row is not None
+
+
 @pytest.fixture
 def migrated_database():
     assert _normalize(settings.postgres_dsn_sync) == _normalize(_DATABASE_URL), (
@@ -94,6 +121,7 @@ def migrated_database():
 
 def test_v008_to_head_adds_projection_and_digest_columns(migrated_database):
     config = migrated_database
+    head = _head()
 
     assert _version() == "V008"
     columns = _session_columns()
@@ -104,10 +132,14 @@ def test_v008_to_head_adds_projection_and_digest_columns(migrated_database):
     assert "execution_outcome" not in eval_columns
     assert "evaluation_version_digest" not in eval_columns
     assert "target_endpoint" not in eval_columns
+    assert "case_version_digest" not in eval_columns
+    assert "target_deployment_version" not in eval_columns
+    assert "standard_version" not in _eval_case_columns()
+    assert not _table_exists("workspace_invitations")
 
-    command.upgrade(config, "head")
+    command.upgrade(config, head)
 
-    assert _version() == "V011"
+    assert _version() == head
     columns = _session_columns()
     assert "projection_state" in columns
     assert "context_digest" in columns
@@ -116,10 +148,15 @@ def test_v008_to_head_adds_projection_and_digest_columns(migrated_database):
     assert "execution_outcome" in eval_columns
     assert "evaluation_version_digest" in eval_columns
     assert "target_endpoint" in eval_columns
+    assert "case_version_digest" in eval_columns
+    assert "target_deployment_version" in eval_columns
+    assert "standard_version" in _eval_case_columns()
+    assert _table_exists("workspace_invitations")
 
 
 def test_downgrade_to_v008_then_reupgrade_restores_head(migrated_database):
     config = migrated_database
+    head = _head()
 
     command.downgrade(config, "V008")
     assert _version() == "V008"
@@ -129,12 +166,20 @@ def test_downgrade_to_v008_then_reupgrade_restores_head(migrated_database):
     eval_columns = _eval_run_columns()
     assert "execution_kind" not in eval_columns
     assert "target_endpoint" not in eval_columns
+    assert "case_version_digest" not in eval_columns
+    assert "target_deployment_version" not in eval_columns
+    assert "standard_version" not in _eval_case_columns()
+    assert not _table_exists("workspace_invitations")
 
-    command.upgrade(config, "head")
-    assert _version() == "V011"
+    command.upgrade(config, head)
+    assert _version() == head
     columns = _session_columns()
     assert "projection_state" in columns
     assert "context_digest" in columns
     eval_columns = _eval_run_columns()
     assert "execution_kind" in eval_columns
     assert "target_endpoint" in eval_columns
+    assert "case_version_digest" in eval_columns
+    assert "target_deployment_version" in eval_columns
+    assert "standard_version" in _eval_case_columns()
+    assert _table_exists("workspace_invitations")

@@ -173,6 +173,7 @@ APPROVAL_STATUS_ZH = {
     "approved": "已批准",
     "rejected": "已驳回",
     "stale": "已失效（评估版本变化）",
+    "invalidated": "已失效（前置条件变化）",
 }
 
 EXECUTION_OUTCOME_ZH = {

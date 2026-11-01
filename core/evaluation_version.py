@@ -1,18 +1,23 @@
 # core/evaluation_version.py
 """Evaluation-version snapshot used by approvals, treatments, and eval runs.
 
-A version is composed of two parts:
+A version has two layers:
 
-- ``stage_versions``: the monotonic version of each stage output. Any structured
-  edit or regeneration bumps a stage version, so an edit-then-revert sequence
-  cannot make an old approval current again.
-- ``content_digest``: a hash of the critical evaluation content (project inputs,
-  risk inputs, and risk-relevant fields of the four structured stage outputs).
+- ``stage_versions`` / ``input_versions``: monotonic revision counters. Any
+  structured stage edit or regeneration bumps a stage version; adding user
+  materials or changing the declared target deployment bumps an input version.
+  An edit-then-revert sequence therefore cannot make old evidence current again.
+- ``content_digest``: a hash of the critical evaluation content: project inputs,
+  risk inputs, target deployment, policy versions, the four stage outputs, and
+  the current EvalCase definitions (including ``standard_version``).
 
-Both are combined into ``digest``. Consumers store the digest and re-evaluate
-whether it still matches the current context. Conversation history, traces,
-timestamps, and raw summaries are deliberately excluded because they do not
-change the evaluated project.
+Evidence is deliberately excluded from the version digest: ``eval_runs``,
+``eval_judgments``, ``human_calibrations``, ``risk_treatments``,
+``project_approvals``, report artifacts, audit events, traces, conversation
+history and timestamps. This avoids a circular dependency where adding the run
+that proves a version would change the version being proven. Release validity
+is computed separately from the current evidence snapshot in
+``core/release_evidence.py``.
 """
 
 from __future__ import annotations
@@ -21,10 +26,13 @@ import hashlib
 import json
 from typing import Any
 
-from core.models import ProjectContext
+from core.models import EvalCase, ProjectContext
 from core.risk.assessment import risk_assessment_digest
 
-EVALUATION_VERSION_SCHEMA = "1.0"
+EVALUATION_VERSION_SCHEMA = "2.0"
+
+INPUT_VERSION_KEY_MATERIALS = "materials"
+INPUT_VERSION_KEY_TARGET_DEPLOYMENT = "target_deployment"
 
 
 def _digest(value: Any) -> str:
@@ -41,6 +49,50 @@ def _stage_versions(ctx: ProjectContext) -> dict[str, int]:
         f"stage_{stage}": int(ctx.stage_output_versions.get(f"stage_{stage}", 1))
         for stage in range(1, 5)
     }
+
+
+def bump_input_version(ctx: ProjectContext, key: str) -> int:
+    """Increment a monotonic non-stage input version and return the new value."""
+    value = int((ctx.input_versions or {}).get(key, 0)) + 1
+    ctx.input_versions[key] = value
+    return value
+
+
+def eval_case_digest(case: EvalCase) -> str:
+    """Stable digest of one EvalCase definition (outcome fields excluded)."""
+    return _digest(
+        {
+            "eval_id": case.eval_id,
+            "stage_id": case.stage_id,
+            "target_node_id": case.target_node_id,
+            "scenario_type": case.scenario_type,
+            "input_payload": _text_digest(case.input_payload),
+            "expected_behavior": _text_digest(case.expected_behavior),
+            "pass_criteria": list(case.pass_criteria or []),
+            "covered_failure_mode_ids": sorted(case.covered_failure_mode_ids or []),
+            "standard_version": case.standard_version,
+        }
+    )
+
+
+def _policy_content() -> dict[str, Any]:
+    # Local imports keep the risk/coverage packages free of evaluation imports.
+    from core.coverage.policy import COVERAGE_POLICY_VERSION
+    from core.gates.rules.manifest import RULE_MANIFEST
+    from core.risk.rules import RISK_MODEL_VERSION
+
+    return {
+        "rule_versions": {rule_id: meta.version for rule_id, meta in sorted(RULE_MANIFEST.items())},
+        "risk_model_version": RISK_MODEL_VERSION,
+        "coverage_policy_version": COVERAGE_POLICY_VERSION,
+    }
+
+
+def _target_deployment_content(ctx: ProjectContext) -> dict[str, Any] | None:
+    deployment = ctx.target_deployment
+    if deployment is None:
+        return None
+    return {"endpoint": deployment.endpoint, "version": deployment.version}
 
 
 def _critical_content(ctx: ProjectContext) -> dict[str, Any]:
@@ -107,7 +159,15 @@ def _critical_content(ctx: ProjectContext) -> dict[str, Any]:
             ctx.data_classification,
             ctx.selected_scenario_id,
         ],
+        "user_materials": [_text_digest(material) for material in ctx.user_materials],
+        "input_versions": dict(ctx.input_versions or {}),
+        "target_deployment": _target_deployment_content(ctx),
+        "policy": _policy_content(),
         "risk": risk_assessment_digest(ctx),
+        "eval_cases": [
+            [case.eval_id, eval_case_digest(case)]
+            for case in sorted(ctx.eval_cases, key=lambda item: item.eval_id)
+        ],
         "stage_1": failure_modes,
         "stage_2": workflow_nodes,
         "stage_3": test_results,
@@ -122,8 +182,15 @@ def build_evaluation_version(ctx: ProjectContext) -> dict[str, Any]:
     return {
         "schema": EVALUATION_VERSION_SCHEMA,
         "stage_versions": stage_versions,
+        "input_versions": dict(ctx.input_versions or {}),
         "content_digest": content_digest,
-        "digest": _digest({"stage_versions": stage_versions, "content_digest": content_digest}),
+        "digest": _digest(
+            {
+                "stage_versions": stage_versions,
+                "input_versions": dict(ctx.input_versions or {}),
+                "content_digest": content_digest,
+            }
+        ),
     }
 
 

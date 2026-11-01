@@ -27,6 +27,11 @@ from core.models import (
     ProjectContext,
     SessionState,
 )
+from core.release_evidence import (
+    build_release_evidence,
+    release_evidence_digest,
+    release_run_reasons,
+)
 from core.risk_treatment_service import (
     is_business_session,
     treatment_blockers,
@@ -68,6 +73,10 @@ class ReleaseReadiness(BaseModel):
     blockers: list[ReleaseBlocker] = Field(default_factory=list)
     checks: dict[str, bool] = Field(default_factory=dict)
     required_test_node_ids: list[str] = Field(default_factory=list)
+    required_test_eval_ids: list[str] = Field(default_factory=list)
+    release_batch_id: str = ""
+    release_batch_run_ids: list[str] = Field(default_factory=list)
+    release_batch_eval_ids: list[str] = Field(default_factory=list)
     passed_real_test_node_ids: list[str] = Field(default_factory=list)
     evaluation_version: dict[str, Any] = Field(default_factory=dict)
 
@@ -167,55 +176,31 @@ def _evidence_blockers(ctx: ProjectContext) -> list[ReleaseBlocker]:
 
 
 def _valid_real_target_runs(ctx: ProjectContext, digest: str) -> list[Any]:
+    cases = {case.eval_id: case for case in ctx.eval_cases}
     return [
         run
         for run in ctx.eval_runs
-        if run.run_mode == "target_http"
-        and run.execution_kind == "real_target_execution"
-        and run.status == "completed"
-        and run.judge_result == "passed"
-        and run.evaluation_version_digest == digest
-    ]
-
-
-def _real_target_blockers(
-    ctx: ProjectContext,
-    digest: str,
-    required_node_ids: list[str],
-    passed_node_ids: list[str],
-) -> list[ReleaseBlocker]:
-    if required_node_ids:
-        missing = sorted(set(required_node_ids) - set(passed_node_ids))
-    else:
-        valid_runs = _valid_real_target_runs(ctx, digest)
-        missing = [] if valid_runs else ["*"]
-
-    if not missing:
-        return []
-    if missing == ["*"]:
-        return [
-            ReleaseBlocker(
-                code="real_target_test",
-                message="尚无当前评估版本的通过真实目标测试，不能获得上线批准。",
-                severity="high",
-                source_type="eval_run",
-                source_id=None,
-                required_resolution="run_eval_experiment",
-            )
-        ]
-    return [
-        ReleaseBlocker(
-            code="real_target_test",
-            message=(
-                f"高风险节点 {node_id} 缺少当前评估版本的通过真实目标测试（模拟执行不计入）。"
-            ),
-            severity="high",
-            source_type="eval_node",
-            source_id=node_id,
-            required_resolution="run_eval_experiment",
+        if not release_run_reasons(
+            ctx,
+            run,
+            cases.get(run.eval_id),
+            evaluation_digest=digest,
         )
-        for node_id in missing
     ]
+
+
+def _to_blocker(item: dict[str, Any]) -> ReleaseBlocker:
+    severity = str(item.get("severity") or "high")
+    if severity not in {"low", "medium", "high", "critical"}:
+        severity = "high"
+    return ReleaseBlocker(
+        code=str(item["code"]),
+        message=str(item["message"]),
+        severity=severity,  # type: ignore[arg-type]
+        source_type=item.get("source_type"),
+        source_id=item.get("source_id"),
+        required_resolution=str(item.get("required_resolution") or ""),
+    )
 
 
 def build_release_readiness(ctx: ProjectContext) -> ReleaseReadiness:
@@ -331,11 +316,15 @@ def build_release_readiness(ctx: ProjectContext) -> ReleaseReadiness:
         )
 
     required_nodes = sorted(required_high_risk_node_ids(ctx))
+    evidence = build_release_evidence(ctx, evaluation_digest=digest)
+    blockers.extend(_to_blocker(item) for item in evidence.blockers)
+    required_eval_ids = [case.eval_id for case in evidence.required_cases]
     valid_runs = _valid_real_target_runs(ctx, digest)
     passed_nodes = sorted(
         {run.target_node_id for run in valid_runs if run.target_node_id is not None}
     )
-    blockers.extend(_real_target_blockers(ctx, digest, required_nodes, passed_nodes))
+    blocker_codes = {blocker.code for blocker in blockers}
+    release_batch = evidence.release_batch
 
     checks = {
         "applicable": True,
@@ -346,8 +335,11 @@ def build_release_readiness(ctx: ProjectContext) -> ReleaseReadiness:
         "no_open_high_critical_safety_findings": not open_safety,
         "verified_adopted_evidence": not evidence_blockers,
         "risk_treatments_complete": not treatment_blockers(ctx),
-        "real_target_tests_passed": not _real_target_blockers(
-            ctx, digest, required_nodes, passed_nodes
+        "target_deployment_declared": "target_deployment" not in blocker_codes,
+        "required_test_cases_defined": "required_test_case" not in blocker_codes,
+        "release_batch_complete": release_batch is not None,
+        "real_target_tests_passed": (
+            "real_target_test" not in blocker_codes and release_batch is not None
         ),
     }
     can_approve = all(checks.values())
@@ -359,6 +351,10 @@ def build_release_readiness(ctx: ProjectContext) -> ReleaseReadiness:
         blockers=blockers,
         checks=checks,
         required_test_node_ids=required_nodes,
+        required_test_eval_ids=required_eval_ids,
+        release_batch_id=release_batch.experiment_id if release_batch else "",
+        release_batch_run_ids=list(release_batch.run_ids) if release_batch else [],
+        release_batch_eval_ids=list(release_batch.eval_ids) if release_batch else [],
         passed_real_test_node_ids=passed_nodes,
         evaluation_version=evaluation_version,
     )
@@ -392,17 +388,62 @@ def latest_approval(ctx: ProjectContext) -> ProjectApproval | None:
 
 
 def effective_approval_status(
+    ctx: ProjectContext,
     approval: ProjectApproval | None,
-    current_digest: str,
+    *,
+    readiness: ReleaseReadiness | None = None,
+    evidence_digest: str | None = None,
 ) -> tuple[str, str]:
-    """Return ``(status, stale_reason)``; stored records stay append-only."""
+    """Return ``(status, reason)``; stored records stay append-only.
+
+    ``approved`` is only effective while the evaluation digest, the release
+    evidence snapshot and all current prerequisites still match. Any later
+    treatment rejection, test re-judgment, safety finding or stage change
+    invalidates the approval without deleting its history.
+    """
     if approval is None:
         return "not_requested", ""
     if approval.status == "rejected":
         return "rejected", ""
-    if approval.evaluation_version_digest != current_digest:
+    digest = current_evaluation_digest(ctx)
+    if approval.evaluation_version_digest != digest:
         return "stale", "evaluation content changed since the approval was granted"
+    if not approval.evidence_digest:
+        return "invalidated", "approval has no release-evidence binding; re-approval required"
+    if readiness is None:
+        readiness = build_release_readiness(ctx)
+    if evidence_digest is None:
+        evidence_digest = release_evidence_digest(
+            ctx,
+            batch_run_ids=readiness.release_batch_run_ids,
+            required_eval_ids=readiness.required_test_eval_ids,
+            evaluation_digest=digest,
+        )
+    if approval.evidence_digest != evidence_digest:
+        return (
+            "invalidated",
+            "release evidence changed after approval (treatment review, test judgment, "
+            "safety finding, or blocking action); re-approval required",
+        )
+    if not readiness.can_approve:
+        if readiness.blockers:
+            first = readiness.blockers[0]
+            return "invalidated", f"当前前置条件不再满足：{first.code} {first.message}"
+        return "invalidated", "release prerequisites are no longer satisfied"
     return "approved", ""
+
+
+def _evidence_digest_for(
+    ctx: ProjectContext,
+    readiness: ReleaseReadiness,
+    digest: str,
+) -> str:
+    return release_evidence_digest(
+        ctx,
+        batch_run_ids=readiness.release_batch_run_ids,
+        required_eval_ids=readiness.required_test_eval_ids,
+        evaluation_digest=digest,
+    )
 
 
 def request_release_approval(
@@ -424,6 +465,7 @@ def request_release_approval(
     reviewer = _assert_approval_authorized(ctx, actor_id, actor_role)
     readiness = build_release_readiness(ctx)
     digest = current_evaluation_digest(ctx)
+    evidence_digest = _evidence_digest_for(ctx, readiness, digest)
 
     if decision == "reject":
         approval = ProjectApproval(
@@ -436,6 +478,7 @@ def request_release_approval(
             decided_by=reviewer,
             decided_role=actor_role,
             decision_note=note,
+            evidence_digest=evidence_digest,
         )
         ctx.project_approvals.append(approval)
         append_audit_event(
@@ -449,6 +492,8 @@ def request_release_approval(
                 "reviewer_id": reviewer,
                 "reviewer_role": actor_role,
                 "evaluation_version_digest": digest,
+                "evidence_digest": evidence_digest,
+                "release_batch_id": readiness.release_batch_id,
                 "blockers_count": len(readiness.blockers),
             },
         )
@@ -462,6 +507,7 @@ def request_release_approval(
         latest is not None
         and latest.status == "approved"
         and latest.evaluation_version_digest == digest
+        and latest.evidence_digest == evidence_digest
     ):
         return latest, readiness, True
 
@@ -475,6 +521,7 @@ def request_release_approval(
         decided_by=reviewer,
         decided_role=actor_role,
         decision_note=note,
+        evidence_digest=evidence_digest,
     )
     ctx.project_approvals.append(approval)
     superseded = [
@@ -493,6 +540,9 @@ def request_release_approval(
             "reviewer_id": reviewer,
             "reviewer_role": actor_role,
             "evaluation_version_digest": digest,
+            "evidence_digest": evidence_digest,
+            "release_batch_id": readiness.release_batch_id,
+            "release_batch_run_ids": readiness.release_batch_run_ids,
             "superseded_approval_ids": superseded,
         },
     )
@@ -514,12 +564,22 @@ def _report_generation_status(ctx: ProjectContext) -> dict[str, Any]:
     }
 
 
-def build_approval_summary(ctx: ProjectContext) -> dict[str, Any]:
-    """Three explicitly separated statuses plus the release decision."""
+def build_approval_summary(
+    ctx: ProjectContext,
+    readiness: ReleaseReadiness | None = None,
+) -> dict[str, Any]:
+    """Three explicitly separated statuses plus the effective release decision."""
     applicable = is_business_session(ctx)
     digest = current_evaluation_digest(ctx)
+    readiness = readiness or build_release_readiness(ctx)
+    evidence_digest = _evidence_digest_for(ctx, readiness, digest)
     latest = latest_approval(ctx)
-    status, stale_reason = effective_approval_status(latest, digest)
+    status, reason = effective_approval_status(
+        ctx,
+        latest,
+        readiness=readiness,
+        evidence_digest=evidence_digest,
+    )
     is_release_approved = status == "approved"
 
     return {
@@ -540,8 +600,17 @@ def build_approval_summary(ctx: ProjectContext) -> dict[str, Any]:
             "decided_at": latest.created_at.isoformat() if latest else "",
             "decision_note": latest.decision_note if latest else "",
             "evaluation_version_digest": latest.evaluation_version_digest if latest else "",
+            "evidence_digest": latest.evidence_digest if latest else "",
+            "release_batch_id": (
+                str(latest.prerequisites.get("release_batch_id") or "")
+                if latest
+                else readiness.release_batch_id
+            ),
+            "required_test_eval_ids": list(readiness.required_test_eval_ids),
             "is_current": status == "approved",
-            "stale_reason": stale_reason,
+            "invalidated_reason": reason if status == "invalidated" else "",
+            "is_invalidated": status in {"stale", "invalidated"},
+            "stale_reason": reason,
         },
         "history_count": len(ctx.project_approvals),
         "is_release_approved": is_release_approved,
@@ -551,11 +620,21 @@ def build_approval_summary(ctx: ProjectContext) -> dict[str, Any]:
 def list_project_approvals(ctx: ProjectContext) -> list[dict[str, Any]]:
     """Append-only approval history annotated with effective status."""
     digest = current_evaluation_digest(ctx)
-    return [
-        {
-            **approval.model_dump(mode="json"),
-            "effective_status": effective_approval_status(approval, digest)[0],
-            "stale_reason": effective_approval_status(approval, digest)[1],
-        }
-        for approval in _sorted_approvals(ctx)
-    ]
+    readiness = build_release_readiness(ctx)
+    evidence_digest = _evidence_digest_for(ctx, readiness, digest)
+    rows: list[dict[str, Any]] = []
+    for approval in _sorted_approvals(ctx):
+        status, reason = effective_approval_status(
+            ctx,
+            approval,
+            readiness=readiness,
+            evidence_digest=evidence_digest,
+        )
+        rows.append(
+            {
+                **approval.model_dump(mode="json"),
+                "effective_status": status,
+                "stale_reason": reason,
+            }
+        )
+    return rows

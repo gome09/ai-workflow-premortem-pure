@@ -164,6 +164,8 @@ def _render_release_approval(session_id: str) -> None:
         f"{approval_status_zh(release_approval.get('status'))} · "
         f"批准人={release_approval.get('decided_by') or '-'}"
     )
+    if release_approval.get("release_batch_id"):
+        st.caption(f"放行评估批次：{release_approval.get('release_batch_id')}")
     if release_approval.get("stale_reason"):
         st.warning(f"审批已失效：{release_approval.get('stale_reason')}")
 

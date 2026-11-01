@@ -33,6 +33,7 @@ DecisionSource = Literal[
     "sync_review_actions",
     "eval_cases_run",
     "eval_case_scored",
+    "eval_case_standard_updated",
     "eval_dataset_created",
     "eval_dataset_updated",
     "eval_baseline_set",

@@ -46,12 +46,16 @@ def test_no_key_means_encryption_disabled(monkeypatch):
     assert is_encryption_enabled() is False
 
     data = {
+        "research_target": "target-A",
+        "goal": "goal-A",
         "user_materials": ["secret text"],
         "evidence_sources": [
             {"source_type": "user_material", "summary": "s", "claims": ["c1", "c2"]}
         ],
     }
     result = encrypt_fields_for_storage(data, "business_internal")
+    assert result["research_target"] == "target-A"
+    assert result["goal"] == "goal-A"
     assert result["user_materials"] == ["secret text"]
     assert result["evidence_sources"][0]["summary"] == "s"
     assert result["evidence_sources"][0]["claims"] == ["c1", "c2"]
@@ -63,6 +67,8 @@ def test_with_key_encrypts_user_materials(monkeypatch):
     assert is_encryption_enabled() is True
 
     data = {
+        "research_target": "Internal code name",
+        "goal": "confidential goal",
         "user_materials": ["secret text", "another secret"],
         "evidence_sources": [
             {
@@ -78,6 +84,9 @@ def test_with_key_encrypts_user_materials(monkeypatch):
         ],
     }
     result = encrypt_fields_for_storage(data, "business_internal")
+
+    assert result["research_target"].startswith("enc:v1:")
+    assert result["goal"].startswith("enc:v1:")
 
     # user_materials encrypted
     for m in result["user_materials"]:
@@ -100,6 +109,8 @@ def test_decrypt_round_trip(monkeypatch):
     monkeypatch.setattr(settings, "data_encryption_key", _TEST_KEY)
 
     data = {
+        "research_target": "Internal code name",
+        "goal": "confidential goal",
         "user_materials": ["secret text"],
         "evidence_sources": [
             {
@@ -112,6 +123,8 @@ def test_decrypt_round_trip(monkeypatch):
     encrypt_fields_for_storage(data, "business_internal")
 
     ctx = ProjectContext()
+    ctx.research_target = data["research_target"]
+    ctx.goal = data["goal"]
     ctx.user_materials = data["user_materials"]
     ctx.evidence_sources = [
         EvidenceSource(
@@ -124,6 +137,8 @@ def test_decrypt_round_trip(monkeypatch):
     ]
     decrypt_fields_after_load(ctx)
 
+    assert ctx.research_target == "Internal code name"
+    assert ctx.goal == "confidential goal"
     assert ctx.user_materials == ["secret text"]
     assert ctx.evidence_sources[0].summary == "confidential summary"
     assert ctx.evidence_sources[0].claims == ["claim one", "claim two"]
@@ -135,6 +150,8 @@ def test_public_demo_not_encrypted(monkeypatch):
     assert is_encryption_enabled() is True
 
     data = {
+        "research_target": "demo target",
+        "goal": "demo goal",
         "user_materials": ["should stay plaintext"],
         "evidence_sources": [
             {
@@ -145,6 +162,8 @@ def test_public_demo_not_encrypted(monkeypatch):
         ],
     }
     result = encrypt_fields_for_storage(data, "public_demo")
+    assert result["research_target"] == "demo target"
+    assert result["goal"] == "demo goal"
     assert result["user_materials"] == ["should stay plaintext"]
     assert result["evidence_sources"][0]["summary"] == "plain summary"
     assert result["evidence_sources"][0]["claims"] == ["plain claim"]
@@ -172,6 +191,8 @@ def test_sqlite_round_trip_with_key(tmp_path, monkeypatch):
 
     ctx = ProjectContext(tenant_id="enc-tenant")
     ctx.data_classification = "business_internal"
+    ctx.research_target = "internal target code"
+    ctx.goal = "confidential goal text"
     ctx.user_materials = ["secret text"]
     ctx.evidence_sources = [
         EvidenceSource(
@@ -195,10 +216,14 @@ def test_sqlite_round_trip_with_key(tmp_path, monkeypatch):
     assert "enc:v1:" in raw_json
     assert "secret text" not in raw_json
     assert "confidential summary" not in raw_json
+    assert "confidential goal text" not in raw_json
+    assert "internal target code" not in raw_json
 
     # load() must restore plaintext
     loaded = store.load(ctx.session_id, ctx.tenant_id)
     assert loaded is not None
+    assert loaded.research_target == "internal target code"
+    assert loaded.goal == "confidential goal text"
     assert loaded.user_materials == ["secret text"]
     assert loaded.evidence_sources[0].summary == "confidential summary"
     assert loaded.evidence_sources[0].claims == ["claim one", "claim two"]
@@ -214,6 +239,7 @@ def test_sqlite_round_trip_without_key(tmp_path, monkeypatch):
 
     ctx = ProjectContext(tenant_id="enc-tenant")
     ctx.data_classification = "business_internal"
+    ctx.goal = "plaintext goal text"
     ctx.user_materials = ["plaintext secret"]
     ctx.evidence_sources = [
         EvidenceSource(
@@ -236,10 +262,12 @@ def test_sqlite_round_trip_without_key(tmp_path, monkeypatch):
     raw_json = row["context_json"]
     assert "enc:v1:" not in raw_json
     assert "plaintext secret" in raw_json
+    assert "plaintext goal text" in raw_json
 
     # load() restores plaintext unchanged
     loaded = store.load(ctx.session_id, ctx.tenant_id)
     assert loaded is not None
+    assert loaded.goal == "plaintext goal text"
     assert loaded.user_materials == ["plaintext secret"]
     assert loaded.evidence_sources[0].summary == "plaintext summary"
     assert loaded.evidence_sources[0].claims == ["plain claim"]

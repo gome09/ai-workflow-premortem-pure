@@ -30,7 +30,9 @@ from storage.field_security import (
     encrypt_fields_for_storage,
     encrypt_json_field,
     encrypt_text_field,
+    is_encryption_enabled,
 )
+from storage.goal_backfill import GoalBackfillMode, transform_goal_context
 from storage.projection_read import build_projection_rows, get_projection_spec
 from storage.projection_state import compute_state, plan_sync
 
@@ -209,6 +211,84 @@ class PostgresSessionStore:
             if self._pool is not None:
                 self._pool.close()
                 self._pool = None
+
+    @_record_db_operation("backfill_goal")
+    def backfill_goal_encryption(
+        self,
+        *,
+        dry_run: bool = True,
+        verify_only: bool = False,
+        decrypt: bool = False,
+        session_ids: list[str] | None = None,
+        batch_size: int = 100,
+    ) -> dict[str, Any]:
+        """Backfill the historical plaintext ``goal`` field (PostgreSQL).
+
+        Modes: encrypt (default), verify_only, decrypt (rollback helper).
+        The sweep is idempotent and uses ``context_json::text`` identity as the
+        optimistic conflict check; it is intended to run while traffic is
+        drained or during a maintenance window.
+        """
+        if verify_only and decrypt:
+            raise ValueError("verify_only and decrypt are mutually exclusive")
+        if batch_size < 1:
+            raise ValueError("batch_size must be >= 1")
+        if not is_encryption_enabled():
+            raise RuntimeError("DATA_ENCRYPTION_KEY is not configured")
+        mode: GoalBackfillMode = "verify" if verify_only else ("decrypt" if decrypt else "encrypt")
+        result: dict[str, Any] = {
+            "mode": mode,
+            "dry_run": dry_run,
+            "scanned": 0,
+            "changed": 0,
+            "conflicts": 0,
+            "status_counts": {},
+            "errors": [],
+        }
+
+        with self._get_conn() as conn:
+            if session_ids:
+                sql = (
+                    "SELECT session_id::text AS session_id, context_json::text AS context_text "
+                    "FROM sessions WHERE session_id = ANY(%s) ORDER BY session_id"
+                )
+                params: tuple[Any, ...] = (list(session_ids),)
+            else:
+                sql = (
+                    "SELECT session_id::text AS session_id, context_json::text AS context_text "
+                    "FROM sessions ORDER BY session_id"
+                )
+                params = ()
+            cursor = conn.execute(sql, params)
+            while True:
+                rows = cursor.fetchmany(batch_size)
+                if not rows:
+                    break
+                for row in rows:
+                    result["scanned"] += 1
+                    transform = transform_goal_context(row["context_text"], mode=mode)
+                    status_counts = result["status_counts"]
+                    status_counts[transform.status] = status_counts.get(transform.status, 0) + 1
+                    if transform.error:
+                        if len(result["errors"]) < 20:
+                            result["errors"].append(
+                                {"session_id": row["session_id"], "error": transform.error}
+                            )
+                    if not transform.changed:
+                        continue
+                    result["changed"] += 1
+                    if dry_run or verify_only:
+                        continue
+                    updated = conn.execute(
+                        "UPDATE sessions SET context_json = %s::jsonb "
+                        "WHERE session_id = %s AND context_json::text = %s",
+                        (transform.context_json, row["session_id"], row["context_text"]),
+                    )
+                    if updated.rowcount == 0:
+                        result["conflicts"] += 1
+            if not dry_run and not verify_only:
+                conn.commit()
+        return result
 
     def initialize(self) -> None:
         """Run alembic migrations to head. Called once at app startup."""
@@ -873,6 +953,7 @@ class PostgresSessionStore:
                 case.input_payload,
                 case.expected_behavior,
                 json.dumps(case.pass_criteria, default=str),
+                case.standard_version,
                 case.actual_output,
                 case.human_score,
                 case.human_comment,
@@ -890,10 +971,11 @@ class PostgresSessionStore:
             INSERT INTO eval_cases (
                 eval_id, session_id, stage_id, target_node_id, covered_failure_mode_ids,
                 scenario_type, source_type, source_trace_id, source_ref_id, metadata,
-                input_payload, expected_behavior, pass_criteria, actual_output, human_score,
+                input_payload, expected_behavior, pass_criteria, standard_version,
+                actual_output, human_score,
                 human_comment, passed, created_at, scored_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (eval_id) DO UPDATE SET
                 covered_failure_mode_ids = EXCLUDED.covered_failure_mode_ids,
                 source_type = EXCLUDED.source_type,
@@ -901,6 +983,7 @@ class PostgresSessionStore:
                 source_ref_id = EXCLUDED.source_ref_id,
                 metadata = EXCLUDED.metadata,
                 pass_criteria = EXCLUDED.pass_criteria,
+                standard_version = EXCLUDED.standard_version,
                 actual_output = EXCLUDED.actual_output,
                 human_score = EXCLUDED.human_score,
                 human_comment = EXCLUDED.human_comment,
@@ -927,6 +1010,8 @@ class PostgresSessionStore:
                 run.execution_outcome,
                 run.evaluation_version_digest,
                 run.target_endpoint,
+                run.target_deployment_version,
+                run.case_version_digest,
                 run.input_payload,
                 run.expected_behavior,
                 run.actual_output,
@@ -958,12 +1043,13 @@ class PostgresSessionStore:
                 target_node_id, covered_failure_mode_ids,
                 stage_output_version, run_mode,
                 execution_kind, execution_outcome, evaluation_version_digest,
-                target_endpoint, input_payload, expected_behavior,
+                target_endpoint, target_deployment_version, case_version_digest,
+                input_payload, expected_behavior,
                 actual_output, judge_result, judge_reason, judge_mode, violated_criteria,
                 pass_criteria, llm_judge_suggestion,
                 status, error_message, trace_id, latency_ms, estimated_cost, created_at, completed_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (run_id) DO UPDATE SET
                 dataset_id = EXCLUDED.dataset_id,
                 experiment_id = EXCLUDED.experiment_id,
@@ -972,6 +1058,8 @@ class PostgresSessionStore:
                 execution_outcome = EXCLUDED.execution_outcome,
                 evaluation_version_digest = EXCLUDED.evaluation_version_digest,
                 target_endpoint = EXCLUDED.target_endpoint,
+                target_deployment_version = EXCLUDED.target_deployment_version,
+                case_version_digest = EXCLUDED.case_version_digest,
                 actual_output = EXCLUDED.actual_output,
                 judge_result = EXCLUDED.judge_result,
                 judge_reason = EXCLUDED.judge_reason,
@@ -2011,11 +2099,115 @@ class PostgresSessionStore:
             row = conn.execute(
                 "UPDATE users SET role = %s "
                 "WHERE user_id = %s AND tenant_id = %s "
-                "RETURNING user_id, tenant_id, email, role",
+                "RETURNING user_id, tenant_id::text, email, role",
                 (new_role, user_id, tenant_id),
             ).fetchone()
             conn.commit()
             return dict(row) if row else None
+
+    def get_user_by_id(self, user_id: str) -> dict | None:
+        """Lookup the current member record for refresh-token role revalidation."""
+        sql = (
+            "SELECT user_id::text, tenant_id::text, email, role FROM users WHERE user_id = %s::uuid"
+        )
+        with self._get_conn() as conn:
+            row = conn.execute(sql, (user_id,)).fetchone()
+        return dict(row) if row else None
+
+    def create_invitation(
+        self,
+        *,
+        tenant_id: str,
+        email: str,
+        role: str,
+        token_hash: str,
+        invited_by: str,
+        expires_at: datetime,
+    ) -> dict:
+        sql = """
+            INSERT INTO workspace_invitations (
+                tenant_id, email, role, token_hash, status, invited_by, expires_at
+            ) VALUES (%s::uuid, %s, %s, %s, 'pending', %s, %s)
+            RETURNING invitation_id::text, tenant_id::text, email, role, status,
+                      invited_by::text, expires_at, accepted_at, accepted_user_id::text, created_at
+        """
+        with self._get_conn() as conn:
+            row = conn.execute(
+                sql,
+                (
+                    tenant_id,
+                    email,
+                    role,
+                    token_hash,
+                    invited_by or None,
+                    expires_at,
+                ),
+            ).fetchone()
+            conn.commit()
+        return dict(cast(dict[str, Any], row))
+
+    def list_invitations_by_tenant(self, tenant_id: str) -> list[dict]:
+        sql = """
+            SELECT invitation_id::text, tenant_id::text, email, role, status,
+                   invited_by::text, expires_at, accepted_at, accepted_user_id::text, created_at
+            FROM workspace_invitations
+            WHERE tenant_id = %s::uuid
+            ORDER BY created_at DESC
+        """
+        with self._get_conn() as conn:
+            rows = conn.execute(sql, (tenant_id,)).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_invitation_by_token_hash(self, token_hash: str) -> dict | None:
+        sql = """
+            SELECT invitation_id::text, tenant_id::text, email, role, status,
+                   invited_by::text, expires_at, accepted_at, accepted_user_id::text, created_at
+            FROM workspace_invitations
+            WHERE token_hash = %s
+        """
+        with self._get_conn() as conn:
+            row = conn.execute(sql, (token_hash,)).fetchone()
+        return dict(row) if row else None
+
+    def accept_invitation(
+        self,
+        *,
+        invitation_id: str,
+        password_hash: str,
+        accepted_at: datetime,
+    ) -> dict | None:
+        """Atomically create the invited user and mark the invitation accepted."""
+        with self._get_conn() as conn:
+            invitation = conn.execute(
+                "SELECT invitation_id::text, tenant_id::text, email, role, status "
+                "FROM workspace_invitations WHERE invitation_id = %s::uuid FOR UPDATE",
+                (invitation_id,),
+            ).fetchone()
+            if invitation is None or invitation["status"] != "pending":
+                return None
+            user_row = conn.execute(
+                "INSERT INTO users (tenant_id, email, password_hash, role) "
+                "VALUES (%s::uuid, %s, %s, %s) "
+                "RETURNING user_id::text, tenant_id::text, email, role",
+                (
+                    invitation["tenant_id"],
+                    invitation["email"],
+                    password_hash,
+                    invitation["role"],
+                ),
+            ).fetchone()
+            if user_row is None:
+                raise ValueError("Failed to create invited user")
+            updated = conn.execute(
+                "UPDATE workspace_invitations SET status = 'accepted', accepted_at = %s, "
+                "accepted_user_id = %s::uuid "
+                "WHERE invitation_id = %s::uuid AND status = 'pending'",
+                (accepted_at, user_row["user_id"], invitation_id),
+            )
+            if updated.rowcount == 0:
+                raise ValueError("Invitation was accepted by another request")
+            conn.commit()
+        return dict(user_row)
 
     # ── Governance trend analytics (T3.2) ─────────────────────────────────────
 

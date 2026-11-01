@@ -27,6 +27,16 @@ class UpdateRoleRequest(BaseModel):
     role: str
 
 
+class InvitationCreateRequest(BaseModel):
+    email: str
+    role: str = "viewer"
+
+
+class InvitationAcceptRequest(BaseModel):
+    token: str
+    password: str
+
+
 @router.post("/register")
 @limiter.limit("5/hour")
 def register(request: Request, body: RegisterRequest) -> dict:
@@ -61,3 +71,41 @@ def update_user_role(
 ) -> dict:
     """Update a user's role within the current tenant. Admin only."""
     return auth_service.update_role(user_id, ctx.tenant_id, body.role)
+
+
+@router.post("/invitations", dependencies=[require_roles(Role.admin)])
+@limiter.limit("20/hour")
+def create_invitation(
+    request: Request,
+    body: InvitationCreateRequest,
+    ctx: TenantContext = Depends(get_current_tenant),
+) -> dict:
+    """Create a same-tenant invitation; the raw token is returned exactly once."""
+    invitation = auth_service.create_invitation(
+        ctx.tenant_id,
+        body.email,
+        body.role,
+        ctx.user_id,
+    )
+    return {
+        "invitation_id": invitation["invitation_id"],
+        "tenant_id": invitation["tenant_id"],
+        "email": invitation["email"],
+        "role": invitation["role"],
+        "status": invitation["status"],
+        "expires_at": invitation["expires_at"],
+        "token": invitation["token"],
+    }
+
+
+@router.get("/invitations", dependencies=[require_roles(Role.admin)])
+def list_invitations(ctx: TenantContext = Depends(get_current_tenant)) -> list[dict]:
+    """List invitations in the current tenant (token hashes are never returned)."""
+    return auth_service.list_invitations(ctx.tenant_id)
+
+
+@router.post("/invitations/accept")
+@limiter.limit("10/minute")
+def accept_invitation(request: Request, body: InvitationAcceptRequest) -> dict:
+    """Accept an invitation, create the invited member, and return a token pair."""
+    return auth_service.accept_invitation(body.token, body.password)

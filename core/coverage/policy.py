@@ -18,6 +18,10 @@ from core.risk.models import ProjectGateRiskTier
 
 _SEVERITY_WEIGHT = {"critical": 4, "high": 3, "medium": 1, "low": 0}
 
+# Bump when the coverage selection / minimum-case policy changes; included in
+# the evaluation-version policy snapshot.
+COVERAGE_POLICY_VERSION = "1.0"
+
 
 @dataclass(frozen=True)
 class CoveragePolicy:

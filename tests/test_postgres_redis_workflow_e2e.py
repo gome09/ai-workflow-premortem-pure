@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from pathlib import Path
@@ -175,6 +176,73 @@ def service(migrated_database):
             pass
 
 
+def test_pg_goal_backfill_encrypts_legacy_plaintext():
+    """Historical rows written before the goal-encryption fix can be migrated in place."""
+    session_id = str(uuid.uuid4())
+    tenant_id = str(uuid.uuid4())
+    legacy_goal = "历史明文目标-PG"
+    context = {
+        "context_schema_version": "0.10.0",
+        "session_id": session_id,
+        "tenant_id": tenant_id,
+        "goal": legacy_goal,
+        "data_classification": "business_internal",
+        "current_state": "init",
+    }
+    with psycopg.connect(_DATABASE_URL) as conn:
+        conn.execute(
+            "INSERT INTO sessions "
+            "(session_id, current_state, context_json, tenant_id, created_at, updated_at) "
+            "VALUES (%s, %s, %s::jsonb, %s::uuid, NOW(), NOW())",
+            (session_id, "init", json.dumps(context, ensure_ascii=False), tenant_id),
+        )
+        conn.commit()
+
+    result = session_store.backfill_goal_encryption(session_ids=[session_id], dry_run=False)
+    assert result["changed"] == 1
+    assert result["status_counts"] == {"encrypted": 1}
+
+    raw = _raw_context_json(session_id)
+    assert "enc:v1:" in raw
+    assert legacy_goal not in raw
+
+    loaded = session_store.load(session_id, tenant_id)
+    assert loaded is not None
+    assert loaded.goal == legacy_goal
+
+    session_store.delete(session_id, tenant_id, system_access=None)
+
+
+def test_pg_workspace_invitation_and_refresh_role():
+    """Real PostgreSQL: same-tenant invite and refresh re-reads current member role."""
+    from auth.jwt import verify_token
+    from auth.service import auth_service
+
+    suffix = uuid.uuid4().hex
+    author = auth_service.register(
+        f"pg-author-{suffix}@example.com",
+        "author-pass",
+        workspace_name="PG Team",
+    )
+    assert author["role"] == "admin"
+
+    invitation = auth_service.create_invitation(
+        author["tenant_id"],
+        f"pg-reviewer-{suffix}@example.com",
+        "admin",
+        author["user_id"],
+    )
+    reviewer = auth_service.accept_invitation(invitation["token"], "reviewer-pass")
+    assert reviewer["tenant_id"] == author["tenant_id"]
+    assert reviewer["role"] == "admin"
+
+    auth_service.update_role(reviewer["user_id"], author["tenant_id"], "viewer")
+    refreshed = auth_service.refresh(reviewer["refresh_token"])
+    assert refreshed["role"] == "viewer"
+    assert refreshed["tenant_id"] == author["tenant_id"]
+    assert verify_token(refreshed["access_token"]).role == "viewer"
+
+
 def test_pg_redis_workflow_lifecycle(service, migrated_database):
     svc, create = service
     cache = migrated_database
@@ -196,10 +264,12 @@ def test_pg_redis_workflow_lifecycle(service, migrated_database):
     _reply, advanced = svc.send_message(ctx.session_id, scenario_input, tenant_id=tenant_a)
     assert advanced.current_state == SessionState.S1_RUNNING
     assert advanced.research_target, "mock init must extract research_target"
+    assert advanced.goal, "mock init must extract goal"
 
     raw = _raw_context_json(ctx.session_id)
     assert "enc:v1:" in raw, "research_target/conversation must be encrypted in PostgreSQL"
     assert advanced.research_target not in raw, "research_target plaintext leaked into context_json"
+    assert advanced.goal not in raw, "goal plaintext leaked into context_json"
     event_payload = _latest_event_payload_text(ctx.session_id)
     assert "研究对象" not in event_payload
     assert "input_sha256" in event_payload
@@ -208,6 +278,7 @@ def test_pg_redis_workflow_lifecycle(service, migrated_database):
     reloaded = svc.get_session(ctx.session_id, tenant_a)
     assert reloaded is not None
     assert reloaded.research_target == advanced.research_target
+    assert reloaded.goal == advanced.goal
     assert reloaded.current_state == SessionState.S1_RUNNING
 
     # ── 3. pause: blocking action prevents stage advancement ──────────────

@@ -15,19 +15,24 @@ from core.approval_service import (
     build_release_readiness,
     request_release_approval,
 )
-from core.evaluation_version import current_evaluation_digest
+from core.eval_judgment_service import calibrate_eval_run
+from core.evaluation_version import current_evaluation_digest, eval_case_digest
 from core.models import (
     EvalCase,
+    EvalExperiment,
     EvalRun,
     EvidenceSource,
     FailureMode,
     HumanOversightPolicy,
+    ProjectApproval,
     ProjectContext,
+    SafetyFinding,
     SessionState,
     Stage1Output,
     Stage2Output,
     Stage3Output,
     Stage4Output,
+    TargetDeployment,
     TriggerMethod,
     WorkflowNode,
 )
@@ -140,21 +145,40 @@ def _ctx(
         "stage_3": 1,
         "stage_4": 1,
     }
-    ctx.eval_runs.append(
-        EvalRun(
+    ctx.target_deployment = TargetDeployment(
+        endpoint="http://target.local/eval",
+        version="2026.11.1",
+        updated_by=_CREATOR,
+    )
+    case = ctx.eval_cases[0]
+    run = EvalRun(
+        session_id=ctx.session_id,
+        eval_id=case.eval_id,
+        target_node_id="N-1",
+        run_mode="target_http",
+        execution_kind="real_target_execution",
+        execution_outcome="success",
+        evaluation_version_digest=current_evaluation_digest(ctx),
+        target_endpoint=ctx.target_deployment.endpoint,
+        target_deployment_version=ctx.target_deployment.version,
+        case_version_digest=eval_case_digest(case),
+        input_payload="policy question",
+        expected_behavior="answer with citation",
+        pass_criteria=["citation present"],
+        actual_output="answer with citation",
+        judge_result="passed",
+        status="completed",
+    )
+    ctx.eval_runs.append(run)
+    ctx.eval_experiments.append(
+        EvalExperiment(
             session_id=ctx.session_id,
-            eval_id=ctx.eval_cases[0].eval_id,
-            target_node_id="N-1",
-            run_mode="target_http",
-            execution_kind="real_target_execution",
-            execution_outcome="success",
-            evaluation_version_digest=current_evaluation_digest(ctx),
-            input_payload="policy question",
-            expected_behavior="answer with citation",
-            pass_criteria=["citation present"],
-            actual_output="answer with citation",
-            judge_result="passed",
+            dataset_id="ds-test",
+            name="release batch",
             status="completed",
+            run_mode="target_http",
+            eval_ids=[case.eval_id],
+            run_ids=[run.run_id],
         )
     )
     if with_treatment:
@@ -363,6 +387,179 @@ def test_public_demo_is_not_applicable():
     readiness = build_release_readiness(ctx)
     assert readiness.applicable is False
     assert readiness.exempt_reason == "public_demo"
+
+
+def _approve(ctx: ProjectContext) -> ProjectApproval:
+    approval, _, _ = request_release_approval(
+        ctx,
+        decision="approve",
+        note="baseline approval",
+        actor_id=_REVIEWER,
+        actor_role="admin",
+    )
+    assert build_approval_summary(ctx)["is_release_approved"] is True
+    return approval
+
+
+def test_treatment_rejection_invalidates_approval_but_keeps_history():
+    ctx = _ctx()
+    approval = _approve(ctx)
+
+    review_risk_treatment(
+        ctx,
+        treatment_id=ctx.risk_treatments[0].treatment_id,
+        decision="reject",
+        note="mitigation rejected",
+        actor_id="reviewer-b",
+        actor_role="editor",
+    )
+
+    summary = build_approval_summary(ctx)
+    assert summary["release_approval"]["status"] == "invalidated"
+    assert summary["release_approval"]["invalidated_reason"]
+    assert summary["is_release_approved"] is False
+    assert summary["history_count"] == 1
+    assert ctx.project_approvals[0].approval_id == approval.approval_id
+
+
+def test_test_rejudgment_invalidates_approval():
+    ctx = _ctx()
+    _approve(ctx)
+
+    calibrate_eval_run(
+        ctx,
+        eval_run_id=ctx.eval_runs[0].run_id,
+        human_label="failed",
+        human_comment="semantic re-judgment",
+        reviewer_id="reviewer-b",
+    )
+
+    summary = build_approval_summary(ctx)
+    assert summary["release_approval"]["status"] == "invalidated"
+    assert summary["is_release_approved"] is False
+    assert summary["history_count"] == 1
+
+
+def test_new_high_safety_finding_invalidates_approval():
+    ctx = _ctx()
+    _approve(ctx)
+
+    ctx.safety_findings.append(
+        SafetyFinding(
+            session_id=ctx.session_id,
+            stage_id=3,
+            risk_type="unsupported_claim",
+            severity="high",
+            location="stage_3",
+            description="New high-severity safety finding",
+            recommended_action="resolve",
+            requires_human_review=True,
+        )
+    )
+
+    summary = build_approval_summary(ctx)
+    assert summary["release_approval"]["status"] == "invalidated"
+    assert summary["is_release_approved"] is False
+    assert summary["history_count"] == 1
+
+
+def test_invalidated_approval_does_not_revive_and_new_approval_appends():
+    ctx = _ctx()
+    _approve(ctx)
+    treatment = ctx.risk_treatments[0]
+
+    review_risk_treatment(
+        ctx,
+        treatment_id=treatment.treatment_id,
+        decision="reject",
+        note="reject",
+        actor_id="reviewer-b",
+        actor_role="editor",
+    )
+    upsert_risk_treatment(
+        ctx,
+        source_type="failure_mode",
+        source_id="FM-001",
+        owner=treatment.owner,
+        mitigation_plan=treatment.mitigation_plan,
+        status="completed",
+        actor_id="editor-a",
+        actor_role="editor",
+    )
+    review_risk_treatment(
+        ctx,
+        treatment_id=treatment.treatment_id,
+        decision="accept",
+        note="re-accepted",
+        actor_id="reviewer-b",
+        actor_role="editor",
+    )
+
+    summary = build_approval_summary(ctx)
+    assert summary["release_approval"]["status"] == "invalidated"
+    assert summary["history_count"] == 1
+
+    _second, _, replayed = request_release_approval(
+        ctx,
+        decision="approve",
+        note="fresh approval after evidence change",
+        actor_id=_REVIEWER,
+        actor_role="admin",
+    )
+    assert replayed is False
+    assert summary["history_count"] == 1
+    summary_after = build_approval_summary(ctx)
+    assert summary_after["release_approval"]["status"] == "approved"
+    assert summary_after["history_count"] == 2
+
+
+def test_failed_target_execution_is_not_release_evidence_even_if_marked_passed():
+    ctx = _ctx()
+    run = ctx.eval_runs[0]
+    run.execution_outcome = "failed"
+    run.judge_result = "passed"
+
+    readiness = build_release_readiness(ctx)
+    assert readiness.checks["real_target_tests_passed"] is False
+    assert any(blocker.code == "real_target_test" for blocker in readiness.blockers)
+
+    with pytest.raises(ValueError, match="cannot be calibrated to passed"):
+        calibrate_eval_run(
+            ctx,
+            eval_run_id=run.run_id,
+            human_label="passed",
+            reviewer_id="reviewer-b",
+        )
+
+
+def test_release_batch_requires_all_required_cases():
+    ctx = _ctx()
+    ctx.eval_experiments[0].run_ids = []
+
+    readiness = build_release_readiness(ctx)
+
+    assert readiness.checks["release_batch_complete"] is False
+    assert any(blocker.code == "real_target_test" for blocker in readiness.blockers)
+
+
+def test_required_test_failure_blocks_release():
+    ctx = _ctx()
+    ctx.eval_runs[0].judge_result = "failed"
+
+    readiness = build_release_readiness(ctx)
+
+    assert readiness.checks["real_target_tests_passed"] is False
+    assert any(blocker.code == "real_target_test" for blocker in readiness.blockers)
+
+
+def test_missing_target_deployment_blocks_release():
+    ctx = _ctx()
+    ctx.target_deployment = None
+
+    readiness = build_release_readiness(ctx)
+
+    assert readiness.checks["target_deployment_declared"] is False
+    assert any(blocker.code == "target_deployment" for blocker in readiness.blockers)
 
 
 @pytest.fixture

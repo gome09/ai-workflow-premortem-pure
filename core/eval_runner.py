@@ -11,7 +11,7 @@ from core.config import settings
 from core.context_manager import get_llm_for_stage
 from core.eval_judge import judge_eval_run
 from core.eval_judgment_service import create_judgment_from_eval_run
-from core.evaluation_version import current_evaluation_digest
+from core.evaluation_version import current_evaluation_digest, eval_case_digest
 from core.llm.outbound_guard import guarded_invoke
 from core.models import EvalCase, EvalRun, ProjectContext, WorkflowNode
 from core.oversight_service import create_actions_from_eval_failures, current_stage_output_version
@@ -146,6 +146,19 @@ def run_eval_case(
             raise ValueError(f"Invalid target_config endpoint: {exc}") from exc
 
     case = _find_eval_case(ctx, eval_id)
+    deployment = ctx.target_deployment
+    if (
+        run_mode == "target_http"
+        and deployment is not None
+        and deployment.endpoint
+        and target_endpoint != deployment.endpoint
+    ):
+        raise ValueError(
+            f"Target endpoint does not match the declared target deployment ({deployment.endpoint})"
+        )
+    target_deployment_version = (
+        deployment.version if run_mode == "target_http" and deployment is not None else ""
+    )
     before_count = len(ctx.eval_runs)
     run = EvalRun(
         session_id=ctx.session_id,
@@ -160,6 +173,8 @@ def run_eval_case(
         execution_kind=_execution_kind(run_mode),  # type: ignore[arg-type]
         evaluation_version_digest=current_evaluation_digest(ctx),
         target_endpoint=target_endpoint,
+        target_deployment_version=target_deployment_version,
+        case_version_digest=eval_case_digest(case),
         input_payload=case.input_payload,
         expected_behavior=case.expected_behavior,
         pass_criteria=list(case.pass_criteria or []),
@@ -177,7 +192,9 @@ def run_eval_case(
             "run_mode": run_mode,
             "execution_kind": run.execution_kind,
             "evaluation_version_digest": run.evaluation_version_digest,
+            "case_version_digest": run.case_version_digest,
             "target_endpoint": run.target_endpoint,
+            "target_deployment_version": run.target_deployment_version,
             "oracle_fields_included": False,
             "stage_output_version": run.stage_output_version,
             "pass_criteria_count": len(run.pass_criteria or []),
@@ -283,7 +300,9 @@ def run_eval_case(
             "execution_kind": run.execution_kind,
             "execution_outcome": run.execution_outcome,
             "evaluation_version_digest": run.evaluation_version_digest,
+            "case_version_digest": run.case_version_digest,
             "target_endpoint": run.target_endpoint,
+            "target_deployment_version": run.target_deployment_version,
             "oracle_fields_included": False,
             "status": run.status,
             "judge_result": run.judge_result,

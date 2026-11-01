@@ -4,13 +4,19 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 
 from core.audit_service import append_audit_event
+from core.evaluation_version import (
+    INPUT_VERSION_KEY_MATERIALS,
+    INPUT_VERSION_KEY_TARGET_DEPLOYMENT,
+    bump_input_version,
+)
 from core.evidence_service import evidence_sources_from_user_materials
 from core.execution_service import (
     sync_execution_after_stage_revision,
 )
-from core.models import ProjectContext, SessionState
+from core.models import ProjectContext, SessionState, TargetDeployment
 from core.report_service import build_markdown_report, build_report_dict, create_report_artifact
 from core.scenario_context import attach_scenario_to_context
 from core.services.access import (
@@ -41,6 +47,7 @@ from core.stage_operation_service import (
 from core.stage_operation_service import (
     sync_stage_review_actions as sync_stage_review_actions_operation,
 )
+from core.target_testing import sanitize_endpoint
 from core.workflow_state_service import assert_advanceable, state_value
 from core.workflow_state_service import recover_workflow as recover_workflow_operation
 from tools.safety_classifier import add_findings_dedup, scan_user_materials
@@ -291,6 +298,7 @@ class SessionWorkflowService(SessionAccess):
 
         # 如果用户附带了补充资料，先合并并立即进行轻量安全扫描。
         if user_materials:
+            bump_input_version(ctx, INPUT_VERSION_KEY_MATERIALS)
             new_material_start = len(ctx.user_materials)
             ctx.user_materials.extend(user_materials)
             evidence_sources_from_user_materials(
@@ -340,6 +348,8 @@ class SessionWorkflowService(SessionAccess):
         ctx = self.get_session(session_id, tenant_id)
         if not ctx:
             raise ValueError(f"Session not found: {session_id}")
+        if materials:
+            bump_input_version(ctx, INPUT_VERSION_KEY_MATERIALS)
         new_material_start = len(ctx.user_materials)
         ctx.user_materials.extend(materials)
         evidence_sources_from_user_materials(
@@ -373,6 +383,82 @@ class SessionWorkflowService(SessionAccess):
             reason="materials_added",
             metadata={"materials_added_count": len(materials)},
         )
+
+    def set_target_deployment(
+        self,
+        session_id: str,
+        *,
+        endpoint: str,
+        version: str,
+        actor_id: str,
+        actor_role: str,
+        tenant_id: str = "",
+    ) -> dict:
+        """Declare the target deployment used by real-target release evidence."""
+        ctx = self.get_session(session_id, tenant_id)
+        if not ctx:
+            raise ValueError(f"Session not found: {session_id}")
+        normalized_endpoint = sanitize_endpoint(endpoint)
+        normalized_version = (version or "").strip()
+        if not normalized_version:
+            raise ValueError("Target deployment version is required")
+        if len(normalized_version) > 64:
+            raise ValueError("Target deployment version must be at most 64 characters")
+
+        current = ctx.target_deployment
+        if (
+            current is not None
+            and current.endpoint == normalized_endpoint
+            and current.version == normalized_version
+        ):
+            return {
+                "ok": True,
+                "changed": False,
+                "target_deployment": current.model_dump(mode="json"),
+                "input_versions": dict(ctx.input_versions or {}),
+            }
+
+        before = current.model_dump(mode="json") if current is not None else None
+        now = datetime.utcnow()
+        if current is None:
+            ctx.target_deployment = TargetDeployment(
+                endpoint=normalized_endpoint,
+                version=normalized_version,
+                updated_at=now,
+                updated_by=actor_id,
+            )
+        else:
+            current.endpoint = normalized_endpoint
+            current.version = normalized_version
+            current.updated_at = now
+            current.updated_by = actor_id
+        bump_input_version(ctx, INPUT_VERSION_KEY_TARGET_DEPLOYMENT)
+        append_audit_event(
+            ctx,
+            actor="user",
+            event_type="target_deployment_updated",
+            target_type="target_deployment",
+            target_id=normalized_endpoint,
+            before=before,
+            after=ctx.target_deployment,
+            metadata={
+                "actor_id": actor_id,
+                "actor_role": actor_role,
+                "version": normalized_version,
+                "input_version": ctx.input_versions[INPUT_VERSION_KEY_TARGET_DEPLOYMENT],
+            },
+        )
+        self._store().save(ctx)
+        self._cache_set(ctx)
+        deployment = ctx.target_deployment
+        if deployment is None:
+            raise RuntimeError("Target deployment was not persisted")
+        return {
+            "ok": True,
+            "changed": True,
+            "target_deployment": deployment.model_dump(mode="json"),
+            "input_versions": dict(ctx.input_versions or {}),
+        }
 
     def create_report_artifact(self, session_id: str, tenant_id: str = "") -> dict:
         """生成版本化报告快照。"""

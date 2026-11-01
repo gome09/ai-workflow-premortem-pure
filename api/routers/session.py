@@ -22,6 +22,7 @@ from api.schemas import (
     ScenarioSummaryResponse,
     SessionListItem,
     SessionOverviewResponse,
+    TargetDeploymentRequest,
     UpdateDataClassificationRequest,
     UpdateDataClassificationResponse,
 )
@@ -318,6 +319,30 @@ def add_materials(
         return session_service.add_materials(session_id, body.materials, tenant_id=ctx.tenant_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.put(
+    "/{session_id}/target-deployment",
+    dependencies=[require_roles(Role.editor, Role.admin)],
+)
+def set_target_deployment(
+    session_id: str,
+    body: TargetDeploymentRequest,
+    ctx: TenantContext = Depends(get_current_tenant),
+) -> dict:
+    """Declare the target deployment used by real-target release evidence."""
+    try:
+        return session_service.set_target_deployment(
+            session_id,
+            endpoint=body.endpoint,
+            version=body.version,
+            actor_id=ctx.user_id,
+            actor_role=ctx.role,
+            tenant_id=ctx.tenant_id,
+        )
+    except ValueError as exc:
+        status_code = 404 if "Session not found" in str(exc) else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
 
 @router.post(

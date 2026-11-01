@@ -7,9 +7,10 @@ from unittest.mock import patch
 
 import pytest
 
-from core.evaluation_version import current_evaluation_digest
+from core.evaluation_version import current_evaluation_digest, eval_case_digest
 from core.models import (
     EvalCase,
+    EvalExperiment,
     EvalRun,
     EvidenceSource,
     FailureMode,
@@ -20,6 +21,7 @@ from core.models import (
     Stage2Output,
     Stage3Output,
     Stage4Output,
+    TargetDeployment,
     TriggerMethod,
     WorkflowNode,
 )
@@ -119,24 +121,42 @@ def _complete_ctx() -> ProjectContext:
         passed=True,
     )
     ctx.eval_cases.append(case)
-    ctx.eval_runs.append(
-        EvalRun(
+    ctx.stage_output_versions = {"stage_1": 1, "stage_2": 1, "stage_3": 1, "stage_4": 1}
+    ctx.target_deployment = TargetDeployment(
+        endpoint="http://target.local/eval",
+        version="2026.11.1",
+        updated_by=_CREATOR,
+    )
+    run = EvalRun(
+        session_id=ctx.session_id,
+        eval_id=case.eval_id,
+        target_node_id="N-1",
+        run_mode="target_http",
+        execution_kind="real_target_execution",
+        execution_outcome="success",
+        evaluation_version_digest=current_evaluation_digest(ctx),
+        target_endpoint=ctx.target_deployment.endpoint,
+        target_deployment_version=ctx.target_deployment.version,
+        case_version_digest=eval_case_digest(case),
+        input_payload="policy question",
+        expected_behavior="answer with citation",
+        pass_criteria=["citation present"],
+        actual_output="answer with citation",
+        judge_result="passed",
+        status="completed",
+    )
+    ctx.eval_runs.append(run)
+    ctx.eval_experiments.append(
+        EvalExperiment(
             session_id=ctx.session_id,
-            eval_id=case.eval_id,
-            target_node_id="N-1",
-            run_mode="target_http",
-            execution_kind="real_target_execution",
-            execution_outcome="success",
-            evaluation_version_digest=current_evaluation_digest(ctx),
-            input_payload="policy question",
-            expected_behavior="answer with citation",
-            pass_criteria=["citation present"],
-            actual_output="answer with citation",
-            judge_result="passed",
+            dataset_id="ds-test",
+            name="release batch",
             status="completed",
+            run_mode="target_http",
+            eval_ids=[case.eval_id],
+            run_ids=[run.run_id],
         )
     )
-    ctx.stage_output_versions = {"stage_1": 1, "stage_2": 1, "stage_3": 1, "stage_4": 1}
     treatment = upsert_risk_treatment(
         ctx,
         source_type="failure_mode",

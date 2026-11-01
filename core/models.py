@@ -207,6 +207,15 @@ class Stage4Output(BaseModel):
     raw_summary: str = ""
 
 
+class TargetDeployment(BaseModel):
+    """Declared target deployment bound to real-target release evidence."""
+
+    endpoint: str = ""
+    version: str = ""
+    updated_at: datetime | None = None
+    updated_by: str = ""
+
+
 # ─────────────────────────────────────────────
 # 【需核验】追踪
 # ─────────────────────────────────────────────
@@ -505,6 +514,7 @@ class EvalCase(BaseModel):
     input_payload: str
     expected_behavior: str
     pass_criteria: list[str] = Field(default_factory=list)
+    standard_version: int = 1
     actual_output: str | None = None
     human_score: int | None = None
     human_comment: str | None = None
@@ -540,6 +550,8 @@ class EvalRun(BaseModel):
     execution_outcome: Literal["success", "failed", "timeout", "error"] | None = None
     evaluation_version_digest: str = ""
     target_endpoint: str = ""
+    target_deployment_version: str = ""
+    case_version_digest: str = ""
     input_payload: str
     expected_behavior: str
     pass_criteria: list[str] = Field(default_factory=list)
@@ -648,6 +660,7 @@ class ProjectApproval(BaseModel):
     decided_by: str = ""
     decided_role: str = ""
     decision_note: str = ""
+    evidence_digest: str = ""
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -884,6 +897,9 @@ class ProjectContext(BaseModel):
     domain: str = ""  # 具体领域（如：法律文书生成）
     goal: str = ""  # 具体目标（如：提高合同起草准确率）
     user_materials: list[str] = Field(default_factory=list)  # 人工补充资料
+    # 单调输入版本：材料/目标部署等非阶段输入的实际变更计数，防止改回原值复活旧证据。
+    input_versions: dict[str, int] = Field(default_factory=dict)
+    target_deployment: TargetDeployment | None = None
 
     # ── 数据分类分级（DSL 21 条 / PIPL 51 条）────────
     data_classification: Literal["public_demo", "business_internal", "sensitive_personal"] = (

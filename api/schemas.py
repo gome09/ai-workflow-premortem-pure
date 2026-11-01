@@ -256,7 +256,6 @@ class CreateRedTeamDatasetRequest(BaseModel):
 class CalibrateEvalRunRequest(BaseModel):
     human_label: Literal["passed", "failed", "needs_review"]
     human_comment: str = ""
-    reviewer_id: str = "human_reviewer"
     disagreement_reason: str = ""
 
 
@@ -276,6 +275,32 @@ class TraceToEvalDatasetRequest(BaseModel):
 class UpdateDataClassificationRequest(BaseModel):
     data_classification: Literal["public_demo", "business_internal", "sensitive_personal"]
     note: str = ""
+
+
+class TargetDeploymentRequest(BaseModel):
+    endpoint: str
+    version: str
+
+
+class UpdateEvalCaseRequest(BaseModel):
+    target_node_id: str | None = None
+    input_payload: str | None = None
+    expected_behavior: str | None = None
+    pass_criteria: list[str] | None = None
+    scenario_type: (
+        Literal[
+            "normal",
+            "edge",
+            "adversarial",
+            "regression",
+            "production_failure",
+            "safety",
+            "evidence",
+            "parser",
+        ]
+        | None
+    ) = None
+    covered_failure_mode_ids: list[str] | None = None
 
 
 class RenameSessionResponse(BaseModel):

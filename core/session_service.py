@@ -109,6 +109,25 @@ class SessionService:
     def add_materials(self, session_id: str, materials: list[str], tenant_id: str = "") -> dict:
         return self._workflow.add_materials(session_id, materials, tenant_id)
 
+    def set_target_deployment(
+        self,
+        session_id: str,
+        *,
+        endpoint: str,
+        version: str,
+        actor_id: str,
+        actor_role: str,
+        tenant_id: str = "",
+    ) -> dict:
+        return self._workflow.set_target_deployment(
+            session_id,
+            endpoint=endpoint,
+            version=version,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            tenant_id=tenant_id,
+        )
+
     def resolve_flag(
         self, session_id: str, flag_id: str, action: str, note: str = "", tenant_id: str = ""
     ) -> dict:
@@ -235,6 +254,18 @@ class SessionService:
 
     def list_eval_cases(self, session_id: str, tenant_id: str = "") -> list[dict]:
         return self._evaluation.list_eval_cases(session_id, tenant_id)
+
+    def update_eval_case_standard(
+        self,
+        session_id: str,
+        eval_id: str,
+        *,
+        updates: dict[str, object],
+        tenant_id: str = "",
+    ) -> dict:
+        return self._evaluation.update_eval_case_standard(
+            session_id, eval_id, updates=updates, tenant_id=tenant_id
+        )
 
     def score_eval_case(
         self,

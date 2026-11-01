@@ -23,6 +23,10 @@ FACTOR_WEIGHTS: dict[str, int] = {
     "external_exposure": 2,
 }
 
+# Bump when weights or tier bands change; included in the evaluation-version
+# policy snapshot so old approvals/treatments become stale after a policy change.
+RISK_MODEL_VERSION = "1.0"
+
 # Inclusive score bands. CRITICAL starts at 22, so the full 0-42 range is
 # covered without gaps.
 SCORE_BANDS: tuple[tuple[int, ProjectGateRiskTier], ...] = (

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from core.audit_service import append_audit_event
 from core.models import EvalCase, ProjectContext
@@ -94,6 +95,54 @@ def score_eval_case(
             before=before,
             after=case,
             metadata={"human_score": human_score, "passed": passed},
+        )
+        return case
+    raise ValueError(f"Eval case not found: {eval_id}")
+
+
+def update_eval_case_standard(
+    ctx: ProjectContext,
+    *,
+    eval_id: str,
+    updates: dict[str, Any],
+) -> EvalCase:
+    """Update only the immutable test-definition fields of one EvalCase."""
+    allowed = {
+        "target_node_id",
+        "input_payload",
+        "expected_behavior",
+        "pass_criteria",
+        "scenario_type",
+        "covered_failure_mode_ids",
+    }
+    clean = {key: value for key, value in updates.items() if key in allowed}
+    if not clean:
+        raise ValueError("At least one eval case standard field is required")
+
+    for case in ctx.eval_cases:
+        if case.eval_id != eval_id:
+            continue
+        before = case.model_dump(mode="json")
+        changed_fields: list[str] = []
+        for field, value in clean.items():
+            if getattr(case, field) != value:
+                setattr(case, field, value)
+                changed_fields.append(field)
+        if not changed_fields:
+            return case
+        case.standard_version += 1
+        append_audit_event(
+            ctx,
+            actor="user",
+            event_type="eval_case_standard_updated",
+            target_type="eval_case",
+            target_id=case.eval_id,
+            before=before,
+            after=case,
+            metadata={
+                "standard_version": case.standard_version,
+                "changed_fields": sorted(changed_fields),
+            },
         )
         return case
     raise ValueError(f"Eval case not found: {eval_id}")

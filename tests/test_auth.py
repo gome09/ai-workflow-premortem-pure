@@ -183,6 +183,7 @@ def test_register_creates_tenant_and_user():
         result = service.register(
             "alice@example.com", "password123", workspace_name="Alice Workspace"
         )
+        assert mock_store.create_user.call_args.kwargs["role"] == "admin"
     assert result["tenant_id"] == "t-111"
     assert result["user_id"] == "u-222"
     assert "access_token" in result
@@ -232,11 +233,35 @@ def test_login_unknown_email_raises():
             service.login("nobody@example.com", "pass")
 
 
-def test_refresh_returns_new_access_token():
+def test_refresh_returns_new_access_token_with_current_role():
     service = _make_service()
-    refresh_token = create_refresh_token({"sub": "u-1", "tenant_id": "t-1", "role": "member"})
-    result = service.refresh(refresh_token)
+    refresh_token = create_refresh_token({"sub": "u-1", "tenant_id": "t-1", "role": "admin"})
+    user_row = {"user_id": "u-1", "tenant_id": "t-1", "email": "u@example.com", "role": "viewer"}
+    with patch("auth.service.session_store") as mock_store:
+        mock_store.get_user_by_id.return_value = user_row
+        result = service.refresh(refresh_token)
     assert "access_token" in result
+    assert result["role"] == "viewer"
+    assert verify_token(result["access_token"]).role == "viewer"
+
+
+def test_refresh_rejects_unknown_or_invalid_role():
+    service = _make_service()
+    refresh_token = create_refresh_token({"sub": "u-1", "tenant_id": "t-1", "role": "admin"})
+    with patch("auth.service.session_store") as mock_store:
+        mock_store.get_user_by_id.return_value = None
+        with pytest.raises(Exception):
+            service.refresh(refresh_token)
+
+    with patch("auth.service.session_store") as mock_store:
+        mock_store.get_user_by_id.return_value = {
+            "user_id": "u-1",
+            "tenant_id": "t-1",
+            "email": "u@example.com",
+            "role": "member",
+        }
+        with pytest.raises(Exception):
+            service.refresh(refresh_token)
 
 
 from fastapi.testclient import TestClient

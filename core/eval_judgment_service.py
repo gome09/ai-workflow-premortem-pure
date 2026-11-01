@@ -116,6 +116,18 @@ def calibrate_eval_run(
     disagreement_reason: str = "",
 ) -> HumanCalibration:
     run = _find_run(ctx, eval_run_id)
+    reviewer = (reviewer_id or "").strip()
+    if not reviewer:
+        raise ValueError("Reviewer identity is required")
+    if (
+        run.run_mode == "target_http"
+        and run.execution_outcome != "success"
+        and human_label == "passed"
+    ):
+        raise ValueError(
+            "A failed real-target execution cannot be calibrated to passed; "
+            "rerun the target before claiming a passing result"
+        )
     latest = _latest_judgment(ctx, eval_run_id)
     before = run.model_copy(deep=True)
     judge_label = latest.label if latest else run.judge_result
@@ -130,7 +142,7 @@ def calibrate_eval_run(
         judge_label=judge_label,
         agreement=agreement,
         disagreement_reason=disagreement_reason,
-        reviewer_id=reviewer_id,
+        reviewer_id=reviewer,
         metadata={"runtime_validation": "deferred_by_instruction"},
     )
     ctx.human_calibrations.append(calibration)

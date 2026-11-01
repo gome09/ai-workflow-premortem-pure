@@ -3,7 +3,7 @@
 设计：
 - 加密范围（classification ≠ public_demo 且已配置密钥）：
   `user_materials`、`evidence_sources[*].summary/claims`（user_material 类型）、
-  `research_target` / `research_goal`、`conversation_history[*][*].content`、
+  `research_target` / `goal`、`conversation_history[*][*].content`、
   `pending_actions[*].title/description/trigger_reason/payload_before/payload_after/reviewer_note`、
   `report_artifacts[*].content_markdown/content_json`。
 - 投影表列级加密通过 `ENCRYPTED_COLUMNS` 注册表统一处理，双后端写入前加密、
@@ -206,8 +206,8 @@ def encrypt_fields_for_storage(data: dict[str, Any], classification: str) -> dic
         if ev.get("claims"):
             ev["claims"] = [_encrypt_value(c) for c in ev["claims"]]
 
-    # research_target / research_goal
-    for field in ("research_target", "research_goal"):
+    # research_target / goal（ProjectContext 实际字段名为 goal）
+    for field in ("research_target", "goal"):
         value = data.get(field)
         if isinstance(value, str) and value:
             data[field] = _encrypt_value(value)
@@ -294,11 +294,11 @@ def decrypt_fields_after_load(ctx) -> None:
                 for c in ev.claims
             ]
 
-    # research_target / research_goal
+    # research_target / goal（ProjectContext 实际字段名为 goal）
     if ctx.research_target:
         ctx.research_target = _decrypt_value(ctx.research_target, field="research_target")
-    if getattr(ctx, "research_goal", ""):
-        ctx.research_goal = _decrypt_value(ctx.research_goal, field="research_goal")
+    if ctx.goal:
+        ctx.goal = _decrypt_value(ctx.goal, field="goal")
 
     # conversation_history[*][*].content
     for messages in ctx.conversation_history.values():

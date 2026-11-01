@@ -24,7 +24,9 @@ from storage.field_security import (
     encrypt_fields_for_storage,
     encrypt_json_field,
     encrypt_text_field,
+    is_encryption_enabled,
 )
+from storage.goal_backfill import GoalBackfillMode, transform_goal_context
 from storage.projection_read import build_projection_rows, get_projection_spec
 from storage.projection_state import compute_state, plan_sync
 
@@ -38,12 +40,15 @@ _DEFAULT_DB_PATH = "data/workflow.db"
 _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("sessions", "projection_state", "TEXT NOT NULL DEFAULT '{}'"),
     ("sessions", "context_digest", "TEXT"),
+    ("eval_cases", "standard_version", "INTEGER NOT NULL DEFAULT 1"),
     ("eval_runs", "pass_criteria", "TEXT NOT NULL DEFAULT '[]'"),
     ("eval_runs", "llm_judge_suggestion", "TEXT"),
     ("eval_runs", "execution_kind", "TEXT NOT NULL DEFAULT 'manual_simulation'"),
     ("eval_runs", "execution_outcome", "TEXT"),
     ("eval_runs", "evaluation_version_digest", "TEXT NOT NULL DEFAULT ''"),
     ("eval_runs", "target_endpoint", "TEXT NOT NULL DEFAULT ''"),
+    ("eval_runs", "target_deployment_version", "TEXT NOT NULL DEFAULT ''"),
+    ("eval_runs", "case_version_digest", "TEXT NOT NULL DEFAULT ''"),
 )
 
 _INIT_DDL = """
@@ -220,6 +225,7 @@ CREATE TABLE IF NOT EXISTS eval_cases (
     input_payload            TEXT NOT NULL,
     expected_behavior        TEXT NOT NULL,
     pass_criteria            TEXT NOT NULL DEFAULT '[]',
+    standard_version         INTEGER NOT NULL DEFAULT 1,
     actual_output            TEXT,
     human_score              INTEGER,
     human_comment            TEXT,
@@ -244,6 +250,8 @@ CREATE TABLE IF NOT EXISTS eval_runs (
     execution_outcome        TEXT,
     evaluation_version_digest TEXT NOT NULL DEFAULT '',
     target_endpoint          TEXT NOT NULL DEFAULT '',
+    target_deployment_version TEXT NOT NULL DEFAULT '',
+    case_version_digest      TEXT NOT NULL DEFAULT '',
     input_payload            TEXT NOT NULL,
     expected_behavior        TEXT NOT NULL,
     actual_output            TEXT,
@@ -431,6 +439,28 @@ CREATE TABLE IF NOT EXISTS users (
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS workspace_invitations (
+    invitation_id   TEXT PRIMARY KEY,
+    tenant_id       TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+    email           TEXT NOT NULL,
+    role            TEXT NOT NULL DEFAULT 'viewer'
+                    CHECK (role IN ('viewer', 'editor', 'admin')),
+    token_hash      TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending', 'accepted', 'revoked', 'expired')),
+    invited_by      TEXT,
+    expires_at      TEXT NOT NULL,
+    accepted_at     TEXT,
+    accepted_user_id TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_invitations_token_hash
+ON workspace_invitations (token_hash);
+CREATE INDEX IF NOT EXISTS idx_workspace_invitations_tenant_status
+ON workspace_invitations (tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_workspace_invitations_tenant_email
+ON workspace_invitations (tenant_id, email);
+
 CREATE TABLE IF NOT EXISTS gate_evaluation_records (
     record_id           TEXT PRIMARY KEY,
     session_id          TEXT NOT NULL,
@@ -494,6 +524,80 @@ class SQLiteSessionStore:
     def close(self) -> None:
         """No-op: SQLite uses short-lived per-call connections."""
         return None
+
+    def backfill_goal_encryption(
+        self,
+        *,
+        dry_run: bool = True,
+        verify_only: bool = False,
+        decrypt: bool = False,
+        session_ids: list[str] | None = None,
+        batch_size: int = 100,
+    ) -> dict[str, Any]:
+        """Backfill the historical plaintext ``goal`` field (SQLite).
+
+        Modes: encrypt (default), verify_only, decrypt (rollback helper).
+        The sweep is idempotent: already encrypted rows are left untouched.
+        """
+        if verify_only and decrypt:
+            raise ValueError("verify_only and decrypt are mutually exclusive")
+        if batch_size < 1:
+            raise ValueError("batch_size must be >= 1")
+        if not is_encryption_enabled():
+            raise RuntimeError("DATA_ENCRYPTION_KEY is not configured")
+        mode: GoalBackfillMode = "verify" if verify_only else ("decrypt" if decrypt else "encrypt")
+        result: dict[str, Any] = {
+            "mode": mode,
+            "dry_run": dry_run,
+            "scanned": 0,
+            "changed": 0,
+            "conflicts": 0,
+            "status_counts": {},
+            "errors": [],
+        }
+
+        with self._lock:
+            with self._get_conn() as conn:
+                if session_ids:
+                    placeholders = ",".join("?" for _ in session_ids)
+                    sql = (
+                        "SELECT session_id, context_json FROM sessions "  # noqa: S608  # placeholders count only
+                        f"WHERE session_id IN ({placeholders}) ORDER BY session_id"
+                    )
+                    params: tuple[Any, ...] = tuple(session_ids)
+                else:
+                    sql = "SELECT session_id, context_json FROM sessions ORDER BY session_id"
+                    params = ()
+                cursor = conn.execute(sql, params)
+                while True:
+                    rows = cursor.fetchmany(batch_size)
+                    if not rows:
+                        break
+                    for row in rows:
+                        result["scanned"] += 1
+                        transform = transform_goal_context(row["context_json"], mode=mode)
+                        status_counts = result["status_counts"]
+                        status_counts[transform.status] = status_counts.get(transform.status, 0) + 1
+                        if transform.error:
+                            if len(result["errors"]) < 20:
+                                result["errors"].append(
+                                    {"session_id": row["session_id"], "error": transform.error}
+                                )
+                        if not transform.changed:
+                            continue
+                        result["changed"] += 1
+                        if dry_run or verify_only:
+                            continue
+                        updated = conn.execute(
+                            "UPDATE sessions SET context_json=? "
+                            "WHERE session_id=? AND context_json=?",
+                            (transform.context_json, row["session_id"], row["context_json"]),
+                        )
+                        if updated.rowcount == 0:
+                            result["conflicts"] += 1
+                if not dry_run and not verify_only:
+                    conn.commit()
+        return result
 
     # ── Static helpers ──────────────────────────────────────────────────────
 
@@ -840,10 +944,11 @@ class SQLiteSessionStore:
                 INSERT OR REPLACE INTO eval_cases (
                     eval_id, session_id, stage_id, target_node_id, covered_failure_mode_ids,
                     scenario_type, source_type, source_trace_id, source_ref_id, metadata,
-                    input_payload, expected_behavior, pass_criteria, actual_output, human_score,
+                    input_payload, expected_behavior, pass_criteria, standard_version,
+                    actual_output, human_score,
                     human_comment, passed, created_at, scored_at
                 )
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     case.eval_id,
@@ -859,6 +964,7 @@ class SQLiteSessionStore:
                     case.input_payload,
                     case.expected_behavior,
                     json.dumps(case.pass_criteria, default=str),
+                    case.standard_version,
                     case.actual_output,
                     case.human_score,
                     case.human_comment,
@@ -877,12 +983,13 @@ class SQLiteSessionStore:
                     target_node_id, covered_failure_mode_ids,
                     stage_output_version, run_mode, execution_kind, execution_outcome,
                     evaluation_version_digest, target_endpoint,
+                    target_deployment_version, case_version_digest,
                     input_payload, expected_behavior,
                     actual_output, judge_result, judge_reason, judge_mode, violated_criteria,
                     pass_criteria, llm_judge_suggestion,
                     status, error_message, trace_id, latency_ms, estimated_cost, created_at, completed_at
                 )
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     run.run_id,
@@ -899,6 +1006,8 @@ class SQLiteSessionStore:
                     run.execution_outcome,
                     run.evaluation_version_digest,
                     run.target_endpoint,
+                    run.target_deployment_version,
+                    run.case_version_digest,
                     run.input_payload,
                     run.expected_behavior,
                     run.actual_output,
@@ -1860,6 +1969,122 @@ class SQLiteSessionStore:
                 ).fetchone()
                 conn.commit()
         return dict(row) if row else None
+
+    def get_user_by_id(self, user_id: str) -> dict | None:
+        """Lookup the current member record for refresh-token role revalidation."""
+        with self._lock:
+            with self._get_conn() as conn:
+                row = conn.execute(
+                    "SELECT user_id, tenant_id, email, role FROM users WHERE user_id=?",
+                    (user_id,),
+                ).fetchone()
+        return dict(row) if row else None
+
+    def create_invitation(
+        self,
+        *,
+        tenant_id: str,
+        email: str,
+        role: str,
+        token_hash: str,
+        invited_by: str,
+        expires_at: datetime,
+    ) -> dict:
+        invitation_id = str(uuid.uuid4())
+        with self._lock:
+            with self._get_conn() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO workspace_invitations (
+                        invitation_id, tenant_id, email, role, token_hash,
+                        status, invited_by, expires_at
+                    ) VALUES (?,?,?,?,?, 'pending', ?,?)
+                    """,
+                    (
+                        invitation_id,
+                        tenant_id,
+                        email,
+                        role,
+                        token_hash,
+                        invited_by,
+                        _dt(expires_at),
+                    ),
+                )
+                row = conn.execute(
+                    "SELECT invitation_id, tenant_id, email, role, status, invited_by, "
+                    "expires_at, accepted_at, accepted_user_id, created_at "
+                    "FROM workspace_invitations WHERE invitation_id=?",
+                    (invitation_id,),
+                ).fetchone()
+                conn.commit()
+        return dict(row)
+
+    def list_invitations_by_tenant(self, tenant_id: str) -> list[dict]:
+        with self._lock:
+            with self._get_conn() as conn:
+                rows = conn.execute(
+                    "SELECT invitation_id, tenant_id, email, role, status, invited_by, "
+                    "expires_at, accepted_at, accepted_user_id, created_at "
+                    "FROM workspace_invitations WHERE tenant_id=? "
+                    "ORDER BY created_at DESC",
+                    (tenant_id,),
+                ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_invitation_by_token_hash(self, token_hash: str) -> dict | None:
+        with self._lock:
+            with self._get_conn() as conn:
+                row = conn.execute(
+                    "SELECT invitation_id, tenant_id, email, role, status, invited_by, "
+                    "expires_at, accepted_at, accepted_user_id, created_at "
+                    "FROM workspace_invitations WHERE token_hash=?",
+                    (token_hash,),
+                ).fetchone()
+        return dict(row) if row else None
+
+    def accept_invitation(
+        self,
+        *,
+        invitation_id: str,
+        password_hash: str,
+        accepted_at: datetime,
+    ) -> dict | None:
+        """Atomically create the invited user and mark the invitation accepted."""
+        accepted_at_text = _dt(accepted_at)
+        with self._lock:
+            with self._get_conn() as conn:
+                invitation = conn.execute(
+                    "SELECT invitation_id, tenant_id, email, role, status "
+                    "FROM workspace_invitations WHERE invitation_id=?",
+                    (invitation_id,),
+                ).fetchone()
+                if invitation is None or invitation["status"] != "pending":
+                    return None
+                user_id = str(uuid.uuid4())
+                conn.execute(
+                    "INSERT INTO users (user_id, tenant_id, email, password_hash, role) "
+                    "VALUES (?,?,?,?,?)",
+                    (
+                        user_id,
+                        invitation["tenant_id"],
+                        invitation["email"],
+                        password_hash,
+                        invitation["role"],
+                    ),
+                )
+                updated = conn.execute(
+                    "UPDATE workspace_invitations SET status='accepted', accepted_at=?, "
+                    "accepted_user_id=? WHERE invitation_id=? AND status='pending'",
+                    (accepted_at_text, user_id, invitation_id),
+                )
+                if updated.rowcount == 0:
+                    raise ValueError("Invitation was accepted by another request")
+                user = conn.execute(
+                    "SELECT user_id, tenant_id, email, role FROM users WHERE user_id=?",
+                    (user_id,),
+                ).fetchone()
+                conn.commit()
+        return dict(user) if user else None
 
     # ── Governance trend analytics (T3.2) ─────────────────────────────────────
 

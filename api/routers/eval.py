@@ -3,7 +3,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.schemas import CalibrateEvalRunRequest, RunEvalCasesRequest, ScoreEvalCaseRequest
+from api.schemas import (
+    CalibrateEvalRunRequest,
+    RunEvalCasesRequest,
+    ScoreEvalCaseRequest,
+    UpdateEvalCaseRequest,
+)
 from auth.jwt import TenantContext, get_current_tenant
 from auth.permissions import Role, require_roles
 from core.session_service import session_service
@@ -157,6 +162,30 @@ def list_human_calibrations(
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@router.patch(
+    "/{session_id}/eval-cases/{eval_id}",
+    dependencies=[require_roles(Role.editor, Role.admin)],
+)
+def update_eval_case_standard(
+    session_id: str,
+    eval_id: str,
+    body: UpdateEvalCaseRequest,
+    ctx: TenantContext = Depends(get_current_tenant),
+) -> dict:
+    """Update only the EvalCase test definition; each real change bumps standard_version."""
+    updates = body.model_dump(exclude_none=True)
+    try:
+        return session_service.update_eval_case_standard(
+            session_id,
+            eval_id,
+            updates=updates,
+            tenant_id=ctx.tenant_id,
+        )
+    except ValueError as exc:
+        status_code = 404 if "Session not found" in str(exc) else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+
+
 @router.post(
     "/{session_id}/eval-runs/{run_id}/calibrate",
     dependencies=[require_roles(Role.editor, Role.admin)],
@@ -173,7 +202,7 @@ def calibrate_eval_run(
             run_id=run_id,
             human_label=body.human_label,
             human_comment=body.human_comment,
-            reviewer_id=body.reviewer_id,
+            reviewer_id=ctx.user_id,
             disagreement_reason=body.disagreement_reason,
             tenant_id=ctx.tenant_id,
         )

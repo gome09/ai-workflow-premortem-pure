@@ -312,3 +312,54 @@ def test_review_rejects_same_actor_and_stale_version():
             actor_id="reviewer-b",
             actor_role="editor",
         )
+
+
+def test_version_change_clears_review_even_when_resubmitted_verbatim():
+    ctx = _ctx()
+    treatment = upsert_risk_treatment(
+        ctx,
+        source_type="failure_mode",
+        source_id="FM-001",
+        owner="owner-a",
+        mitigation_plan="Add citation validation",
+        status="completed",
+        actor_id="editor-a",
+        actor_role="editor",
+    )
+    review_risk_treatment(
+        ctx,
+        treatment_id=treatment.treatment_id,
+        decision="accept",
+        note="verified",
+        actor_id="reviewer-b",
+        actor_role="editor",
+    )
+    assert treatment_blockers(ctx) == []
+
+    ctx.stage_1_output.failure_modes[0].category = "changed category"
+    upsert_risk_treatment(
+        ctx,
+        source_type="failure_mode",
+        source_id="FM-001",
+        owner="owner-a",
+        mitigation_plan="Add citation validation",
+        status="completed",
+        actor_id="editor-a",
+        actor_role="editor",
+    )
+
+    assert treatment.reviewed_by == ""
+    assert treatment.reviewed_at is None
+    blockers = treatment_blockers(ctx)
+    assert blockers
+    assert blockers[0]["gap_type"] == "unreviewed"
+
+    review_risk_treatment(
+        ctx,
+        treatment_id=treatment.treatment_id,
+        decision="accept",
+        note="re-reviewed for the new version",
+        actor_id="reviewer-b",
+        actor_role="editor",
+    )
+    assert treatment_blockers(ctx) == []

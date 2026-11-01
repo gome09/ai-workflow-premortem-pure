@@ -4,6 +4,18 @@
 > 远程 `origin`（github.com/gome09/ai-workflow-premortem-pure）与本地共享同一根提交，**不包含更早的历史**，无法用于追溯 v1.0 之前的开发过程。
 > 截至 2026-09-01，本地 `main` 已与 `origin/main` 同步（当日推送 10 次提交，至 `08f8a99`）。
 
+## 1.7.0 — P1 Business Closure Hardening (2026-11-01)
+
+- **团队与身份**：新增 `workspace_invitations`（token 哈希、7 天有效期、同租户加入）与 `/auth/invitations` 创建/列表/接受接口；注册创建工作区时创建者固定为 admin。`/auth/refresh` 重新读取当前用户角色；EvalRun 人工校准复核人固定取 JWT `user_id`，移除请求体 `reviewer_id`。
+- **评估版本 2.0**：`core/evaluation_version.py` 摘要纳入材料逐项哈希、目标部署、输入版本、EvalCase 定义/`standard_version` 与策略版本；明确排除运行/批准/处置等证据以避免循环依赖。`EvalRun` 新增 `case_version_digest` / `target_deployment_version`；新增目标部署 API 与 EvalCase 标准更新 API。
+- **审批有效性**：新增 `core/release_evidence.py`，上线证据要求同一 completed `target_http` 评估批次覆盖全部必测用例，且 `execution_outcome=success` + `judge_result=passed`；`ProjectApproval.evidence_digest` 绑定测试/校准/处置/安全发现/阻断动作快照，批准后任一证据变化使 `effective_status` 变为 `invalidated`，历史记录保留。
+- **测试可信度**：HTTP 500 / timeout / 响应契约错误不可通过人工改判成为成功证据；执行失败的真实目标运行不进入审批。
+- **处置复核**：评估版本变化后原样重提处置也会清空旧复核，必须重新独立复核。
+- **数据保护**：修复实际字段 `goal` 的 Fernet 加解密；新增两后端 `backfill_goal_encryption()` 与 `scripts/encrypt_legacy_goal.py`（dry-run / apply / verify / decrypt 回滚模式），幂等且跳过 public_demo。
+- **迁移**：Alembic V012 新增 `workspace_invitations`、`eval_cases.standard_version`、`eval_runs.case_version_digest` / `target_deployment_version`；迁移测试与 CI head 改为动态 `ScriptDirectory.get_current_head()`，移除 V010/V011 硬编码。
+- **测试**：新增 `test_workspace_collaboration.py`、`test_evaluation_version_lifecycle.py`、`test_goal_encryption_migration.py`、`test_alembic_v012_p1_governance.py`、`test_ci_migration_head.py`、`test_postgres_p1_storage.py`，扩展审批/处置/目标/E2E 覆盖。离线全量 `1131 passed, 4 skipped`（SQLite + memory + mock）；真实 PostgreSQL（临时 trust 集群）额外验证 V008→V012 升级/回滚/再升级与 `goal` 密文/历史回填/邀请刷新（5 passed）。Ruff、mypy、doc-check、version-check 通过。
+- **版本**：`1.7.0`（`core/version.py` / `pyproject.toml` / `uv.lock` 同步）。
+
 ## 1.6.0 — Business Closure (2026-11-01)
 
 - **证据治理**：`EvidenceSource.lifecycle_status` 派生 submitted / verified / adopted；`link_failure_modes_to_evidence` 按当前 Stage 1 内容全量重建引用，Stage 1 编辑移除引用后采纳状态自动降级。未核验证据仍无法解除 `stage1_evidence_gap`。

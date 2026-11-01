@@ -206,6 +206,8 @@ def upsert_risk_treatment(
     current_digest = current_evaluation_digest(ctx)
     existing = _latest_treatment(ctx, source_type, source_id)
     before = existing.model_dump(mode="json") if existing else None
+    content_changed = False
+    digest_changed = False
 
     if existing is None:
         treatment = RiskTreatment(
@@ -231,6 +233,7 @@ def upsert_risk_treatment(
             or existing.mitigation_plan != normalized_plan
             or existing.status != status
         )
+        digest_changed = existing.evaluation_version_digest != current_digest
         treatment.owner = normalized_owner
         treatment.mitigation_plan = normalized_plan
         treatment.status = status  # type: ignore[assignment]
@@ -238,10 +241,18 @@ def upsert_risk_treatment(
         treatment.evaluation_version_digest = current_digest
         treatment.updated_by = actor_id
         treatment.updated_at = now
-        if content_changed:
-            # A previous review no longer covers the changed plan.
+        if content_changed or digest_changed:
+            # A previous review no longer covers the changed plan or the new
+            # evaluation version, even when the fields were resubmitted verbatim.
             treatment.reviewed_by = ""
             treatment.reviewed_at = None
+
+    review_cleared_reason = ""
+    if existing is not None:
+        if content_changed:
+            review_cleared_reason = "content_changed"
+        elif digest_changed:
+            review_cleared_reason = "evaluation_version_changed"
 
     append_audit_event(
         ctx,
@@ -256,6 +267,7 @@ def upsert_risk_treatment(
             "source_id": source_id,
             "status": treatment.status,
             "review_cleared": not treatment.reviewed_by,
+            "review_cleared_reason": review_cleared_reason,
             "evaluation_version_digest": treatment.evaluation_version_digest,
             "actor_role": actor_role,
         },

@@ -7,8 +7,10 @@ from core.approval_service import build_release_readiness
 from core.evaluation_version import (
     build_evaluation_version,
     current_evaluation_digest,
+    eval_case_digest,
 )
 from core.models import (
+    EvalCase,
     EvalRun,
     FailureMode,
     LLMTrace,
@@ -20,6 +22,7 @@ from core.models import (
     Stage3Output,
     Stage4Output,
     StressTestResult,
+    TargetDeployment,
     TriggerMethod,
     WorkflowNode,
 )
@@ -91,6 +94,20 @@ def _ctx() -> ProjectContext:
         "stage_3": 1,
         "stage_4": 1,
     }
+    ctx.target_deployment = TargetDeployment(
+        endpoint="http://target.local/eval", version="2026.11.1"
+    )
+    ctx.eval_cases.append(
+        EvalCase(
+            session_id=ctx.session_id,
+            stage_id=3,
+            target_node_id="N-1",
+            scenario_type="normal",
+            input_payload="policy question",
+            expected_behavior="answer",
+            pass_criteria=["citation"],
+        )
+    )
     return ctx
 
 
@@ -100,8 +117,9 @@ def test_digest_is_stable_and_reproducible():
     second = build_evaluation_version(ctx)
 
     assert first == second
-    assert first["schema"] == "1.0"
+    assert first["schema"] == "2.0"
     assert first["stage_versions"] == ctx.stage_output_versions
+    assert first["input_versions"] == {}
     assert first["content_digest"]
     assert first["digest"]
 
@@ -166,21 +184,27 @@ def test_old_digest_eval_run_is_not_current_release_evidence():
     readiness = build_release_readiness(ctx)
 
     assert readiness.passed_real_test_node_ids == []
-    assert any(blocker.code == "real_target_test" for blocker in readiness.blockers)
+    assert any(
+        blocker.code in {"release_batch", "real_target_test"} for blocker in readiness.blockers
+    )
 
 
 def test_current_digest_eval_run_is_counted():
     ctx = _ctx()
     current_digest = current_evaluation_digest(ctx)
+    case = ctx.eval_cases[0]
     ctx.eval_runs.append(
         EvalRun(
             session_id=ctx.session_id,
-            eval_id="EVAL-CURRENT",
+            eval_id=case.eval_id,
             target_node_id="N-1",
             run_mode="target_http",
             execution_kind="real_target_execution",
             execution_outcome="success",
             evaluation_version_digest=current_digest,
+            target_endpoint=ctx.target_deployment.endpoint,
+            target_deployment_version=ctx.target_deployment.version,
+            case_version_digest=eval_case_digest(case),
             input_payload="policy question",
             expected_behavior="answer",
             pass_criteria=["citation"],

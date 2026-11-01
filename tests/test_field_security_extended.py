@@ -63,6 +63,7 @@ def _sensitive_ctx() -> ProjectContext:
     ctx = ProjectContext(tenant_id=TENANT, session_name="enc-e2e")
     ctx.data_classification = "business_internal"
     ctx.research_target = "内部项目代号-ALPHA"
+    ctx.goal = "项目目标-机密-014"
     ctx.user_materials = ["用户材料-机密-001"]
     ctx.evidence_sources = [
         EvidenceSource(
@@ -113,6 +114,7 @@ def test_sqlite_encrypts_all_sensitive_paths_and_round_trips(store):
         "证据摘要-机密-002",
         "claim-机密-003",
         "内部项目代号-ALPHA",
+        "项目目标-机密-014",
         "对话内容-机密-005",
         "AI 回复-机密-006",
         "动作标题-机密-007",
@@ -127,6 +129,7 @@ def test_sqlite_encrypts_all_sensitive_paths_and_round_trips(store):
     assert loaded is not None
     assert loaded.user_materials == ctx.user_materials
     assert loaded.research_target == ctx.research_target
+    assert loaded.goal == ctx.goal
     assert loaded.evidence_sources[0].summary == "证据摘要-机密-002"
     assert loaded.evidence_sources[0].claims == ["claim-机密-003", "claim-机密-004"]
     assert [m.content for m in loaded.conversation_history["stage_1"]] == [

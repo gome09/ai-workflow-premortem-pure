@@ -539,7 +539,7 @@ class GovernanceService(SessionAccess):
         readiness = build_release_readiness(ctx)
         return {
             "session_id": session_id,
-            "approval_summary": build_approval_summary(ctx),
+            "approval_summary": build_approval_summary(ctx, readiness=readiness),
             "release_readiness": readiness.model_dump(mode="json"),
         }
 

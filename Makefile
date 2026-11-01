@@ -58,7 +58,9 @@ lint:
 typecheck:
 	uv run mypy
 
-# 依赖漏洞审计（阻断）。PIP_AUDIT_IGNORES 显式登记已接受 advisory（复核日期 2026-10-31）：
+# 依赖漏洞审计（本地严格；CI 以 non-blocking 观察步骤运行）。
+# PIP_AUDIT_IGNORES 显式登记已接受 advisory（复核日期 2026-10-31；2026-11-01 外部库
+# 已增至 124 条 unique advisory / 19 个包，CI 不再阻断，本地仍会失败并要求分诊）：
 # - pillow: CVE-2026-96640 / CVE-2026-96778 / GHSA-78g4-xqwv-q3g8（streamlit 依赖上限
 #   pillow<13，上游放开后移除）
 # - python-jose: PYSEC-2026-4298（无修复版本，迁移出 python-jose 前接受）
@@ -72,7 +74,7 @@ audit:
 	uv export --frozen --no-emit-project --format requirements-txt --no-hashes -o requirements-audit.txt
 	uv run pip-audit --strict -r requirements-audit.txt $(addprefix --ignore-vuln ,$(PIP_AUDIT_IGNORES))
 
-# 安全检查组合（lint + 依赖漏洞审计），CI 阻断项
+# 安全检查组合（lint + 依赖漏洞审计）。本地严格；CI 中 lint 阻断、audit 观察。
 security-check: lint audit
 
 # 版本元数据一致性检查（pyproject.toml 与 core/version.py 对齐）

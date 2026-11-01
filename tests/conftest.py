@@ -36,6 +36,23 @@ def disable_rate_limiting(monkeypatch):
 from core.models import FailureMode, ProjectContext, SessionState, Stage1Output
 
 
+@pytest.fixture(autouse=True, scope="session")
+def initialize_default_sqlite_store():
+    """Match application startup: create the default SQLite schema before tests.
+
+    Gate evaluation persistence and other paths import the global ``session_store``
+    directly; without schema creation a fresh clone/CI workspace fails with
+    "unable to open database file" or "no such table".
+    """
+    from core.config import settings
+
+    if settings.storage_backend == "sqlite":
+        from storage.session_store import session_store
+
+        session_store.initialize()
+    yield
+
+
 @pytest.fixture
 def base_ctx() -> ProjectContext:
     """基础测试上下文，已填写项目信息"""

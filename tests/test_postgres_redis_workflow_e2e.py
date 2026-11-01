@@ -271,10 +271,16 @@ def test_pg_redis_workflow_lifecycle(service, migrated_database):
     assert advanced.research_target, "mock init must extract research_target"
     assert advanced.goal, "mock init must extract goal"
 
-    raw = _raw_context_json(ctx.session_id)
-    assert "enc:v1:" in raw, "research_target/conversation must be encrypted in PostgreSQL"
-    assert advanced.research_target not in raw, "research_target plaintext leaked into context_json"
-    assert advanced.goal not in raw, "goal plaintext leaked into context_json"
+    # Built-in scenario sessions are public_demo and intentionally unencrypted.
+    # Verify encryption at rest with a business_internal (no-scenario) session.
+    biz = create(tenant_a)
+    biz.research_target = "敏感研究对象-加密校验"
+    biz.goal = "敏感目标-加密校验"
+    session_store.save(biz)
+    raw = _raw_context_json(biz.session_id)
+    assert "enc:v1:" in raw, "business_internal fields must be encrypted in PostgreSQL"
+    assert biz.research_target not in raw, "research_target plaintext leaked into context_json"
+    assert biz.goal not in raw, "goal plaintext leaked into context_json"
     event_payload = _latest_event_payload_text(ctx.session_id)
     assert "研究对象" not in event_payload
     assert "input_sha256" in event_payload

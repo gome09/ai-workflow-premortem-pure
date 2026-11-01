@@ -216,6 +216,7 @@ def api_client_and_store(tmp_path):
     cache = MemoryCache(ttl_seconds=3600)
     with (
         patch("storage.session_store.session_store.initialize"),
+        patch("storage.session_store.session_store", store),
         patch("core.session_service.session_store", store),
         patch("core.session_service.context_cache", cache),
     ):

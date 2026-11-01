@@ -133,7 +133,7 @@ Stage 3 eval runs now distinguish execution provenance explicitly:
 - `llm_node` + `LLM_MODE=real` → `platform_model_execution`（平台模型执行，不是被测目标系统）
 - `target_http` → `real_target_execution`（真实目标系统；outcome 为 success / failed / timeout / error）
 
-`target_http` 通过 `core/target_testing/http_json.py` 调用白名单内的外部 HTTP JSON endpoint；`sensitive_personal` 的出站 payload 强制 PII 掩码。真实目标 run 必须由人工校准为 `passed` 后才能作为上线批准证据，LLM autofinal 不适用于该模式。
+`target_http` 通过 `core/target_testing/http_json.py` 调用白名单内的外部 HTTP JSON endpoint；`sensitive_personal` 的出站 payload 强制 PII 掩码。v1.7.0 起，真实目标 run 绑定当前 `evaluation_version_digest`、`case_version_digest` 与 `target_deployment_version`；上线批准只接受 `execution_outcome=success` 且 `judge_result=passed` 的运行，并要求同一 completed `target_http` 评估批次覆盖全部必测用例。HTTP 500 / timeout / 响应契约错误不可通过人工改判为 passed。
 
 ---
 

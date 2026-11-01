@@ -7,16 +7,18 @@
 ## 项目现状
 
 - 项目：AI Workflow Premortem，AI 工作流预验尸与人机监督平台；源于本科毕业设计，当前按长期维护的开源项目演进。
-- 当前应用版本：`1.6.0`；版本元数据必须同时保持 `core/version.py` 与 `pyproject.toml` 一致。
-- 当前数据库迁移头：Alembic `V011`（业务闭环：`eval_runs.execution_kind` / `execution_outcome` / `evaluation_version_digest` / `target_endpoint`；V010 为 `sessions.context_digest` 写放大保护；V009 为 `sessions.projection_state` 差分同步状态 + `eval_runs.pass_criteria` / `llm_judge_suggestion`）；当前 `ProjectContext` schema：`0.10.0`（新增可选 `risk_treatments` / `project_approvals`，旧 context_json 通过 `v090_to_v100` no-op 迁移加载）。
-- 真实业务库 `ai_workflow` 已升级至 V008（20 会话 / 90 人工动作 / 144 审计事件保留）；V009/V010/V011 为新增列迁移，部署环境需执行 `alembic upgrade head`。历史行 `tenant_id` 仍为 NULL，回填前不会进入租户作用域查询与治理统计。旧库升级顺序与备份路径见 `storage/README.md` 与 `.upgrade/backup/`。
+- 当前应用版本：`1.7.0`；版本元数据必须同时保持 `core/version.py` 与 `pyproject.toml` 一致。
+- 当前数据库迁移头：Alembic `V012`（P1 加固：`workspace_invitations`、`eval_cases.standard_version`、`eval_runs.case_version_digest` / `target_deployment_version`；V011 为业务闭环真实目标执行元数据；V010 为 `sessions.context_digest`；V009 为 `sessions.projection_state` 与 `eval_runs.pass_criteria` / `llm_judge_suggestion`）；当前 `ProjectContext` schema 保持 `0.10.0`（新增 `target_deployment` / `input_versions` 等可选默认字段，无需 context 迁移）。`alembic/` 迁移目录不得包含 `__init__.py`，否则会遮蔽已安装的 Alembic 包，导致 `from alembic.config import Config` 失败。
+- 真实业务库 `ai_workflow` 已升级至 V008（20 会话 / 90 人工动作 / 144 审计事件保留）；V009–V012 为新增列/表迁移，部署环境需执行 `alembic upgrade head`。历史行 `tenant_id` 仍为 NULL，回填前不会进入租户作用域查询与治理统计。旧库升级顺序与备份路径见 `storage/README.md` 与 `.upgrade/backup/`。
 - Phase 0–4 代码侧已完成；`docs/archive/plan/phase-*.md` 与 `phase-*-design.md` 是历史实施/设计基线（已归档），不得把其中旧版本、旧行号或未勾选项当作当前事实。
 - formal-project-uplift Wave A–E 已完成；剩余工作主要是仓库公开后的远端治理动作，如 CodeQL 转正、main 分支保护和发布设置。权威状态见 `.upgrade/STATE.md`。
-- 最近一次本地全量测试基线：`1102 passed, 3 skipped`（2026-11-01 业务闭环升级复核；项目 `.venv` pytest，`STORAGE_BACKEND=sqlite` + `CHECKPOINT_BACKEND=memory` + `LLM_MODE=mock`，25.6s）。新增测试覆盖证据生命周期、风险处置门禁、上线批准前置条件与身份独立性、真实目标 HTTP 适配器（成功/失败/超时/异常）、评估版本绑定与失效。此前基线依次为 `1042 passed, 3 skipped`（2026-11-01 安全基线加固复核）、`1016 passed, 3 skipped`（2026-10-31 Milestone 2 Domain Simplification 复核）、`959 passed, 3 skipped`（2026-10-31 Production Safety Baseline）、`894 passed, 1 skipped`（2026-10-31 CI 修复轮复核）、`882 passed, 1 skipped`（2026-10-31，前后端边界加固）、`844 passed, 1 skipped`（2026-10-31，B2 save() 差分同步）、`826 passed, 1 skipped`（2026-10-31，B1 投影直读）、`800 passed, 1 skipped`（2026-10-31）、`798 passed, 1 skipped`（2026-10-29）、`786 passed, 1 skipped`（2026-10-29）、`731 passed, 1 skipped`（2026-09-21）。测试数量会随测试集合变化，不应硬编码为永久断言。
+- 最近一次本地全量测试基线：`1131 passed, 4 skipped`（2026-11-01 P1 业务闭环加固复核；项目 `.venv` pytest，`STORAGE_BACKEND=sqlite` + `CHECKPOINT_BACKEND=memory` + `LLM_MODE=mock`，34.5s）。4 个 skip 为 3 个 PG/Redis E2E 与 1 个 PG-only 存储模块；离线 skip 不等于通过，PostgreSQL 侧已用临时 trust 集群实际执行迁移与存储验证。新增测试覆盖工作区邀请与刷新角色、评估版本 2.0 生命周期、审批证据批次与 invalidated 状态、处置原样重提复核清理、HTTP 执行失败不可改判、`goal` 加密回填、V012 迁移与动态 Alembic head。此前基线依次为 `1102 passed, 3 skipped`（2026-11-01 业务闭环升级复核）、`1042 passed, 3 skipped`（2026-11-01 安全基线加固复核）、`1016 passed, 3 skipped`（2026-10-31 Milestone 2 Domain Simplification 复核）、`959 passed, 3 skipped`（2026-10-31 Production Safety Baseline）、`894 passed, 1 skipped`（2026-10-31 CI 修复轮复核）、`882 passed, 1 skipped`（2026-10-31，前后端边界加固）、`844 passed, 1 skipped`（2026-10-31，B2 save() 差分同步）、`826 passed, 1 skipped`（2026-10-31，B1 投影直读）、`800 passed, 1 skipped`（2026-10-31）、`798 passed, 1 skipped`（2026-10-29）、`786 passed, 1 skipped`（2026-10-29）、`731 passed, 1 skipped`（2026-09-21）。测试数量会随测试集合变化，不应硬编码为永久断言。
 - 本地跑全量测试前需确认 `.env` 的存储后端：若仍是 Docker PostgreSQL 且该库未启动，`uv run pytest tests/` 会因连接等待长时间假死。离线基线须按 `.env.demo` 注入 `STORAGE_BACKEND=sqlite`、`CHECKPOINT_BACKEND=memory`、`LLM_MODE=mock`。
 - 前端按 MVC 分层：`frontend/models/`（配置、认证、API 客户端、状态投影）、`frontend/controllers/`（按业务域编排动作）、`frontend/views/`（侧栏、工作台与各面板）；`frontend/app.py` 仅做入口装配，`frontend/components/` 为可复用视图组件。依赖方向固定为 models ← controllers ← views ← app。
 - 治理总览当前只聚合真实业务会话（`business_internal` / `sensitive_personal`）；四个内置场景及其他 `public_demo` 会话必须与总览、趋势、积压动作和对应业务 Gauge 隔离。前端必须明确展示该统计口径，正常零数据不得表述为加载失败。
-- 业务闭环不变量：证据生命周期为派生状态（submitted/verified/adopted），未核验证据不得解除高风险门禁；high/critical 风险项必须有已复核且绑定当前评估版本的 `RiskTreatment`；`SessionState.COMPLETE` 仅表示评估完成，上线批准是独立 `ProjectApproval`，报告生成/导出不产生审批；`EvalRun.execution_kind` 必须区分模拟与 `real_target_execution`，只有当前评估版本的真实目标通过运行计入上线批准。public_demo 会话豁免风险处置门禁与上线批准。
+- 业务闭环不变量：证据生命周期为派生状态（submitted/verified/adopted），未核验证据不得解除高风险门禁；high/critical 风险项必须有已复核且绑定当前评估版本的 `RiskTreatment`；评估版本变化后原样重提处置也必须清空旧复核；`SessionState.COMPLETE` 仅表示评估完成，上线批准是独立 `ProjectApproval`，报告生成/导出不产生审批；`EvalRun.execution_kind` 必须区分模拟与 `real_target_execution`，只有当前评估版本、当前用例版本、当前目标部署下 `execution_outcome=success` 且 `judge_result=passed` 的运行，并且覆盖同一 completed `target_http` 评估批次中的全部必测用例，才计入上线批准。批准后驳回处置、改判关键测试或新增高危安全发现必须使 `effective_status` 变为 `invalidated`，历史批准只追加不删除。public_demo 会话豁免风险处置门禁与上线批准。
+- 团队与身份不变量：每次注册创建独立工作区且创建者为 admin；同租户成员只能通过 `workspace_invitations` 加入；复核身份只取 JWT `user_id`，请求体不得接受 `reviewer_id`；`/auth/refresh` 必须重新读取当前用户角色，不得沿用旧刷新令牌中的 role。
+- 字段加密不变量：`goal` 必须与 `research_target` 一同加密；历史明文通过 `scripts/encrypt_legacy_goal.py` 回填，旧代码回滚前必须解密或恢复备份。
 - 录制测试基线必须走 `uv run`（项目 `.venv`）。用系统 Python 直接跑 `python -m pytest` 会因缺少 `prometheus-fastapi-instrumentator` 等主依赖触发 7 处 `importorskip` 跳过，得到 `623 passed, 8 skipped` 的降级结果——该数字不是有效基线。
 
 ## 事实来源优先级
@@ -55,8 +57,8 @@ make version-check
 ```
 
 - `make doc-check` 当前是 CI 阻断项，扫描 37 份当前项目 Markdown（排除 `.upgrade/`、archive、运行时产物和缓存）。
-- CI 中 mypy 仍处观察期（non-blocking）；`production-safety` 与 `docker-full-integration` 已是 blocking job，不得再写回 continue-on-error。`production-safety` 覆盖 V008→V010 迁移升级/回滚、production safety 测试集、PostgreSQL + Redis 业务 E2E，并设置 `PRODUCTION_SAFETY_REQUIRED=1` 使缺少服务时失败而非跳过。
-- CI 单元测试步骤会把 `.env.demo` 复制为 `.env`；`core/config.py` 的 `extra="ignore"` 是共享 env 文件的必要条件（`.env.demo` / `.env.example` 含前端专用 `DEMO_*` 与容器键 `SQLITE_PATH`），移除该项会让 CI 与 `make demo-*` 在导入阶段即失败。`python-jose` / `pyasn1` / `python-multipart` 的 pip-audit 告警仍为 non-blocking 观察项。
+- CI 中 mypy 仍处观察期（non-blocking）；`production-safety` 与 `docker-full-integration` 已是 blocking job，不得再写回 continue-on-error。`production-safety` 覆盖 V008→动态 head（当前 V012）迁移升级/回滚、production safety 测试集、PostgreSQL + Redis 业务 E2E，并设置 `PRODUCTION_SAFETY_REQUIRED=1` 使缺少服务时失败而非跳过。CI 的 head 断言必须由 `ScriptDirectory.get_current_head()` 计算，不得硬编码版本。
+- CI 单元测试步骤会把 `.env.demo` 复制为 `.env`；`core/config.py` 的 `extra="ignore"` 是共享 env 文件的必要条件（`.env.demo` / `.env.example` 含前端专用 `DEMO_*` 与容器键 `SQLITE_PATH`），移除该项会让 CI 与 `make demo-*` 在导入阶段即失败。CI 的 lint job 只阻断 Ruff（`make lint`）；`make audit` 作为独立 `continue-on-error` 观察步骤运行，本地 `make security-check`（lint + audit）仍保持严格。2026-11-01 实测外部 advisory 库共 124 条 unique advisory / 19 个包：pillow 受 streamlit `pillow<13` 上限、ecdsa 无修复、langgraph-checkpoint-postgres 被 V006 固定 `3.0.5`，其余可升级项列入 `.upgrade/STATE.md` 阻塞项分诊。
 - 离线开发优先使用 `make demo-api` + `make demo-ui`（Mock LLM + SQLite）。
 - Docker Lite 使用 `make lite-up`；完整栈使用 `make setup` + `make prod-up`。
 

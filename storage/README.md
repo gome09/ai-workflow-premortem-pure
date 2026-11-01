@@ -8,13 +8,16 @@ The current database schema migration mechanism is **Alembic**.
 
 1. `api/main.py` initializes the session store in the `lifespan` context manager.
 2. `storage/backends/postgres.py::PostgresSessionStore.initialize()` runs `alembic upgrade head`.
-3. Alembic migrations are under `alembic/versions/` (currently V001 → V010).
+3. Alembic migrations are under `alembic/versions/` (currently V001 → V012).
    V006 adds the LangGraph PostgreSQL checkpoint schema; V007 adds the durable
    interrupt-resume outbox; V008 adds `sessions.version` (optimistic locking),
    JSONB generated columns, tenant indexes and `human_actions.tenant_id`;
    V009 adds `sessions.projection_state` (save() differential sync state) and
    `eval_runs.pass_criteria` / `llm_judge_suggestion`; V010 adds
-   `sessions.context_digest` (save() skips rewriting unchanged `context_json`).
+   `sessions.context_digest` (save() skips rewriting unchanged `context_json`);
+   V011 adds real-target execution metadata to `eval_runs`; V012 adds
+   `workspace_invitations`, `eval_cases.standard_version`, and
+   `eval_runs.case_version_digest` / `target_deployment_version`.
    Runtime code validates these tables but does not create or upgrade them ad hoc.
 
 ### Legacy databases created before Alembic
@@ -29,11 +32,11 @@ Upgrade such a database in four steps:
 
 1. Back up with `pg_dump` and store the dump outside the repository tree
    (`.upgrade/backup/` is git-ignored).
-2. Diff it against a database that has run V001 → V010, then
+2. Diff it against a database that has run V001 → V012, then
    `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` every missing non-generated column.
 3. Insert the baseline row into `alembic_version` (or run `alembic stamp V001`)
    so the chain does not try to recreate existing tables.
-4. Run `alembic upgrade head` and verify the V008/V009/V010 columns, indexes and constraints.
+4. Run `alembic upgrade head` and verify the V008–V012 columns, indexes and constraints.
 
 Rows predating the multi-tenant model keep `tenant_id = NULL`; backfill them to a
 real tenant before relying on tenant-scoped reads or governance aggregates:
@@ -44,6 +47,27 @@ uv run python scripts/backfill_session_tenants.py --tenant-id <tenant-uuid>
 # 实际写库：仅更新 tenant_id IS NULL 的行，可重复执行
 uv run python scripts/backfill_session_tenants.py --tenant-id <tenant-uuid> --apply
 ```
+
+### Historical plaintext `goal` backfill
+
+The pre-1.7 encryption layer encrypted `research_goal` by typo while the actual
+`ProjectContext` field is `goal`. Plaintext `goal` values written before the fix
+are still readable, but are not encrypted at rest until backfilled:
+
+```bash
+# dry-run（缺省）：只统计会加密的行
+uv run python scripts/encrypt_legacy_goal.py
+# 实际写库：幂等；跳过 public_demo；必须配置 DATA_ENCRYPTION_KEY
+uv run python scripts/encrypt_legacy_goal.py --apply
+# 校验已有 enc:v1: goal 是否可用当前密钥解密
+uv run python scripts/encrypt_legacy_goal.py --verify
+```
+
+Before rolling back to a pre-1.7 application (which does not decrypt `goal`),
+either restore the pre-upgrade database dump or run
+`uv run python scripts/encrypt_legacy_goal.py --decrypt --apply --allow-plaintext`
+first.
+
 
 ### SQLite (lite mode)
 

@@ -1,6 +1,6 @@
 # Security Model
 
-> **Last updated:** 2026-09-21
+> **Last updated:** 2026-11-01
 
 > Status: Implemented
 
@@ -26,6 +26,9 @@ This project has two security layers:
 - `POST /auth/register`
 - `POST /auth/login`
 - `POST /auth/refresh`
+- `POST /auth/invitations`（admin only；原始 token 只返回一次）
+- `GET /auth/invitations`（admin only；不返回 token）
+- `POST /auth/invitations/accept`（公开端点 + 限流）
 
 注意：
 - `POST /auth/login` 使用 `OAuth2PasswordRequestForm`
@@ -46,7 +49,7 @@ This project has two security layers:
 - `editor`：可创建/推进会话、提交人工动作、运行评测
 - `admin`：额外拥有用户管理等高权限操作
 
-首个注册用户自动成为 `admin`，后续用户默认 `viewer`。
+每次注册都会创建独立工作区，创建者固定为 `admin`。同租户成员只能通过 `workspace_invitations` 加入（原始 token 只返回一次，数据库仅存 SHA-256，有效期 7 天）；不提供多工作区切换。`/auth/refresh` 重新读取当前用户记录并签发当前角色，不沿用旧刷新令牌中的 role。EvalRun 人工校准的复核人只取 JWT `user_id`，请求体不接受 `reviewer_id`。
 
 ### Multi-Tenant Isolation
 
@@ -127,6 +130,14 @@ Phase 1（T1.1–T1.4，自 v1.0.3 起落地并沿用至今）的数据安全能
 | 中断 checkpoint | `langgraph_interrupt` + PostgreSQL 使用独立 Fernet key 加密完整 `ProjectContext` checkpoint；要求持久 PostgreSQL 后端、单 worker，并在初始化或健康异常时 fail closed。SQLite 的 memory checkpoint 仅供本地调试且进程重启即丢失 | `graph/checkpoint_manager.py`；Alembic V006/V007；`/health/ready` |
 | AI 生成标识 | 报告导出首屏中文免责声明，对齐《生成合成内容标识办法》 | `core/report_service.py` |
 
+### Identity, Workspace and Approval Integrity（v1.7.0）
+
+- **工作区邀请**：`workspace_invitations` 只存 token 的 SHA-256；原始 token 仅在创建响应返回一次，默认 7 天有效。接受邀请在同一事务内校验 pending/未过期/邮箱未注册并创建同租户成员。
+- **刷新令牌**：`/auth/refresh` 不再信任旧 refresh token 内的 role，而是按 `sub` 重新读取当前用户记录并签发当前角色；用户不存在或角色非法时返回 401。
+- **复核身份**：上线批准、风险处置、专家复核与 EvalRun 人工校准的复核人固定取 JWT `user_id`，请求体不再接受 `reviewer_id`。
+- **发布授权**：`ProjectApproval.evidence_digest` 绑定批准时的测试运行、人工校准、处置复核、安全发现与阻断动作快照；任一证据变化使 `effective_status` 变为 `invalidated`，历史记录保留但不复活。
+- **测试可信度**：上线证据要求 `execution_kind=real_target_execution`、`execution_outcome=success`、`judge_result=passed`，且同一已完成 `target_http` 评估批次覆盖全部必测用例；HTTP 500 / timeout / 契约错误不可通过人工改判成为成功证据。
+
 ### Workflow State Fail-Closed
 
 未知或非法 `current_state` 不允许自动回退到 `INIT`：
@@ -138,7 +149,7 @@ Phase 1（T1.1–T1.4，自 v1.0.3 起落地并沿用至今）的数据安全能
 
 ### Production Safety Gate
 
-CI 的 `production-safety` job 为 blocking，覆盖：Alembic V008→V011 升级/回滚、production safety 测试集（状态 fail-closed、HIGH/CRITICAL 阻断、事件脱敏、字段加密、retention 租户边界、ID 唯一性）以及 PostgreSQL + Redis 业务 E2E。job 设置 `PRODUCTION_SAFETY_REQUIRED=1`，缺少数据库、Redis 或加密密钥时测试失败而不是跳过。
+CI 的 `production-safety` job 为 blocking，覆盖：Alembic V008→动态 head（当前 V012）升级/回滚、production safety 测试集（状态 fail-closed、HIGH/CRITICAL 阻断、事件脱敏、字段加密、retention 租户边界、ID 唯一性）以及 PostgreSQL + Redis 业务 E2E。job 设置 `PRODUCTION_SAFETY_REQUIRED=1`，缺少数据库、Redis 或加密密钥时测试失败而不是跳过。
 
 ### What This Deployment Still Does NOT Provide
 

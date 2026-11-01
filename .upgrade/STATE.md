@@ -2,9 +2,11 @@
 
 ## Status Summary
 
-Phase 0–4 与 formal-project-uplift Wave A–E 的代码侧工作已完成；Phase 4 剩余项仅为远端治理动作（分支保护、漏洞报告设置、CodeQL required check、GitHub Release），完成前不得宣称已发布。当前应用版本为 `1.6.0`（Business Closure），ProjectContext schema 为 `0.10.0`（新增 `risk_treatments` / `project_approvals`），Alembic head 为 `V011`（`eval_runs.execution_kind` / `execution_outcome` / `evaluation_version_digest` / `target_endpoint`；V010 为 `sessions.context_digest`；V009 为 `sessions.projection_state`、`eval_runs.pass_criteria` / `llm_judge_suggestion`）。默认执行路径仍为 `single_step`；`langgraph_interrupt` 是受控 opt-in，生产启用要求加密 PostgreSQL checkpoint、独立 Fernet key、单 worker 与 fail-closed readiness。
+Phase 0–4 与 formal-project-uplift Wave A–E 的代码侧工作已完成；Phase 4 剩余项仅为远端治理动作（分支保护、漏洞报告设置、CodeQL required check、GitHub Release），完成前不得宣称已发布。当前应用版本为 `1.7.0`（P1 Business Closure Hardening），ProjectContext schema 保持 `0.10.0`（新增可选 `target_deployment` / `input_versions`，无需 context 迁移），Alembic head 为 `V012`（`workspace_invitations`、`eval_cases.standard_version`、`eval_runs.case_version_digest` / `target_deployment_version`；V011 为真实目标执行元数据；V010 为 `sessions.context_digest`；V009 为 `sessions.projection_state`、`eval_runs.pass_criteria` / `llm_judge_suggestion`）。默认执行路径仍为 `single_step`；`langgraph_interrupt` 是受控 opt-in，生产启用要求加密 PostgreSQL checkpoint、独立 Fernet key、单 worker 与 fail-closed readiness。
 
 2026-09-21 的真实 PostgreSQL 验收已覆盖暂停、进程重建、恢复、清理、durable resume/outbox 与回滚；验收时 adapter 为 healthy/persistent/encrypted。当前 8000/8501 均未监听，因此运行状态只作为带日期的验收证据，不作为持续在线声明。
+
+远端 `main` 已由提交 `3316bb5` 恢复全绿：run 41298061928 的四个 job 全部 success（此前 `16624b9` / run 41281614067 曾因 ruff、`core.coverage` 缺失与 V010 硬编码全部失败，修复记录见下方）。
 
 ## Authority
 
@@ -24,7 +26,7 @@ Phase 0–4 与 formal-project-uplift Wave A–E 的代码侧工作已完成；P
 - 文档与安全数据面同步：checkpoint 完整上下文副本、密钥生命周期、备份恢复、事故响应和 PII 掩码边界已写入当前规格与合规材料。
 - 生产配置加固：生产关闭 demo auto-auth、Docker secrets 纳入两把加密 key、容器 readiness、配置 fail-fast、依赖兼容约束和 `uv run` 启动入口。
 - 文档压缩与生命周期整理：`docs/demo-scenarios.md` 去除重复启动说明；旧日志、截图、trace、缓存与 smoke 证据通过受控 cleanup 归档。截图证据现统一位于 `.upgrade/archive/`，具体碰撞安全名称以 `.upgrade/MANIFEST.md` 为准。
-- 当前带日期测试基线为 `1102 passed, 3 skipped`（2026-11-01 业务闭环升级复核；项目 `.venv`，`sqlite` + `memory` + `mock`，25.6s）。各轮历史基线以本文件 “Recent Completed Work” 中带日期条目为准，不在此重复维护。
+- 业务闭环升级轮历史基线为 `1102 passed, 3 skipped`（2026-11-01 业务闭环升级复核；项目 `.venv`，`sqlite` + `memory` + `mock`，25.6s）。当前基线见下方 P1 条目与 `last_validation`；各轮历史以带日期条目为准，不在此重复维护。
 - 业务闭环升级（2026-11-01）：证据生命周期派生状态（submitted/verified/adopted，引用按当前 Stage 1 重建）；`RiskTreatment` + Stage 4 `risk_treatment` 门禁（14 条规则、安全底线，public_demo 豁免）；独立 `ProjectApproval` 上线批准（admin、非创建者、评估完成/证据/处置/真实目标测试前置条件，报告生成与导出不写审批）；`core/target_testing` HTTP JSON adapter 与 `target_http` eval 模式（success/failed/timeout/error，`execution_kind` 区分模拟与真实）；`core/evaluation_version.py` 版本摘要绑定审批、处置与 EvalRun。新增 API `/risk-treatments/*`、`/approval-status`、`/approvals/*`；Alembic V011 与 ProjectContext `v090_to_v100` 迁移。新增 8 个测试文件，更新规则数量/迁移链断言。全量 `1102 passed, 3 skipped`；Ruff、mypy、doc-check、version-check 通过。
 - 数据库查询与读写优化（2026-10-27）：新增 Alembic V008（`sessions.version`、JSONB 生成列、租户索引、`human_actions.tenant_id` 回填、`interrupt_records.stage_id` 改 INTEGER、NOT VALID CHECK/FK）；PostgreSQL 写入启用乐观锁与租户一致性校验，`load/delete/list_sessions` 在空 tenant 时拒绝（`system=True` 为启动补偿内部通道）；治理总览/趋势/积压改读生成列并将聚合下推 SQL；`_sync_*` 全面改 `executemany`；连接改为惰性 `psycopg_pool.ConnectionPool`（`DB_POOL_MIN/MAX_SIZE`、`DB_STATEMENT_TIMEOUT_MS`）；新增 `premortem_db_operation_seconds` Histogram。SQLite 保持租户可选兼容。提交 `d25578c`、`8ae102f`。本轮 `750 passed, 1 skipped`，4 个失败均来自工作树中未提交的 `frontend/app.py` 相关 WIP 测试（缺 `api_delete` / `_role_from_token`），非本次改动引入。
 - Docker 构建上下文清理（2026-10-28）：`.dockerignore` 新增 `/*.txt`、`.uv-cache/`、`.uv/`、`.screenshots/`、`/Makefile`，阻止内部方案与本地缓存进入镜像；`pyproject.toml` / `uv.lock` 保留，因为 deps 构建阶段仍依赖。镜像拉取慢已定位为 Docker Desktop VM 内 DNS 首次解析返回空、docker.io 解析被污染且无 HTTPS 代理、ghcr.io 无镜像源，叠加首次构建基础镜像未缓存。
@@ -55,10 +57,16 @@ Phase 0–4 与 formal-project-uplift Wave A–E 的代码侧工作已完成；P
 - Milestone 1 Production Safety Baseline（2026-10-31）：版本升至 `1.4.0`。新增 `core/workflow_state_service.py`（`BLOCKED_STATES` / `assert_advanceable` / `mark_invalid_state` / `sanitize_persisted_state` / `recover_workflow`），未知或非法状态一律改写为 `RECOVERY_REQUIRED` 并阻断推进，唯一出口是 `POST /sessions/{session_id}/workflow/recover`（阻断态 API 返回 409）；新增 `core/data_protection.py`（`FREE_TEXT_KEYS` / `redacted_envelope` / `redact_payload`），`session_events` / `audit_events` 自由文本按分级脱敏，用户消息只落 `input_sha256` / `input_length`；`storage/field_security.py` 解密改为 fail-closed（`FieldDecryptionError`，`app_env=production` 或非 sqlite 后端）；`core/ids.py` 统一完整 UUID，移除短 UUID 标识；HIGH/CRITICAL 场景结构化解析、监督策略生成与 Gate 数据异常全部阻断（`GateDataError` / critical blocker）。新增 8 个测试文件（`test_workflow_state_fail_closed.py`、`test_high_risk_fail_closed.py`、`test_data_protection_redaction.py`、`test_field_security_extended.py`、`test_retention_tenant_scope.py`、`test_ids_unique.py`、`test_migration_upgrade_path.py`、`test_postgres_redis_workflow_e2e.py`）与 `scripts/e2e_business_flow.py`。CI 新增 blocking `production-safety` job（PG16 + Redis7、V008→V010 迁移升级/回滚、production safety 测试集、PG/Redis 业务 E2E，`PRODUCTION_SAFETY_REQUIRED=1`），`docker-full-integration` 转 blocking 并运行 `scripts/e2e_business_flow.py`。全量 `959 passed, 3 skipped`（SQLite + memory + mock，26.7s；两个 PG/Redis 测试离线 skip，CI 中 required 失败而非跳过）。
 - Milestone 2 Domain Simplification（2026-10-31）：版本升至 `1.5.0`。新增 `core/risk` 六因子确定性风险模型（`impact/autonomy/data_sensitivity/reversibility/scale/external_exposure` + 固定权重/分带/floor），关键词库降级为 `legacy_inference` 输入适配器，LLM 仅提供解释；`ProjectContext` 新增可选 `risk_profile` / `risk_overrides`，人工 override 记录原/请求/生效等级、floor、原因、操作者、角色、租户并写 `risk_tier_overridden` 审计事件，降级仅 admin 且受 floor clamp；新增 `GET/PUT /sessions/{id}/risk-profile` 与 `POST /sessions/{id}/risk-profile/override`。新增 `core/coverage/policy.py`：HIGH/CRITICAL 全覆盖高风险节点、CRITICAL 全节点、LOW/MEDIUM 预算 `max(sample, ceil(min_ratio*n))`，gate 按 `STAGE3_MIN_CASES_PER_HIGH_RISK_NODE` 强制最低覆盖。`SessionService` 拆为 `core/services/` 五域 + 兼容 facade，`oversight_service` 拆为 `core/governance/` 四模块 + re-export，readiness 删除 3 个死 collector。新增 6 个测试文件并扩展 PG/Redis E2E（rerun/乐观锁/override 租户隔离）。离线全量 `1016 passed, 3 skipped`（62.7s）。
 - 业务闭环提交与 SSH 推送（2026-11-01）：提交 `4fbffc6` 收录 v1.6.0 业务闭环全部改动（96 文件，+6185/−181），并通过 SSH 推送 `main` 至 `origin`（`git@github.com:gome09/ai-workflow-premortem-pure.git`），`4ad40d0..4fbffc6`；本地 `HEAD` 与 `origin/main` 一致，工作树 clean；`version-check`（`1.6.0`）与 `doc-check`（37 份 Markdown，0 违规）通过。
+- P1 业务闭环加固（2026-11-01，v1.7.0）：修复实际字段 `goal` 加解密并新增两后端 `backfill_goal_encryption()` 与 `scripts/encrypt_legacy_goal.py`（dry-run/apply/verify/decrypt，幂等、跳过 public_demo）；新增 `workspace_invitations` 与 `/auth/invitations` 创建/列表/接受接口，注册创建工作区时创建者固定 admin，`/auth/refresh` 重新读取当前用户角色，EvalRun 人工校准复核人固定取 JWT；新增 Alembic V012（邀请表、`eval_cases.standard_version`、`eval_runs.case_version_digest` / `target_deployment_version`），迁移测试与 CI head 改为 `ScriptDirectory.get_current_head()`；评估摘要升级 2.0（材料/目标部署/输入版本/用例标准/策略版本），新增 `core/release_evidence.py` 与 `ProjectApproval.evidence_digest`，上线证据要求同一 completed `target_http` 评估批次覆盖全部必测用例且 `execution_outcome=success` + `judge_result=passed`；批准后驳回处置/改判测试/新增高危发现使 `effective_status=invalidated` 且历史保留；处置版本变化后原样重提也清空旧复核。删除 `alembic/__init__.py` 以消除对已安装 Alembic 包的遮蔽。验证：离线全量 `1131 passed, 4 skipped`（SQLite + memory + mock，34.5s）；真实临时 PostgreSQL 18 集群实际执行 V008→V012 升级/回滚/再升级（2 passed）与 `goal` 密文/历史回填/邀请刷新（3 passed）；Ruff、ruff format --check、mypy、doc-check（37 份 0 违规）、version-check（1.7.0）通过。Redis 未运行，PG+Redis 业务 E2E 本地未执行，留给 CI `production-safety` required 模式。
+- 远端 CI 失败定位与修复（2026-11-01）：远端 `main` 最新提交 `16624b9` 的 run 41281614067 四个 job 全部失败——`lint-and-unit-tests` 在 `ruff check .` 报 2 处 import 排序错误；`docker-lite-integration` / `docker-full-integration` 因 `core.coverage` 未入库（该提交 `.gitignore` 的 `coverage/` 未锚定）在 API 启动时 `ModuleNotFoundError`；`production-safety` 硬编码 `grep -q "V010 (head)"` 而实际 head 为 V011。本地 `7966f9d` 已跟踪 `core.coverage` 并锚定 `/coverage/`；未提交的 `ci.yml` 改为 `ScriptDirectory.get_current_head()` 动态断言，并将 `tests/test_postgres_p1_storage.py` 纳入 production-safety。修复随本轮提交推送，由同一 SHA 的 CI 验证。
+- 远端 CI 恢复验证（2026-11-01）：提交 `3316bb5` 的 run 41298061928 四个 job（lint-and-unit-tests / docker-lite-integration / production-safety / docker-full-integration）全部 success，同 SHA 的 CodeQL run 也 success；production-safety 实际完成 V008→V012 升级/回滚、production safety 测试集与 PostgreSQL + Redis E2E（含真实 tenant 行与 business_internal 加密断言）。
+- 依赖审计策略调整（2026-11-01）：外部 advisory 库更新后本地 `make security-check` 实测 124 条 unique advisory / 19 个包（pillow 受 streamlit `pillow<13` 上限、ecdsa 无修复、`langgraph-checkpoint-postgres` 被 V006 固定 `3.0.5`）。按用户决策，CI 拆为阻断 `make lint` + non-blocking `make audit` 观察步骤；本地 `make security-check` 仍严格。明细见 `.upgrade/decisions/doc-ci-alignment-20261101.md` 与 Blockers。
+- 文档—CI—升级工作区对齐（2026-11-01）：README 由 v1.3.0 更正为 v1.7.0 并补能力边界/测试说明；`docs/acceptance_report.md` 当前基线升级为 1.7.0（`1131 passed, 4 skipped`、V001→V012、ProjectContext `0.10.0`），v1.3.0 段保留为历史；`docs/spec` 的 governance/security/supply-chain/architecture/api-reference 同步；API 路由总数按实际注册核对为 100；`doc-check` 37 份 0 违规、`version-check` 1.7.0。
 - P0 交付与验收修复（2026-11-01）：`core/coverage` 从未入库的根因是 `.gitignore` / `.dockerignore` 的 `coverage/` 规则匹配任意层级同名目录，两处已锚定为 `/coverage/`，`core/coverage/__init__.py` 与 `core/coverage/policy.py` 纳入版本库（语义未改动）；`uv run ruff format .` 修正 16 个文件（12 个排版变化、4 个仅行尾标准化）以解除 `make lint` 阻断。验证：`import api.main` 成功；定向 52 passed；全量 `1102 passed, 3 skipped`（sqlite + memory + mock，19.42s）；`ruff check`、`ruff format --check`（383 files）、`mypy`（197 files）、doc-check（37 份 0 违规）、version-check（`1.6.0`）全部通过。
 
 ## Current Blockers
 
+- 依赖审计：2026-11-01 外部库 124 条 unique advisory / 19 个包；pillow（streamlit `pillow<13`）、ecdsa（无修复）、`langgraph-checkpoint-postgres`（V006 固定 `3.0.5`）暂不可升级，其余可升级项需分诊并提交依赖升级。
 - main 分支保护、Private vulnerability reporting、CodeQL required check、Scorecard 与 GitHub Release 必须远端实查。
 - 旧 Docker 镜像是否曾包含敏感文件，需在 Docker daemon 可用后重建并核验；若镜像曾外发，应轮换相关密钥。
 - NIST AI 600-1 四项存疑编号、TC260 二手摘要以及未成年人 AI 应用指南定稿内容仍需原文复核。
@@ -86,36 +94,36 @@ Phase 4: In progress
 
 ## current_task
 
-Milestone 2 Domain Simplification completed; remote governance actions remain
+Documentation, CI/CD and .upgrade alignment completed; verification backfill commit pending
 
 ## last_completed_task
 
-Milestone 2 Domain Simplification (v1.5.0): six-factor risk model, risk override audit, risk-driven coverage policy, domain service split and domain-boundary tests on 2026-10-31
+Documentation/CI/.upgrade alignment (2026-11-01): root docs and specs aligned to 1.7.0 / V012 / schema 0.10.0, GitHub Actions root causes fixed (run 41298061928 all jobs green), upgrade workspace state/plan/inventory synced on 2026-11-01
 
 ## next_action
 
-Verify branch protection, private vulnerability reporting, and CodeQL required check on GitHub, then create the approved GitHub Release
+Push the verification backfill commit, confirm its CI, then verify branch protection, private vulnerability reporting, and CodeQL required check before creating the GitHub Release
 
 ## last_update
 
-- Date: 2026-10-31T21:30:00+08:00
-- Updated by: Milestone 2 Domain Simplification implementation
-- Summary: Version bumped to 1.5.0. Added core/risk deterministic six-factor model with floor-clamped human overrides and audit, core/coverage risk-driven Stage 3 policy, five SessionService domain services behind a compatibility facade, governance action split with compatibility re-exports, removed dead readiness collectors, and extended PG/Redis E2E with rerun/optimistic-lock/override assertions. Local baseline 1016 passed, 3 skipped.
+- Date: 2026-11-01T18:35:00+08:00
+- Updated by: Documentation/CI/.upgrade alignment implementation
+- Summary: Corrected README and acceptance report to 1.7.0 with explicit capability boundaries and offline test instructions; aligned governance/security/supply-chain/architecture/api-reference specs (route total 100); documented remote CI failure 41281614067 (SHA 16624b9) and its local fixes; split CI into blocking lint plus non-blocking audit with 124 unique advisories recorded as a blocker; filled upgrade requirements/plan/implementation plan and added alignment decision + trace. Remote CI restored: SHA 3316bb5 / run 41298061928 all four jobs success, CodeQL success. Local: ruff clean, format 392 files, mypy 199 files, doc-check 37/0, version-check 1.7.0, pytest 1131 passed / 4 skipped (76.28s); make audit failed by design of the new policy.
 
 ## last_validation
 
-- Status: passed
-- Check: `version-check`
-- Environment: local
-- Scope: phase-4-final
-- Subject: git-worktree `b8a9699450152ed4f8125ed459fc173f5427759d`
-- Subject digest: `89027aa75bc1d16e9bf7f8286fb4b1e1253fa3aa590fef840333443f9f5f9469`
-- Recorded: 2026-09-22T00:48:00+00:00
+- Status: partial（本地代码/文档检查通过；`make audit` 因外部 advisory 库失败，按用户决策转 CI non-blocking 观察项）
+- Check: `ruff check` + `ruff format --check` + `mypy` + `doc-check` + `version-check` + `pytest`（离线全量）+ `pip-audit`（失败，观察项）+ GitHub Actions run 41298061928
+- Environment: local SQLite/memory/mock；Windows PowerShell（GNU make 不可用，执行底层等价命令）；GitHub Actions ubuntu-latest + PG16 + Redis7
+- Scope: doc-ci-upgrade-alignment
+- Subject: git-worktree `3316bb5d335f99793a723d487f98c2d6fa7e4398` with uncommitted documentation changes
+- Subject digest: not_applicable_uncommitted
+- Recorded: 2026-11-01T18:35:00+08:00
 
 ## unverified_items
 
-GitHub branch protection, vulnerability reporting setting, and SSH remote authentication remain unverified
+Documentation commit CI (pending push), main branch protection, private vulnerability reporting, CodeQL required check, GitHub Release, local Docker smoke (daemon unavailable), local PostgreSQL + Redis E2E (verified in CI instead), and `.upgrade/validation/records.jsonl` append (subject_digest semantics unavailable without the maintainer CLI) remain unverified.
 
 ## current_blockers
 
-GitHub Release list is empty; branch protection and vulnerability reporting require authenticated maintainer access
+Dependency advisories (124 unique / 19 packages; pillow/ecdsa/langgraph-checkpoint-postgres unfixable under current pins); GitHub Release list is empty; branch protection and vulnerability reporting require authenticated maintainer access

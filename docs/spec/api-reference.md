@@ -1,9 +1,10 @@
 # API 接口参考
 
 > 本文档按当前源码静态提取整理。
-> 当前仓库可直接识别的 HTTP 路由总数为 `86`（`api/routers/*.py` 78 条 + `auth/router.py` 5 条 + `/health*`/`/health` 3 条；`/metrics` 由监控组件在运行时挂载）。
+> 当前仓库可直接识别的 HTTP 路由总数为 `100`（`api/routers/*.py` 89 条 + `auth/router.py` 8 条 + `/health*` 3 条；`/metrics` 由监控组件在运行时挂载）。
 
 > Status: Implemented（HTTP 路由按当前源码静态提取）
+> 最近复核：2026-11-01（路由数与 v1.7.0 新增端点核对）
 
 ---
 
@@ -22,11 +23,14 @@
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/auth/register` | 注册；首个用户自动成为 `admin` |
+| POST | `/auth/register` | 创建工作区并注册；创建者固定为 `admin`（不再是“首个全局用户”） |
 | POST | `/auth/login` | 登录；使用 `OAuth2PasswordRequestForm`，不是 JSON body |
-| POST | `/auth/refresh` | 使用 refresh token 换取新的 access token |
+| POST | `/auth/refresh` | 使用 refresh token 换取新的 access token；角色取自当前用户记录，降级后不会恢复旧权限 |
 | GET | `/auth/users` | 列出租户内用户，`admin` only |
 | PATCH | `/auth/users/{user_id}/role` | 更新用户角色，`admin` only |
+| POST | `/auth/invitations` | 创建同租户邀请；原始 token 仅返回一次，`admin` only |
+| GET | `/auth/invitations` | 列出本租户邀请（不返回 token），`admin` only |
+| POST | `/auth/invitations/accept` | 接受邀请并创建成员，返回 token 对；公开端点 + 限流 |
 
 ---
 
@@ -47,7 +51,8 @@
 | DELETE | `/sessions/{session_id}` | 删除会话（admin；审计归档保留，写 `session_purged` 处置事件） |
 | POST | `/chat/{session_id}` | 发送消息并推进一个执行回合；会话处于 `ERROR` / `RECOVERY_REQUIRED` 时返回 409 |
 | POST | `/sessions/{session_id}/workflow/recover` | 将 `ERROR` / `RECOVERY_REQUIRED` 会话显式恢复到可推进状态（editor / admin）；`target_state` 必须属于可恢复集合，写 `workflow_recovered` 审计事件 |
-| POST | `/sessions/{session_id}/materials` | 追加用户材料 |
+| POST | `/sessions/{session_id}/materials` | 追加用户材料（更新材料输入版本） |
+| PUT | `/sessions/{session_id}/target-deployment` | 声明/更新目标部署 endpoint+version（editor+；实际变化使旧审批与旧运行失效） |
 | POST | `/sessions/{session_id}/flags/resolve` | 处理需核验项 |
 | GET | `/sessions/{session_id}/export` | 导出报告（`json` 或 `markdown`） |
 
@@ -105,9 +110,9 @@
 | GET | `/sessions/{session_id}/risk-treatments` | 查看风险处置记录、要求项与覆盖摘要（viewer+） |
 | POST | `/sessions/{session_id}/risk-treatments` | 创建/更新高风险项处置（editor+） |
 | POST | `/sessions/{session_id}/risk-treatments/{treatment_id}/review` | 独立复核处置（editor+，复核人不得是最后更新人） |
-| GET | `/sessions/{session_id}/approval-status` | 查看报告生成/评估完成/上线批准三段状态与 release readiness |
-| GET | `/sessions/{session_id}/approvals` | 查看 append-only 上线批准历史（含 effective stale 状态） |
-| POST | `/sessions/{session_id}/approvals/release` | 申请上线批准（仅 admin；前置条件不满足返回 409 blockers） |
+| GET | `/sessions/{session_id}/approval-status` | 查看报告生成/评估完成/上线批准三段状态、release readiness、必测集合与 release batch |
+| GET | `/sessions/{session_id}/approvals` | 查看 append-only 上线批准历史（含 `effective_status`：approved / stale / invalidated / rejected） |
+| POST | `/sessions/{session_id}/approvals/release` | 申请上线批准（仅 admin 且非创建者；前置条件不满足返回 409 blockers） |
 
 错误口径：403 = 角色/身份/自审批；409 = 前置条件不满足或处置版本过期；400 = public_demo 不适用或非法处置来源。
 
@@ -118,13 +123,14 @@
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/sessions/{session_id}/eval-cases` | 查看 EvalCase 列表 |
+| PATCH | `/sessions/{session_id}/eval-cases/{eval_id}` | 更新用例标准（editor+；实际变更使 `standard_version`+1 并使旧运行失效） |
 | POST | `/sessions/{session_id}/eval-cases/{eval_id}/score` | 人工评分单个 EvalCase |
-| GET | `/sessions/{session_id}/eval-runs` | 查看 EvalRun 列表 |
+| GET | `/sessions/{session_id}/eval-runs` | 查看 EvalRun 列表（含 `case_version_digest` / `target_deployment_version`） |
 | POST | `/sessions/{session_id}/eval-cases/run` | 批量运行 EvalCase（`run_mode`：manual / dry_run / llm_node / target_http） |
-| POST | `/sessions/{session_id}/eval-cases/{eval_id}/run` | 运行单个 EvalCase（同上） |
+| POST | `/sessions/{session_id}/eval-cases/{eval_id}/run` | 运行单个 EvalCase（同上；运行绑定当前用例版本与目标部署） |
 | GET | `/sessions/{session_id}/eval-judgments` | 查看自动评判记录 |
 | GET | `/sessions/{session_id}/human-calibrations` | 查看人工校准记录 |
-| POST | `/sessions/{session_id}/eval-runs/{run_id}/calibrate` | 对 EvalRun 做人工校准 |
+| POST | `/sessions/{session_id}/eval-runs/{run_id}/calibrate` | 对 EvalRun 做人工校准；复核人固定取 JWT 身份，执行失败的真实目标运行不可改判为 passed |
 
 `target_http` 是真实目标系统执行：请求体需带 `target_config`（endpoint / timeout_seconds / output_field），endpoint host 必须在 `TARGET_SYSTEM_ALLOWED_HOSTS` 白名单内。响应写入 `EvalRun.execution_kind`（`real_target_execution`）与 `execution_outcome`（success / failed / timeout / error）；模拟执行（manual / dry_run / mock_model_execution）不会计入上线批准证据。
 

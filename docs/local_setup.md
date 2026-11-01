@@ -1,6 +1,6 @@
 # Local Environment Setup Guide
 
-> **Last updated:** 2026-07-31
+> **Last updated:** 2026-11-01
 
 **所有启动命令与验证步骤见 [startup.md](startup.md)**，本页不重复。这里只覆盖 startup.md 不含的三件事：环境模板、环境变量清单、仓库边界。
 
@@ -42,6 +42,7 @@
 
 | 变量 | 用途 | 当前代码状态 |
 |------|------|--------------|
+| `APP_ENV` | 运行环境 | 使用中，支持 `development` / `production`；`production` 下字段解密 fail-closed |
 | `DEEPSEEK_API_KEY` | LLM 调用 | 使用中 |
 | `TAVILY_API_KEY` | 搜索调用 | 使用中 |
 | `JWT_SECRET` | JWT 签名 | 使用中，且必须 ≥ 32 字符 |
@@ -57,7 +58,7 @@
 | `CORS_ALLOW_ORIGINS` | CORS 白名单 | 使用中 |
 | `DEMO_AUTO_AUTH` | 固定演示账号自动认证 | 生产必须为 `false`；仅本地 demo/开发 override 可启用 |
 | `UVICORN_WORKERS` | worker 数 | 使用中；`langgraph_interrupt` 当前必须为 `1` |
-| `DATA_ENCRYPTION_KEY` | 字段级加密 Fernet key | 代码已支持，默认空；为空时 PostgreSQL 明文存储并告警 |
+| `DATA_ENCRYPTION_KEY` | 字段级加密 Fernet key | PostgreSQL 或 `APP_ENV=production` 下缺失密钥时解密 fail-closed（`FieldDecryptionError`）；仅 SQLite 开发模式允许明文并告警 |
 | `PII_MASK_BEFORE_LLM` | 送 LLM 前掩码 PII | 使用中，**默认 `false`** |
 | `AUDIT_RETENTION_DAYS` / `SESSION_RETENTION_DAYS` | 留存天数 | 使用中；到期数据由内置留存执行器按周期清理，`0` 表示永久保留 |
 | `RETENTION_ENABLED` / `RETENTION_DRY_RUN` | 留存执行器开关 | `RETENTION_ENABLED` 默认 `true`；`RETENTION_DRY_RUN` 默认 `true`，只统计候选不删除，生产需显式改为 `false` |

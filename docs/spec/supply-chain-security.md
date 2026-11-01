@@ -1,7 +1,7 @@
 # 供应链与 CI 安全设计规格
 
 > Status: Implemented（Phase 0 + Phase 4 落地：CI 权限最小化 / Dependabot / SAST / pip-audit / 文档一致性检查 / Scorecard；分支保护待维护者在 GitHub 后台开启。落地任务见 [../archive/plan/phase-0-repo-governance.md](../archive/plan/phase-0-repo-governance.md) 与 [../archive/plan/phase-4-community.md](../archive/plan/phase-4-community.md)）
-> Last updated: 2026-09-18（按当前 workflow / Ruff 配置与远端状态边界复核）
+> Last updated: 2026-11-01（按当前 workflow / Ruff 配置、依赖审计结果与远端状态边界复核）
 > 对标依据：OpenSSF Scorecard 18 项检查（v5.5.0，2026-04）、GitHub Actions 安全加固最佳实践
 
 本规格定义仓库供应链安全与 CI 安全的目标形态，覆盖：CI 权限最小化、依赖自动更新、SAST、依赖漏洞审计、文档-代码一致性检查、Scorecard 水位管理。
@@ -35,7 +35,7 @@ permissions:
 ```
 
 当前实现与约束：
-- `.github/workflows/ci.yml` 已在顶层声明 `contents: read`；当前三个 job（lint/unit、docker-lite、docker-full）均继承该最小权限。
+- `.github/workflows/ci.yml` 已在顶层声明 `contents: read`；当前四个 job（lint-and-unit-tests、docker-lite-integration、docker-full-integration、production-safety）均继承该最小权限。
 - `.github/workflows/codeql.yml` 已独立声明 `contents: read` 与 `security-events: write`，没有放宽主 CI workflow。
 - 未来若新增自动发布 workflow，同理单独声明 `contents: write`。
 
@@ -76,12 +76,14 @@ updates:
 
 当前实现（两层）：
 1. **第一层（已启用）**：`pyproject.toml` 的 Ruff 规则集包含 `S`（安全规则），并对 `tests/` 豁免 `S101` / `S110`；本层随 `make lint` 在主 CI 中执行。
-2. **第二层（workflow 已入库，转正待远端治理）**：`.github/workflows/codeql.yml` 已配置 Python 分析、手动触发与 weekly cron，并独立声明 `security-events: write`。将触发范围扩展到 main 的 push/PR，以及是否设为 required check，仍按 `.upgrade/STATE.md` 的公开后 Task 19 执行；不得仅凭本地文件宣称已完成远端转正。
+2. **第二层（workflow 已入库，required check 待远端治理）**：`.github/workflows/codeql.yml` 已配置 Python 分析，触发范围为 main push、PR、weekly cron 与手动触发，并独立声明 `security-events: write`。是否设为 required check 仍按 `.upgrade/STATE.md` 的远端治理项执行；不得仅凭本地文件宣称已完成远端转正。
 
 ## 5. 依赖漏洞审计
 
-当前形态：CI lint job 已运行 `uv run pip-audit --strict`，策略：
-- 发现漏洞时**先告警不阻断**（`continue-on-error: true`），避免上游未修复漏洞卡死所有 PR。
+当前形态（2026-11-01 复核）：
+- 本地 `make audit`（`make security-check` 的一部分）保持严格：`uv export` 后运行 `pip-audit --strict`，仅忽略 `Makefile` 中 `PIP_AUDIT_IGNORES` 显式登记的 advisory。
+- CI 的 lint 步骤只阻断 Ruff（`make lint`）；依赖审计作为独立 `continue-on-error` 观察步骤运行，避免外部 advisory 库更新直接卡死所有提交。
+- 当前外部 advisory 库共 124 条 unique advisory / 19 个包；其中 pillow 受 streamlit `pillow<13` 上限、ecdsa 无修复版本、`langgraph-checkpoint-postgres` 被 V006 固定 `3.0.5`，其余可升级项列入 `.upgrade/STATE.md` 阻塞项分诊。
 - 每次告警必须在 24h 内人工分诊：可升级则由 Dependabot PR 解决；不可升级则在 `.upgrade/decisions/` 记录豁免理由与复查日期。
 
 ## 6. Scorecard 水位管理

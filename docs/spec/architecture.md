@@ -145,6 +145,22 @@ Project risk is derived from six structured factors, each on a 0–3 ordinal sca
 - The Stage 3 gate enforces `STAGE3_MIN_CASES_PER_HIGH_RISK_NODE` (default 1) for each required node; LOW/MEDIUM keep the historical minimum of 1.
 - The same high-risk node definition is shared by Stage 3 selection, the `stage3_eval_failure` gate, readiness coverage warnings, Redteam coverage, and eval summaries.
 
+## Evaluation Version Lifecycle (v1.7.0)
+
+`core/evaluation_version.py` produces schema `2.0` digests used by approvals, risk treatments and EvalRuns:
+
+- Monotonic counters: four `stage_output_versions` plus `ProjectContext.input_versions` (`materials`, `target_deployment`); an edit-then-revert cannot revive old evidence.
+- Content: project inputs, per-material digests, declared target deployment, policy versions (rule manifest / risk model / coverage policy), Stage 1–4 critical content, and all EvalCase definitions including `standard_version`.
+- Excluded by design: `eval_runs`, judgments, calibrations, treatments, approvals, reports, audit events, traces, conversation history and timestamps. This prevents the run that proves a version from changing that version.
+- Every `EvalRun` stores `evaluation_version_digest`, `case_version_digest` and `target_deployment_version`; release approval only accepts runs whose three bindings still match.
+
+`core/release_evidence.py` selects the release evidence independently:
+
+- required test set = all Stage 3 EvalCases for `required_high_risk_node_ids`;
+- release batch = one completed `target_http` EvalExperiment covering every required case;
+- valid run = real target execution + `execution_outcome=success` + `judge_result=passed` + current version/case/deployment bindings;
+- `ProjectApproval.evidence_digest` snapshots the batch runs, human calibrations, treatment reviews, high/critical safety findings and blocking actions. Any later negative evidence change invalidates the effective approval while preserving history.
+
 ## Workflow State Fail-Closed
 
 未知或非法 `current_state` 不允许自动回退到 `INIT`：
@@ -202,7 +218,7 @@ Stage rerun, revise, rollback, and sync-review-actions are explicit stage operat
 - `core/session_service.py` is a compatibility facade over the five lifecycle domain services; domain services must not import each other or the facade at module scope.
 - `core/gates/rules/manifest.py` is the authoritative source for gate rule metadata (owner / version / changelog / safety_bottom_line).
 - `gate_evaluation_records` table (alembic V005) is the baseline data source for governance pass-rate trends. Its rows are projections of `sessions` and are deleted with the session on admin delete or retention purge; tenant backfill covers legacy NULL rows.
-- LangGraph checkpoint tables are owned by Alembic V006; the durable resume outbox is owned by V007; V008 adds `sessions.version` (optimistic locking), JSONB generated columns for list/governance queries, tenant indexes and `human_actions.tenant_id`.
+- LangGraph checkpoint tables are owned by Alembic V006; the durable resume outbox is owned by V007; V008 adds `sessions.version` (optimistic locking), JSONB generated columns for list/governance queries, tenant indexes and `human_actions.tenant_id`; V009 adds `sessions.projection_state` plus `eval_runs.pass_criteria` / `llm_judge_suggestion`; V010 adds `sessions.context_digest`; V011 adds real-target execution metadata on `eval_runs`; V012 adds `workspace_invitations`, `eval_cases.standard_version` and `eval_runs.case_version_digest` / `target_deployment_version`. Current chain and legacy-database upgrade steps are documented in [storage/README.md](../../storage/README.md).
 - The outbox is reconciled once on startup and then retried periodically by the in-process scheduler in `core/execution_service.py` (`INTERRUPT_RESUME_RETRY_INTERVAL_SECONDS`, default 600s, 0 = startup-only). The scheduler starts only in `langgraph_interrupt` mode and is stopped before the checkpoint runtime and pool close.
 - `core/eval_llm_judge.py` is the authoritative implementation of LLM Judge (suggestion only, never overrides final judgment directly).
 - `core/evaluation_version.py` is the authoritative evaluation-version digest (stage versions + critical content); approvals, risk treatments, and eval runs bind to it.

@@ -62,8 +62,9 @@
 ### 4.1 字段级静态加密
 
 - **方案**：应用层对称加密（`cryptography.Fernet`），密钥来自环境变量 `DATA_ENCRYPTION_KEY`（走 `.env`/secrets，与 `JWT_SECRET` 同级管理）。
-- **加密范围**（`data_classification ∈ {business_internal, sensitive_personal}`；`public_demo` 保持明文）：`research_target`、`research_goal`、`user_materials`、`evidence_sources[*].summary/claims`（仅 `source_type=user_material`）、`conversation_history[*][*].content`、`pending_actions[*]` 的自由文本与 `payload_before/payload_after`、`report_artifacts[*].content_markdown/content_json`；投影表列级加密由 `ENCRYPTED_COLUMNS` 注册（`human_actions`、`evidence_sources`、`report_artifacts`）。权威实现见 `storage/field_security.py`。
+- **加密范围**（`data_classification ∈ {business_internal, sensitive_personal}`；`public_demo` 保持明文）：`research_target`、`goal`、`user_materials`、`evidence_sources[*].summary/claims`（仅 `source_type=user_material`）、`conversation_history[*][*].content`、`pending_actions[*]` 的自由文本与 `payload_before/payload_after`、`report_artifacts[*].content_markdown/content_json`；投影表列级加密由 `ENCRYPTED_COLUMNS` 注册（`human_actions`、`evidence_sources`、`report_artifacts`）。权威实现见 `storage/field_security.py`。
 - **实现位置**：上下文写入侧 `encrypt_fields_for_storage`（`_build_context_json_for_storage` 截断之后、`json.dumps` 之前）、读取侧 `decrypt_fields_after_load`（`migrate_context` 之后）；投影表用 `encrypt_row_columns` / `decrypt_row_columns`。密文带 `enc:v1:` 前缀以便识别与将来轮换；PostgreSQL 与 SQLite 两个后端行为一致。
+- **历史明文回填（v1.7.0）**：早期版本因字段名拼写错误只加密 `research_goal`，实际字段 `goal` 仍以明文落库。修复后新增 `scripts/encrypt_legacy_goal.py` 与两后端 `backfill_goal_encryption()`：默认 dry-run，`--apply` 才写库，`--verify` 校验密文可解密，`--decrypt --apply --allow-plaintext` 仅用于回退到旧版本代码；脚本幂等且跳过 `public_demo`。回滚旧代码前必须先解密或恢复升级前备份，否则旧代码会把 `goal` 密文当作明文展示。
 - **fail-closed（v1.4.0 起）**：`APP_ENV=production` 或 `storage_backend != sqlite` 时，检测到 `enc:v1:` 密文但无密钥、或密钥错误/密文损坏，一律抛 `FieldDecryptionError`，不会把密文当明文返回，也不会静默降级为明文读取。SQLite 离线演示允许无密钥明文。
 
 ### 3.x 六因子风险模型与数据敏感性（v1.5.0）

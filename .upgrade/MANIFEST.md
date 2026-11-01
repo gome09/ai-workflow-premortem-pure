@@ -7,7 +7,7 @@ Defines file lifecycle rules for `.upgrade/`. Update this file whenever files ar
 - `.upgrade/STATE.md` — current upgrade state
 - `.upgrade/MANIFEST.md` — this file
 - `.upgrade/archive/plans/*.md` — phase/wave planning documents（已归档，本工作区以 `plans/` 承担标准结构中 `stages/` 的角色）
-- `.upgrade/reports/FINAL_REPORT.md` — final upgrade report（尚未产出，届时补齐）
+- `.upgrade/reports/FINAL_REPORT.md` — final upgrade report（当前为占位文件，未产出最终报告；交付前补齐）
 - `.upgrade/decisions/*.md` — all decision records
 - `.upgrade/reviews/*.md` — all review records（目录尚未创建；首次产出独立评审文件时创建该目录）
 - `.upgrade/archive/reports/*.md` — 阶段性报告（已归档）
@@ -54,7 +54,7 @@ Before cleanup, classify each file as one of:
 
 | File | Status | Lifecycle | Notes |
 |---|---|---|---|
-| `.upgrade/STATE.md` | active | permanent | 当前升级状态（Phase 0-4 全部完成；formal-project-uplift Wave A–E 全部完成；本地 v1.3.0 tag 已存在，GitHub Release 状态待远端确认，仓库已公开） |
+| `.upgrade/STATE.md` | active | permanent | 当前升级状态（Phase 4 进行中：代码侧完成，远端治理待办；当前 v1.7.0 / Alembic V012） |
 | `.upgrade/MANIFEST.md` | active | permanent | 本文件 |
 | `.upgrade/decisions/RELEASE_CLEANUP.md` | active | permanent | v1.0 发布前组件清理决策记录（移除/归档了哪些组件及原因），moved from project root 2026-07-13 |
 | `.upgrade/decisions/branch-protection.md` | active | permanent | Phase 4 T4.2 main 分支保护策略决策（GitHub 后台手动操作步骤） |
@@ -65,6 +65,10 @@ Before cleanup, classify each file as one of:
 | `.upgrade/decisions/agent-guidance-sync-20260725.md` | active | permanent | 2026-07-25 AGENTS.md / CLAUDE.md 当前事实、优先级与安全边界同步决策 |
 | `.upgrade/decisions/ignore-boundary-hardening-20260725.md` | active | permanent | 2026-07-25 Git 跟踪与 Docker build context 的隐私、密钥及运行时产物隔离决策 |
 | `.upgrade/decisions/doc-code-reconciliation-20260731.md` | active | permanent | 2026-07-31 文档—代码矛盾复核：4 条高危处置（测试基线解释器错误 / sensitive_personal 非地板值 / 报告转义未实现 / domain profile 非零改动扩展点）、CLAUDE.md 与 local_setup.md 结构性去重、lite-mode.md 与 2 个 examples JSON 删除 |
+| `.upgrade/decisions/p1-business-closure-hardening.md` | active | permanent | P1 业务闭环加固（v1.7.0）决策与验证记录（邀请/评估版本 2.0/批准失效/goal 回填/V012） |
+| `.upgrade/decisions/DEC-B1811F986E66.json` | active | permanent | `.env.example` / `.env.demo` / `secrets.example/*` 有意跟踪的 git-policy 决策（2026-10-31） |
+| `.upgrade/decisions/doc-ci-alignment-20261101.md` | active | permanent | 文档/CI/.upgrade 对齐决策（提交拆分、依赖审计策略、验证记录方式、远端未验证项） |
+| `.upgrade/plans/2026-11-01-doc-ci-upgrade-alignment.md` | active | permanent | 本轮文档—CI—升级工作区对齐实施方案（入库副本） |
 | `.upgrade/archive/release_manifest_v1.0.md` | archived | archive | v1.0 生产文件范围清单（已被 v1.3.0 取代），moved from project root 2026-07-13，2026-07-17 Mode 3 归档 |
 | `.upgrade/archive/scorecard-baseline-20260713.md` | archived | archive | Phase 4 T4.3 Scorecard 基线报告（2026-07-13 快照，数据已被趋势报告吸收），2026-07-17 Mode 3 归档 |
 | `.upgrade/archive/reports/scorecard-trend-20260714.md` | archived | archive | Phase 4 T4.3 Scorecard 趋势报告（基线对照 + 18 项预期变化）（2026-08-22 归档） |

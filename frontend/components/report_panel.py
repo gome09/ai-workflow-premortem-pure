@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 
 import streamlit as st
-from labels import severity_zh, status_zh
+from labels import approval_status_zh, severity_zh, status_zh
 
 
 def render_report_panel(report: dict) -> None:
@@ -50,6 +50,24 @@ def render_report_panel(report: dict) -> None:
 
 def _render_governance_section(content: dict) -> None:
     """从报告 content_json 渲染治理 / 审计 / 风险相关内容。"""
+
+    approval = content.get("approval_summary") or {}
+    if approval:
+        st.markdown("#### 审批状态")
+        release = approval.get("release_approval") or {}
+        st.caption("报告生成/导出不代表上线批准；评估完成也不等于上线批准。")
+        st.text(
+            f"- 评估完成：{(approval.get('evaluation_completion') or {}).get('completed')}"
+        )
+        st.text(
+            f"- 上线批准：{approval_status_zh(release.get('status'))} "
+            f"· 批准人={release.get('decided_by') or '-'}"
+        )
+        if release.get("stale_reason"):
+            st.warning(f"审批已失效：{release.get('stale_reason')}")
+        readiness = content.get("release_readiness") or {}
+        for blocker in (readiness.get("blockers") or [])[:5]:
+            st.text(f"- 前置条件缺口：{blocker.get('message')}")
 
     # 人工审核摘要
     oversight = content.get("oversight_summary") or {}

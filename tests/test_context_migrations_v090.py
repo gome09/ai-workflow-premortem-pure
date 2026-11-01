@@ -52,5 +52,5 @@ def test_migration_does_not_overwrite_existing_counters():
     assert migrated["llm_call_count"] == 42  # 不覆盖
 
 
-def test_registry_current_version_is_v090():
-    assert CURRENT_CONTEXT_SCHEMA_VERSION == "0.9.0"
+def test_registry_current_version_is_v100():
+    assert CURRENT_CONTEXT_SCHEMA_VERSION == "0.10.0"

@@ -86,6 +86,9 @@ class RiskOverrideRecord(BaseModel):
     effective_tier: RiskTier
     floor_tier: RiskTier
     reason: str = ""
+    # 版本绑定：记录 override 生效时的风险输入摘要。风险因子或数据分级变化后，
+    # 摘要不匹配的 override 不再生效（旧记录该字段为空，按兼容语义继续生效）。
+    factors_digest: str = ""
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

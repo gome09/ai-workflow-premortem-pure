@@ -122,17 +122,21 @@ def _failure_mode_evidence_ids(fm) -> list[str]:
 
 
 def link_failure_modes_to_evidence(ctx: ProjectContext) -> None:
-    """根据 FailureMode.evidence_ids / evidence 中的 evidence_id 建立反向引用。"""
+    """根据 FailureMode.evidence_ids / evidence 中的 evidence_id 重建反向引用。
+
+    使用当前 Stage 1 内容全量重建，而不是只追加：失败模式编辑移除引用后，
+    证据的 ``lifecycle_status`` 必须从 adopted 正确地退回 verified。
+    """
     if not ctx.stage_1_output:
         return
-    evidence_by_id = {ev.evidence_id: ev for ev in ctx.evidence_sources}
-    for fm in ctx.stage_1_output.failure_modes:
-        ids = _failure_mode_evidence_ids(fm)
-        fm.evidence_ids = ids
-        for evidence_id in ids:
-            ev = evidence_by_id.get(evidence_id)
-            if ev and fm.id not in ev.used_by_failure_mode_ids:
-                ev.used_by_failure_mode_ids.append(fm.id)
+    failure_modes = ctx.stage_1_output.failure_modes
+    for fm in failure_modes:
+        fm.evidence_ids = _failure_mode_evidence_ids(fm)
+
+    for ev in ctx.evidence_sources:
+        ev.used_by_failure_mode_ids = sorted(
+            {fm.id for fm in failure_modes if ev.evidence_id in (fm.evidence_ids or [])}
+        )
 
 
 def verify_evidence_source(

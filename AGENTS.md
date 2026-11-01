@@ -7,15 +7,16 @@
 ## 项目现状
 
 - 项目：AI Workflow Premortem，AI 工作流预验尸与人机监督平台；源于本科毕业设计，当前按长期维护的开源项目演进。
-- 当前应用版本：`1.5.0`；版本元数据必须同时保持 `core/version.py` 与 `pyproject.toml` 一致。
-- 当前数据库迁移头：Alembic `V010`（`sessions.context_digest` 写放大保护；V009 为 `sessions.projection_state` 差分同步状态 + `eval_runs.pass_criteria` / `llm_judge_suggestion`）；当前 `ProjectContext` schema：`0.9.0`（Milestone 2 新增的 `risk_profile` / `risk_overrides` 为可选字段，旧 context_json 无需迁移）。
-- 真实业务库 `ai_workflow` 已升级至 V008（20 会话 / 90 人工动作 / 144 审计事件保留）；V009/V010 为新增列迁移，部署环境需执行 `alembic upgrade head`。历史行 `tenant_id` 仍为 NULL，回填前不会进入租户作用域查询与治理统计。旧库升级顺序与备份路径见 `storage/README.md` 与 `.upgrade/backup/`。
+- 当前应用版本：`1.6.0`；版本元数据必须同时保持 `core/version.py` 与 `pyproject.toml` 一致。
+- 当前数据库迁移头：Alembic `V011`（业务闭环：`eval_runs.execution_kind` / `execution_outcome` / `evaluation_version_digest` / `target_endpoint`；V010 为 `sessions.context_digest` 写放大保护；V009 为 `sessions.projection_state` 差分同步状态 + `eval_runs.pass_criteria` / `llm_judge_suggestion`）；当前 `ProjectContext` schema：`0.10.0`（新增可选 `risk_treatments` / `project_approvals`，旧 context_json 通过 `v090_to_v100` no-op 迁移加载）。
+- 真实业务库 `ai_workflow` 已升级至 V008（20 会话 / 90 人工动作 / 144 审计事件保留）；V009/V010/V011 为新增列迁移，部署环境需执行 `alembic upgrade head`。历史行 `tenant_id` 仍为 NULL，回填前不会进入租户作用域查询与治理统计。旧库升级顺序与备份路径见 `storage/README.md` 与 `.upgrade/backup/`。
 - Phase 0–4 代码侧已完成；`docs/archive/plan/phase-*.md` 与 `phase-*-design.md` 是历史实施/设计基线（已归档），不得把其中旧版本、旧行号或未勾选项当作当前事实。
 - formal-project-uplift Wave A–E 已完成；剩余工作主要是仓库公开后的远端治理动作，如 CodeQL 转正、main 分支保护和发布设置。权威状态见 `.upgrade/STATE.md`。
-- 最近一次本地全量测试基线：`1016 passed, 3 skipped`（2026-10-31 Milestone 2 Domain Simplification 复核；项目 `.venv` pytest，`STORAGE_BACKEND=sqlite` + `CHECKPOINT_BACKEND=memory` + `LLM_MODE=mock`，62.7s）。新增测试覆盖六因子风险模型参数化边界、risk override 审计/租户隔离/API、风险驱动 coverage policy、五个域服务独立单测、域边界与循环依赖；且 `tests/test_postgres_redis_workflow_e2e.py` 扩展了 rerun/乐观锁/override E2E 断言。此前基线依次为 `959 passed, 3 skipped`（2026-10-31 Production Safety Baseline）、`894 passed, 1 skipped`（2026-10-31 CI 修复轮复核）、`882 passed, 1 skipped`（2026-10-31，前后端边界加固）、`844 passed, 1 skipped`（2026-10-31，B2 save() 差分同步）、`826 passed, 1 skipped`（2026-10-31，B1 投影直读）、`800 passed, 1 skipped`（2026-10-31）、`798 passed, 1 skipped`（2026-10-29）、`786 passed, 1 skipped`（2026-10-29）、`731 passed, 1 skipped`（2026-09-21）。测试数量会随测试集合变化，不应硬编码为永久断言。
+- 最近一次本地全量测试基线：`1102 passed, 3 skipped`（2026-11-01 业务闭环升级复核；项目 `.venv` pytest，`STORAGE_BACKEND=sqlite` + `CHECKPOINT_BACKEND=memory` + `LLM_MODE=mock`，25.6s）。新增测试覆盖证据生命周期、风险处置门禁、上线批准前置条件与身份独立性、真实目标 HTTP 适配器（成功/失败/超时/异常）、评估版本绑定与失效。此前基线依次为 `1042 passed, 3 skipped`（2026-11-01 安全基线加固复核）、`1016 passed, 3 skipped`（2026-10-31 Milestone 2 Domain Simplification 复核）、`959 passed, 3 skipped`（2026-10-31 Production Safety Baseline）、`894 passed, 1 skipped`（2026-10-31 CI 修复轮复核）、`882 passed, 1 skipped`（2026-10-31，前后端边界加固）、`844 passed, 1 skipped`（2026-10-31，B2 save() 差分同步）、`826 passed, 1 skipped`（2026-10-31，B1 投影直读）、`800 passed, 1 skipped`（2026-10-31）、`798 passed, 1 skipped`（2026-10-29）、`786 passed, 1 skipped`（2026-10-29）、`731 passed, 1 skipped`（2026-09-21）。测试数量会随测试集合变化，不应硬编码为永久断言。
 - 本地跑全量测试前需确认 `.env` 的存储后端：若仍是 Docker PostgreSQL 且该库未启动，`uv run pytest tests/` 会因连接等待长时间假死。离线基线须按 `.env.demo` 注入 `STORAGE_BACKEND=sqlite`、`CHECKPOINT_BACKEND=memory`、`LLM_MODE=mock`。
 - 前端按 MVC 分层：`frontend/models/`（配置、认证、API 客户端、状态投影）、`frontend/controllers/`（按业务域编排动作）、`frontend/views/`（侧栏、工作台与各面板）；`frontend/app.py` 仅做入口装配，`frontend/components/` 为可复用视图组件。依赖方向固定为 models ← controllers ← views ← app。
 - 治理总览当前只聚合真实业务会话（`business_internal` / `sensitive_personal`）；四个内置场景及其他 `public_demo` 会话必须与总览、趋势、积压动作和对应业务 Gauge 隔离。前端必须明确展示该统计口径，正常零数据不得表述为加载失败。
+- 业务闭环不变量：证据生命周期为派生状态（submitted/verified/adopted），未核验证据不得解除高风险门禁；high/critical 风险项必须有已复核且绑定当前评估版本的 `RiskTreatment`；`SessionState.COMPLETE` 仅表示评估完成，上线批准是独立 `ProjectApproval`，报告生成/导出不产生审批；`EvalRun.execution_kind` 必须区分模拟与 `real_target_execution`，只有当前评估版本的真实目标通过运行计入上线批准。public_demo 会话豁免风险处置门禁与上线批准。
 - 录制测试基线必须走 `uv run`（项目 `.venv`）。用系统 Python 直接跑 `python -m pytest` 会因缺少 `prometheus-fastapi-instrumentator` 等主依赖触发 7 处 `importorskip` 跳过，得到 `623 passed, 8 skipped` 的降级结果——该数字不是有效基线。
 
 ## 事实来源优先级
@@ -79,7 +80,7 @@ make version-check
 
 - `make setup` 会生成独立的字段加密与 checkpoint Fernet key，并通过 Docker secrets 注入；非 Docker 部署仍需显式配置。生产必须检查 `/health.data_encryption == enabled`，中断模式还必须确认 adapter 为 persistent/encrypted/healthy。
 - 留存执行器已落地：`core/retention_service.py` 在应用启动后按 `RETENTION_SWEEP_INTERVAL_SECONDS` 周期执行，`RETENTION_ENABLED` 默认开启但 `RETENTION_DRY_RUN` 默认 `true`（只统计不删除）；只有显式设置 `RETENTION_DRY_RUN=false` 才会删除到期会话与审计行。`SESSION_RETENTION_DAYS=0` 表示永久保留，默认不清理会话；`AUDIT_RETENTION_DAYS` 到期清理同时覆盖活动审计与归档审计表。它是进程内调度，不依赖外部 cron，多 worker 部署时各 worker 各自扫描（事务与行数校验保证不会重复删除同一行）。
-- `PII_MASK_BEFORE_LLM` 默认关闭；涉及真实个人信息的场景必须明确部署侧启用责任。
+- `PII_MASK_BEFORE_LLM` 默认关闭，仅影响 `business_internal` / `public_demo` 出站消息；`sensitive_personal` 会话的所有外部 LLM 消息强制做四类 PII 掩码（`core/llm/outbound_guard.py`），不受该开关影响。
 - 事件与审计写入统一经 `core/data_protection.py` 脱敏：`business_internal` / `sensitive_personal` 的自由文本字段写成 `{"_redacted": true, "sha256": ..., "length": ...}`，用户原文不得进入 `session_events` / `audit_events` payload；`public_demo` 保持可读。字段级加密覆盖 `research_target` / `goal` / `user_materials` / 用户材料型 evidence / conversation / pending actions / report content，PostgreSQL 或 `APP_ENV=production` 下缺失密钥必须 fail-closed（`FieldDecryptionError`）。
 - main 分支保护是否已在 GitHub 后台开启，必须以远端实查为准；本地当前状态记录为待维护者执行。
 

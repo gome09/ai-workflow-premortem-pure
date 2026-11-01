@@ -232,6 +232,23 @@ def encrypt_fields_for_storage(data: dict[str, Any], classification: str) -> dic
             if action.get(field) is not None:
                 action[field] = _encrypt_structure(action[field], field=f"pending_actions.{field}")
 
+    # risk_treatments[*] 责任人/缓解措施属于治理自由文本
+    for treatment in data.get("risk_treatments") or []:
+        if not isinstance(treatment, dict):
+            continue
+        for field in ("mitigation_plan", "review_note"):
+            value = treatment.get(field)
+            if isinstance(value, str) and value:
+                treatment[field] = _encrypt_value(value)
+
+    # project_approvals[*].decision_note
+    for approval in data.get("project_approvals") or []:
+        if not isinstance(approval, dict):
+            continue
+        value = approval.get("decision_note")
+        if isinstance(value, str) and value:
+            approval["decision_note"] = _encrypt_value(value)
+
     # report_artifacts[*].content_markdown / content_json
     for artifact in data.get("report_artifacts") or []:
         if not isinstance(artifact, dict):
@@ -310,6 +327,25 @@ def decrypt_fields_after_load(ctx) -> None:
                     field,
                     _decrypt_structure(value, field=f"pending_actions[{action.action_id}].{field}"),
                 )
+
+    # risk_treatments / project_approvals
+    for treatment in ctx.risk_treatments:
+        if treatment.mitigation_plan:
+            treatment.mitigation_plan = _decrypt_value(
+                treatment.mitigation_plan,
+                field=f"risk_treatments[{treatment.treatment_id}].mitigation_plan",
+            )
+        if treatment.review_note:
+            treatment.review_note = _decrypt_value(
+                treatment.review_note,
+                field=f"risk_treatments[{treatment.treatment_id}].review_note",
+            )
+    for approval in ctx.project_approvals:
+        if approval.decision_note:
+            approval.decision_note = _decrypt_value(
+                approval.decision_note,
+                field=f"project_approvals[{approval.approval_id}].decision_note",
+            )
 
     # report_artifacts
     for artifact in ctx.report_artifacts:

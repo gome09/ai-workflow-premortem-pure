@@ -47,9 +47,14 @@ from tools.safety_classifier import add_findings_dedup, scan_user_materials
 
 
 class SessionWorkflowService(SessionAccess):
-    def create_session(self, tenant_id: str = "", scenario_id: str | None = None) -> ProjectContext:
+    def create_session(
+        self,
+        tenant_id: str = "",
+        scenario_id: str | None = None,
+        created_by: str = "",
+    ) -> ProjectContext:
         """创建新会话"""
-        ctx = ProjectContext(tenant_id=tenant_id)
+        ctx = ProjectContext(tenant_id=tenant_id, created_by=(created_by or "").strip())
         # 无 scenario_id 永远创建空白会话。内置场景只能由调用方显式选择，
         # 避免部署环境中的默认值让「新建会话」悄悄携带场景内容。
         ctx = attach_scenario_to_context(ctx, scenario_id)

@@ -147,6 +147,24 @@ def build_eval_summary(ctx: ProjectContext) -> dict:
     failed_runs = [run for run in runs if run.judge_result == "failed" or run.status == "failed"]
     needs_review_runs = [run for run in runs if run.judge_result == "needs_review"]
 
+    from core.evaluation_version import current_evaluation_digest
+
+    current_digest = current_evaluation_digest(ctx)
+    execution_kind_counts: dict[str, int] = {}
+    for run in runs:
+        execution_kind_counts[run.execution_kind] = (
+            execution_kind_counts.get(run.execution_kind, 0) + 1
+        )
+    real_target_runs = [run for run in runs if run.execution_kind == "real_target_execution"]
+    current_real_target_runs = [
+        run for run in real_target_runs if run.evaluation_version_digest == current_digest
+    ]
+    stale_eval_runs = [
+        run
+        for run in runs
+        if run.evaluation_version_digest and run.evaluation_version_digest != current_digest
+    ]
+
     return {
         "total_eval_cases": total,
         "passed_count": passed_count,
@@ -176,4 +194,9 @@ def build_eval_summary(ctx: ProjectContext) -> dict:
         "parser_success_rate": _rate(stage_count - parser_error_count, stage_count),
         "flag_closure_rate": _rate(closed_flags, total_flags),
         "evidence_reference_rate": _rate(len(evidence_referenced), len(failure_modes)),
+        "execution_kind_counts": execution_kind_counts,
+        "real_target_run_count": len(real_target_runs),
+        "current_version_real_target_run_count": len(current_real_target_runs),
+        "stale_eval_run_count": len(stale_eval_runs),
+        "evaluation_version_digest": current_digest,
     }

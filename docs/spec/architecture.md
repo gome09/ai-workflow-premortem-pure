@@ -205,6 +205,10 @@ Stage rerun, revise, rollback, and sync-review-actions are explicit stage operat
 - LangGraph checkpoint tables are owned by Alembic V006; the durable resume outbox is owned by V007; V008 adds `sessions.version` (optimistic locking), JSONB generated columns for list/governance queries, tenant indexes and `human_actions.tenant_id`.
 - The outbox is reconciled once on startup and then retried periodically by the in-process scheduler in `core/execution_service.py` (`INTERRUPT_RESUME_RETRY_INTERVAL_SECONDS`, default 600s, 0 = startup-only). The scheduler starts only in `langgraph_interrupt` mode and is stopped before the checkpoint runtime and pool close.
 - `core/eval_llm_judge.py` is the authoritative implementation of LLM Judge (suggestion only, never overrides final judgment directly).
+- `core/evaluation_version.py` is the authoritative evaluation-version digest (stage versions + critical content); approvals, risk treatments, and eval runs bind to it.
+- `core/risk_treatment_service.py` owns high-risk treatment requirements and completeness; `core/gates/rules/risk_treatment.py` consumes it for the Stage 4 gate.
+- `core/approval_service.py` owns independent release approval readiness, authorization, and stale state. `SessionState.COMPLETE` is assessment completion, not release approval.
+- `core/target_testing/` is the real-target HTTP JSON adapter authority. `EvalRun.execution_kind` distinguishes simulation from `real_target_execution`; only current-version real target passes count toward release approval.
 
 
 ## Doc/Test/Core Alignment Contract

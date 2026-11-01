@@ -132,6 +132,10 @@ def run_experiment(
     dataset = get_dataset(ctx, experiment.dataset_id)
     if not dataset.case_ids:
         raise ValueError(f"Eval dataset has no cases: {dataset.dataset_id}")
+    if experiment.run_mode == "target_http" and not dry_run_only:
+        raw_config = (experiment.run_config or {}).get("target_config")
+        if not isinstance(raw_config, dict) or not raw_config.get("endpoint"):
+            raise ValueError("target_http experiment requires run_config.target_config")
 
     before = experiment.model_copy(deep=True)
     experiment.status = "running"
@@ -150,9 +154,19 @@ def run_experiment(
 
     requested_run_mode = experiment.run_mode
     actual_run_mode = (
-        "dry_run" if dry_run_only and requested_run_mode == "llm_node" else requested_run_mode
+        "dry_run"
+        if dry_run_only and requested_run_mode in {"llm_node", "target_http"}
+        else requested_run_mode
     )
 
+    from core.target_testing import TargetSystemConfig
+
+    raw_target_config = (experiment.run_config or {}).get("target_config")
+    target_config = (
+        TargetSystemConfig.model_validate(raw_target_config)
+        if isinstance(raw_target_config, dict)
+        else None
+    )
     try:
         runs = run_eval_cases(
             ctx,
@@ -160,6 +174,7 @@ def run_experiment(
             run_mode=actual_run_mode,
             dataset_id=dataset.dataset_id,
             experiment_id=experiment.experiment_id,
+            target_config=target_config,
         )
         experiment.run_ids = [run.run_id for run in runs]
         experiment.eval_ids = list(dataset.case_ids)

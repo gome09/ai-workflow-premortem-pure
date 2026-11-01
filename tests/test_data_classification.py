@@ -177,7 +177,7 @@ def test_migration_v070_to_v080_backfills_business_internal():
         "selected_scenario_id": None,
     }
     ctx = migrate_context(raw)
-    assert ctx.context_schema_version == "0.9.0"
+    assert ctx.context_schema_version == "0.10.0"
     assert ctx.data_classification == "business_internal"
 
 
@@ -188,7 +188,7 @@ def test_migration_v070_to_v080_backfills_public_demo_for_scenario():
         "selected_scenario_id": "generic_rag_demo",
     }
     ctx = migrate_context(raw)
-    assert ctx.context_schema_version == "0.9.0"
+    assert ctx.context_schema_version == "0.10.0"
     assert ctx.data_classification == "public_demo"
 
 

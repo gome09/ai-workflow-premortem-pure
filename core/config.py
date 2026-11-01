@@ -135,6 +135,12 @@ class Settings(BaseSettings):
     stage3_min_coverage_ratio: float = 0.2
     stage3_min_cases_per_high_risk_node: int = 1
 
+    # 真实目标系统测试（target_http）。空 allowlist = 拒绝所有外部目标调用。
+    target_system_allowed_hosts: str = ""
+    target_system_token: str = ""
+    target_system_timeout_seconds: float = 10.0
+    target_system_max_response_chars: int = 4000
+
     # T3.6 LLM Judge（spec governance-platform §5）：LLM 仅建议判分，不终裁。
     # eval_llm_judge=on 时对规则层 needs_review 的 run 生成结构化建议
     eval_llm_judge: bool = False
@@ -192,6 +198,10 @@ class Settings(BaseSettings):
             raise ValueError("STAGE3_MIN_COVERAGE_RATIO must be between 0 and 1")
         if self.stage3_min_cases_per_high_risk_node < 1:
             raise ValueError("STAGE3_MIN_CASES_PER_HIGH_RISK_NODE must be >= 1")
+        if self.target_system_timeout_seconds <= 0:
+            raise ValueError("TARGET_SYSTEM_TIMEOUT_SECONDS must be > 0")
+        if self.target_system_max_response_chars < 1:
+            raise ValueError("TARGET_SYSTEM_MAX_RESPONSE_CHARS must be >= 1")
 
         execution_mode = WorkflowExecutionMode.normalize(self.workflow_execution_mode)
         if execution_mode == WorkflowExecutionMode.LANGGRAPH_INTERRUPT:

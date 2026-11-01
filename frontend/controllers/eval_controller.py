@@ -19,16 +19,20 @@ from models.api_client import (
 from models.session_state import refresh_actions
 
 
-def run_all_cases(run_mode: str) -> None:
-    result = run_eval_cases(st.session_state.session_id, None, run_mode)
+def run_all_cases(run_mode: str, target_config: dict | None = None) -> None:
+    result = run_eval_cases(
+        st.session_state.session_id, None, run_mode, target_config=target_config
+    )
     if result:
         refresh_actions()
         st.success(f"已创建 {len(result.get('created_runs', []))} 次评测运行。")
         st.rerun()
 
 
-def run_case(eval_id: str, run_mode: str) -> None:
-    result = run_single_eval_case(st.session_state.session_id, eval_id, run_mode)
+def run_case(eval_id: str, run_mode: str, target_config: dict | None = None) -> None:
+    result = run_single_eval_case(
+        st.session_state.session_id, eval_id, run_mode, target_config=target_config
+    )
     if result:
         refresh_actions()
         st.rerun()
@@ -70,6 +74,7 @@ def create_experiment(
     experiment_name: str,
     run_mode: str,
     baseline_experiment_id: str | None,
+    target_config: dict | None = None,
 ) -> None:
     experiment = create_eval_experiment(
         st.session_state.session_id,
@@ -77,6 +82,7 @@ def create_experiment(
         experiment_name,
         run_mode,
         baseline_experiment_id,
+        target_config=target_config,
     )
     if experiment:
         invalidate_session_cache(st.session_state.session_id)

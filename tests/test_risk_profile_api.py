@@ -64,7 +64,7 @@ def test_get_put_and_override_profile(client_and_service):
     assert response.json()["session_id"] == session_id
 
     response = client.put(
-        f"/sessions/{session_id}/risk-profile", json=_LOW, headers=_headers("editor")
+        f"/sessions/{session_id}/risk-profile", json=_LOW, headers=_headers("admin")
     )
     assert response.status_code == 200
     assert response.json()["effective_tier"] == "low"

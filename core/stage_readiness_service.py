@@ -26,6 +26,7 @@ BlockerType = Literal[
     "trace_backfill_gap",
     "final_governance",
     "expert_review",
+    "risk_treatment",
     "gate_rule_error",
     "gate_data_error",
 ]
@@ -57,6 +58,7 @@ RequiredResolution = Literal[
     "trace_to_eval_case",
     "create_trace_backfill_dataset",
     "approve_expert_review",
+    "complete_risk_treatment",
     "retry_gate_persistence",
 ]
 
@@ -923,6 +925,9 @@ def build_stage_readiness(ctx: ProjectContext) -> dict[str, dict[str, Any]]:
 
             try:
                 stage_metadata["final_governance_summary"] = _build_final_governance_summary(ctx)
+                from core.approval_service import build_approval_summary
+
+                stage_metadata["release_approval"] = build_approval_summary(ctx)
             except GateDataError:
                 # HIGH/CRITICAL 的 Gate 落表失败同样不能把 readiness 变成 500；
                 # 返回确定性的 gate_data_error 摘要，与 stage blocker 同一语义。
@@ -1006,6 +1011,13 @@ def _build_final_governance_summary(ctx: ProjectContext) -> dict[str, Any]:
         for key, value in getattr(ctx, "stage_staleness", {}).items()
         if isinstance(value, dict) and value.get("stale")
     ]
+    from core.risk_treatment_service import (
+        build_risk_treatment_summary,
+        treatment_blockers,
+    )
+
+    treatment_gaps = treatment_blockers(ctx)
+    treatment_summary = build_risk_treatment_summary(ctx)
     return {
         "open_high_safety_findings": high_safety,
         "open_critical_safety_findings": critical_safety,
@@ -1015,6 +1027,8 @@ def _build_final_governance_summary(ctx: ProjectContext) -> dict[str, Any]:
         "eval_regression_blockers": eval_regression_blockers,
         "trace_backfill_blockers": trace_backfill_blockers,
         "unverified_high_risk_evidence": unverified_high_risk_evidence,
+        "risk_treatment_blockers": treatment_gaps,
+        "risk_treatment_summary": treatment_summary,
         "stale_stage_outputs": stale_stage_outputs,
         "report_export_allowed": not (
             pending_blocking_actions

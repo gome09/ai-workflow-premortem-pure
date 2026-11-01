@@ -40,6 +40,10 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("sessions", "context_digest", "TEXT"),
     ("eval_runs", "pass_criteria", "TEXT NOT NULL DEFAULT '[]'"),
     ("eval_runs", "llm_judge_suggestion", "TEXT"),
+    ("eval_runs", "execution_kind", "TEXT NOT NULL DEFAULT 'manual_simulation'"),
+    ("eval_runs", "execution_outcome", "TEXT"),
+    ("eval_runs", "evaluation_version_digest", "TEXT NOT NULL DEFAULT ''"),
+    ("eval_runs", "target_endpoint", "TEXT NOT NULL DEFAULT ''"),
 )
 
 _INIT_DDL = """
@@ -236,6 +240,10 @@ CREATE TABLE IF NOT EXISTS eval_runs (
     covered_failure_mode_ids TEXT NOT NULL DEFAULT '[]',
     stage_output_version     INTEGER NOT NULL DEFAULT 1,
     run_mode                 TEXT NOT NULL,
+    execution_kind           TEXT NOT NULL DEFAULT 'manual_simulation',
+    execution_outcome        TEXT,
+    evaluation_version_digest TEXT NOT NULL DEFAULT '',
+    target_endpoint          TEXT NOT NULL DEFAULT '',
     input_payload            TEXT NOT NULL,
     expected_behavior        TEXT NOT NULL,
     actual_output            TEXT,
@@ -867,12 +875,14 @@ class SQLiteSessionStore:
                 INSERT OR REPLACE INTO eval_runs (
                     run_id, session_id, eval_id, dataset_id, experiment_id, run_index,
                     target_node_id, covered_failure_mode_ids,
-                    stage_output_version, run_mode, input_payload, expected_behavior,
+                    stage_output_version, run_mode, execution_kind, execution_outcome,
+                    evaluation_version_digest, target_endpoint,
+                    input_payload, expected_behavior,
                     actual_output, judge_result, judge_reason, judge_mode, violated_criteria,
                     pass_criteria, llm_judge_suggestion,
                     status, error_message, trace_id, latency_ms, estimated_cost, created_at, completed_at
                 )
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     run.run_id,
@@ -885,6 +895,10 @@ class SQLiteSessionStore:
                     json.dumps(run.covered_failure_mode_ids, default=str),
                     run.stage_output_version,
                     run.run_mode,
+                    run.execution_kind,
+                    run.execution_outcome,
+                    run.evaluation_version_digest,
+                    run.target_endpoint,
                     run.input_payload,
                     run.expected_behavior,
                     run.actual_output,

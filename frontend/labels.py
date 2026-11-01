@@ -44,6 +44,7 @@ BLOCKER_TYPE_ZH = {
     "eval_regression": "评测回归",
     "trace_backfill_gap": "追踪回填缺口",
     "final_governance": "治理未闭环",
+    "risk_treatment": "风险处置未闭环",
 }
 
 # ── 人工动作来源（source_type → 中文摘要标签）──────────────────────────────
@@ -94,6 +95,7 @@ REQUIRED_RESOLUTION_ZH = {
     "create_redteam_dataset": "创建红队数据集",
     "trace_to_eval_case": "追踪转评测用例",
     "create_trace_backfill_dataset": "创建追踪回填数据集",
+    "complete_risk_treatment": "完成风险处置",
 }
 
 # ── 阶段生命周期 ────────────────────────────────────────────────────────────
@@ -143,6 +145,43 @@ ADAPTER_STATUS_ZH = {
     "unknown": "未知",
 }
 
+# ── 业务闭环（证据 / 风险处置 / 上线批准 / 执行类型）──────────────────────
+EVIDENCE_LIFECYCLE_ZH = {
+    "submitted": "已提交（未核验）",
+    "verified": "已核验",
+    "adopted": "已采纳（关联风险）",
+}
+
+EXECUTION_KIND_ZH = {
+    "manual_simulation": "人工模拟",
+    "dry_run_simulation": "演练模拟",
+    "mock_model_execution": "Mock 模型执行（模拟）",
+    "platform_model_execution": "平台模型执行",
+    "real_target_execution": "真实目标执行",
+    "unknown": "未知",
+}
+
+TREATMENT_STATUS_ZH = {
+    "planned": "已计划",
+    "in_progress": "执行中",
+    "completed": "已完成",
+    "accepted": "已接受残余风险",
+}
+
+APPROVAL_STATUS_ZH = {
+    "not_requested": "未申请",
+    "approved": "已批准",
+    "rejected": "已驳回",
+    "stale": "已失效（评估版本变化）",
+}
+
+EXECUTION_OUTCOME_ZH = {
+    "success": "成功",
+    "failed": "失败",
+    "timeout": "超时",
+    "error": "异常响应",
+}
+
 # ── 决策原因（内部代码，仅少数常见值做友好化，其余回退原值）────────────────
 DECISION_REASON_ZH = {
     "read_stage_advancement_decision": "读取阶段推进判定",
@@ -178,6 +217,26 @@ def exec_mode_zh(value: object) -> str:
 
 def adapter_status_zh(value: object) -> str:
     return zh(ADAPTER_STATUS_ZH, value)
+
+
+def evidence_lifecycle_zh(value: object) -> str:
+    return zh(EVIDENCE_LIFECYCLE_ZH, value)
+
+
+def execution_kind_zh(value: object) -> str:
+    return zh(EXECUTION_KIND_ZH, value)
+
+
+def treatment_status_zh(value: object) -> str:
+    return zh(TREATMENT_STATUS_ZH, value)
+
+
+def approval_status_zh(value: object) -> str:
+    return zh(APPROVAL_STATUS_ZH, value)
+
+
+def execution_outcome_zh(value: object) -> str:
+    return zh(EXECUTION_OUTCOME_ZH, value)
 
 
 def blocker_type_zh(value: object) -> str:

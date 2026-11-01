@@ -16,7 +16,7 @@ from controllers.eval_controller import (
     save_score,
     sync_redteam_case,
 )
-from labels import status_zh
+from labels import execution_kind_zh, execution_outcome_zh, status_zh
 from models.api_client import (
     get_redteam_coverage,
     list_eval_cases,
@@ -25,6 +25,36 @@ from models.api_client import (
     list_eval_runs,
     list_redteam_cases,
 )
+
+
+def _target_config_inputs(prefix: str) -> dict | None:
+    """Show real-target inputs; return None unless an endpoint is provided."""
+    endpoint = st.text_input(
+        "真实目标系统 endpoint",
+        key=f"{prefix}_endpoint",
+        placeholder="https://target.example/api/eval",
+        help="仅在运行模式为 target_http 时使用；host 必须在 TARGET_SYSTEM_ALLOWED_HOSTS 白名单内。",
+    )
+    if not endpoint.strip():
+        return None
+    timeout_seconds = st.number_input(
+        "目标超时（秒）",
+        min_value=0.5,
+        max_value=120.0,
+        value=10.0,
+        step=0.5,
+        key=f"{prefix}_timeout",
+    )
+    output_field = st.text_input(
+        "目标响应输出字段",
+        value="output",
+        key=f"{prefix}_output_field",
+    )
+    return {
+        "endpoint": endpoint.strip(),
+        "timeout_seconds": float(timeout_seconds),
+        "output_field": output_field.strip() or "output",
+    }
 
 
 def render_redteam_section() -> None:
@@ -134,10 +164,11 @@ def render_eval_panel() -> None:
                 )
                 experiment_run_mode = st.selectbox(
                     "实验运行模式",
-                    ["manual", "dry_run", "llm_node"],
+                    ["manual", "dry_run", "llm_node", "target_http"],
                     index=1,
                     key="eval_experiment_run_mode",
                 )
+                experiment_target_config = _target_config_inputs("eval_experiment_target")
                 baseline_options = {"[无]": None}
                 baseline_options.update(
                     {
@@ -157,6 +188,7 @@ def render_eval_panel() -> None:
                         experiment_name,
                         experiment_run_mode,
                         baseline_options[selected_baseline_label],
+                        target_config=experiment_target_config,
                     )
 
             if eval_experiments:
@@ -189,13 +221,16 @@ def render_eval_panel() -> None:
                             st.success("对比结果：未检测到回归。")
 
         run_mode = st.selectbox(
-            "评测用例运行模式", ["manual", "dry_run", "llm_node"], key="eval_run_mode"
+            "评测用例运行模式",
+            ["manual", "dry_run", "llm_node", "target_http"],
+            key="eval_run_mode",
         )
+        target_config = _target_config_inputs("eval_case_target")
         if eval_cases:
             col_run_all, col_refresh_runs = st.columns(2)
             with col_run_all:
                 if st.button("▶️ 运行全部评测用例", use_container_width=True):
-                    run_all_cases(run_mode)
+                    run_all_cases(run_mode, target_config=target_config)
             with col_refresh_runs:
                 st.caption(f"评测运行数：{len(eval_runs)}")
 
@@ -214,13 +249,15 @@ def render_eval_panel() -> None:
                     key=f"run_eval_{case.get('eval_id')}",
                     use_container_width=True,
                 ):
-                    run_case(case.get("eval_id"), run_mode)
+                    run_case(case.get("eval_id"), run_mode, target_config=target_config)
                 case_runs = [run for run in eval_runs if run.get("eval_id") == case.get("eval_id")]
                 if case_runs:
                     latest_run = case_runs[-1]
                     st.caption(
                         "最近一次运行："
                         f"{latest_run.get('run_id')} · 状态={status_zh(latest_run.get('status'))} · "
+                        f"执行类型={execution_kind_zh(latest_run.get('execution_kind'))} · "
+                        f"执行结果={execution_outcome_zh(latest_run.get('execution_outcome'))} · "
                         f"评审结果={latest_run.get('judge_result')}"
                     )
                     judge_reason = latest_run.get("judge_reason") or ""

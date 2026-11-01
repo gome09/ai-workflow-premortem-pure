@@ -46,6 +46,7 @@ def create_session(
     project_ctx = session_service.create_session(
         tenant_id=ctx.tenant_id,
         scenario_id=body.scenario_id if body else None,
+        created_by=ctx.user_id,
     )
     return CreateSessionResponse(
         session_id=project_ctx.session_id,
@@ -218,6 +219,8 @@ def set_risk_profile(
                 tenant_id=ctx.tenant_id,
             )
         )
+    except RiskOverridePermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 

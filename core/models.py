@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import BaseModel, Field, PrivateAttr, computed_field
 
 from core.ids import new_id
 from core.risk.models import RiskFactorScores, RiskOverrideRecord
@@ -91,7 +91,7 @@ class AuditActor(StrEnum):
     AI = "ai"
 
 
-CONTEXT_SCHEMA_VERSION = "0.9.0"
+CONTEXT_SCHEMA_VERSION = "0.10.0"
 ACTION_SCHEMA_VERSION = "0.7.0"
 
 
@@ -325,6 +325,7 @@ class ActionResolutionResult(BaseModel):
         "validation_failed",
         "not_pending",
         "not_found",
+        "forbidden",
         "error",
     ]
     action_status: str | None = None
@@ -415,6 +416,20 @@ class EvidenceSource(BaseModel):
     verified_by: str | None = None
     verified_at: datetime | None = None
     verification_note: str = ""
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def lifecycle_status(self) -> Literal["submitted", "verified", "adopted"]:
+        """Derived evidence lifecycle.
+
+        A source is only *adopted* after human verification and while the
+        current Stage 1 output references it for a risk conclusion. Persisting
+        a duplicate status field would drift from failure-mode edits, so this
+        is always derived from ``verified`` + ``used_by_failure_mode_ids``.
+        """
+        if not self.verified:
+            return "submitted"
+        return "adopted" if self.used_by_failure_mode_ids else "verified"
 
 
 class SafetyFinding(BaseModel):
@@ -514,7 +529,17 @@ class EvalRun(BaseModel):
     covered_failure_mode_ids: list[str] = Field(default_factory=list)
     stage_output_version: int = 1
     run_index: int | None = None
-    run_mode: Literal["manual", "dry_run", "llm_node"] = "manual"
+    run_mode: Literal["manual", "dry_run", "llm_node", "target_http"] = "manual"
+    execution_kind: Literal[
+        "manual_simulation",
+        "dry_run_simulation",
+        "mock_model_execution",
+        "platform_model_execution",
+        "real_target_execution",
+    ] = "manual_simulation"
+    execution_outcome: Literal["success", "failed", "timeout", "error"] | None = None
+    evaluation_version_digest: str = ""
+    target_endpoint: str = ""
     input_payload: str
     expected_behavior: str
     pass_criteria: list[str] = Field(default_factory=list)
@@ -574,6 +599,57 @@ class HumanCalibration(BaseModel):
     reviewer_id: str = "human_reviewer"
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class RiskTreatment(BaseModel):
+    """Accountable treatment plan for one high/critical risk item.
+
+    Bindings:
+    - ``source_type``/``source_id`` point at a Stage 1 failure mode or an open
+      high/critical safety finding;
+    - ``evaluation_version_digest`` records the evaluation content version at
+      creation/update; the gate ignores treatments from an older version.
+    """
+
+    treatment_id: str = Field(default_factory=lambda: new_id("TRT-"))
+    session_id: str
+    source_type: Literal["failure_mode", "safety_finding"]
+    source_id: str
+    risk_level: Literal["high", "critical"]
+    owner: str
+    mitigation_plan: str
+    status: Literal["planned", "in_progress", "completed", "accepted"] = "planned"
+    review_note: str = ""
+    reviewed_by: str = ""
+    reviewed_at: datetime | None = None
+    evaluation_version_digest: str = ""
+    created_by: str = ""
+    updated_by: str = ""
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ProjectApproval(BaseModel):
+    """Independent release (go-live) approval record.
+
+    ``SessionState.COMPLETE`` means the assessment finished; it is not a
+    release approval. This append-only record captures the independent admin
+    decision plus the evaluation version it was bound to.
+    """
+
+    approval_id: str = Field(default_factory=lambda: new_id("APPR-"))
+    session_id: str
+    approval_scope: Literal["release"] = "release"
+    status: Literal["approved", "rejected"] = "approved"
+    evaluation_version_digest: str
+    evaluation_version: dict[str, Any] = Field(default_factory=dict)
+    prerequisites: dict[str, Any] = Field(default_factory=dict)
+    requested_by: str = ""
+    decided_by: str = ""
+    decided_role: str = ""
+    decision_note: str = ""
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class EvalDataset(BaseModel):
@@ -668,7 +744,7 @@ class EvalExperiment(BaseModel):
     status: Literal["created", "running", "completed", "failed", "cancelled"] = "created"
     provider: str | None = None
     model: str | None = None
-    run_mode: Literal["manual", "dry_run", "llm_node"] = "manual"
+    run_mode: Literal["manual", "dry_run", "llm_node", "target_http"] = "manual"
     prompt_template_versions: dict[str, str] = Field(default_factory=dict)
     code_version: str | None = None
     run_config: dict[str, Any] = Field(default_factory=dict)
@@ -789,6 +865,8 @@ class ProjectContext(BaseModel):
     current_state: SessionState = SessionState.INIT
     # 多租户：session 所属 tenant_id，由 session_store.load() 填充，保存时写入 sessions 表
     tenant_id: str = ""
+    # 创建者身份（JWT sub）。用于专家复核的“禁止自审批”校验；旧会话为空。
+    created_by: str = ""
     session_name: str = ""
     selected_scenario_id: str | None = None
     scenario_name: str | None = None
@@ -850,6 +928,8 @@ class ProjectContext(BaseModel):
     # ── Evidence / Safety / Reports ─────────────────
     evidence_sources: list[EvidenceSource] = Field(default_factory=list)
     safety_findings: list[SafetyFinding] = Field(default_factory=list)
+    risk_treatments: list[RiskTreatment] = Field(default_factory=list)
+    project_approvals: list[ProjectApproval] = Field(default_factory=list)
     report_artifacts: list[ReportArtifact] = Field(default_factory=list)
     eval_cases: list[EvalCase] = Field(default_factory=list)
     eval_runs: list[EvalRun] = Field(default_factory=list)

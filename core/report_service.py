@@ -5,18 +5,18 @@ import re
 from datetime import datetime
 from typing import Any
 
+from core.approval_service import build_approval_summary, build_release_readiness
 from core.audit_service import append_audit_event
-
-# TODO: 报告生成逻辑太复杂了，generate_report 函数有 200+ 行
-# 应该拆成 generate_ai_section / generate_eval_section 等子函数
 from core.config import settings
 from core.eval_judgment_service import build_eval_judgment_summary
 from core.eval_regression_policy import build_stage_eval_regression_summary
 from core.eval_service import build_eval_summary
+from core.evaluation_version import current_evaluation_version
 from core.execution_mode import WorkflowExecutionMode
 from core.models import ProjectContext, ReportArtifact
 from core.redteam_service import build_redteam_coverage_summary
 from core.report_diff import build_output_diff_summary, build_stage_version_history
+from core.risk_treatment_service import build_risk_treatment_summary
 from core.stage_advancement_coordinator import build_stage_advancement_decision
 from core.stage_readiness_service import build_stage_readiness as _build_stage_readiness
 from core.stage_readiness_service import (
@@ -66,9 +66,40 @@ def build_evidence_summary(ctx: ProjectContext) -> dict:
         if ev.credibility_score < 0.4 or ev.source_type == "unknown"
     ]
     verified_sources = [ev for ev in ctx.evidence_sources if ev.verified]
+    submitted_sources = [
+        ev.evidence_id for ev in ctx.evidence_sources if ev.lifecycle_status == "submitted"
+    ]
+    verified_only_sources = [
+        ev.evidence_id for ev in ctx.evidence_sources if ev.lifecycle_status == "verified"
+    ]
+    adopted_sources = [
+        ev.evidence_id for ev in ctx.evidence_sources if ev.lifecycle_status == "adopted"
+    ]
+    stage_1_version = int(ctx.stage_output_versions.get("stage_1", 1))
+    adopted_evidence = [
+        {
+            "evidence_id": ev.evidence_id,
+            "linked_failure_mode_ids": list(ev.used_by_failure_mode_ids),
+            "stage_1_version": stage_1_version,
+        }
+        for ev in ctx.evidence_sources
+        if ev.lifecycle_status == "adopted"
+    ]
+    lifecycle_counts = {
+        "submitted": len(submitted_sources),
+        "verified": len(verified_only_sources),
+        "adopted": len(adopted_sources),
+    }
     return {
         "total_evidence_sources": len(ctx.evidence_sources),
         "verified_sources": len(verified_sources),
+        "submitted_sources": len(submitted_sources),
+        "submitted_evidence_ids": submitted_sources,
+        "verified_only_sources": len(verified_only_sources),
+        "adopted_sources": len(adopted_sources),
+        "adopted_evidence": adopted_evidence,
+        "lifecycle_counts": lifecycle_counts,
+        "stage_1_version": stage_1_version,
         "low_credibility_sources": len(low_credibility),
         "low_credibility_evidence_ids": low_credibility,
         "failure_modes_total": len(failure_modes),
@@ -116,11 +147,15 @@ def build_report_export_status(
         reason = f"{len(hard_blockers)} hard stage blocker(s) unresolved"
     elif unresolved_governance_items.get("parser_errors"):
         reason = "parser errors unresolved"
+    approval_summary = build_approval_summary(ctx)
     return {
         "allowed": allowed,
         "reason": reason,
         "stale_stage_outputs": stale_outputs,
         "hard_blocker_count": len(hard_blockers),
+        "is_approval": False,
+        "release_approval_status": approval_summary["release_approval"]["status"],
+        "notice": "报告生成/导出不代表上线批准；上线批准是独立审批记录。",
     }
 
 
@@ -292,6 +327,10 @@ def build_report_dict(ctx: ProjectContext) -> dict:
         stage_resolution_summary,
         unresolved_governance_items,
     )
+    evaluation_version = current_evaluation_version(ctx)
+    risk_treatment_summary = build_risk_treatment_summary(ctx)
+    approval_summary = build_approval_summary(ctx)
+    release_readiness = build_release_readiness(ctx).model_dump(mode="json")
 
     return {
         "schema_version": REPORT_SCHEMA_VERSION,
@@ -349,6 +388,10 @@ def build_report_dict(ctx: ProjectContext) -> dict:
         "eval_summary": eval_summary,
         "oversight_summary": oversight_summary,
         "evidence_summary": evidence_summary,
+        "evaluation_version": evaluation_version,
+        "risk_treatment_summary": risk_treatment_summary,
+        "approval_summary": approval_summary,
+        "release_readiness": release_readiness,
         "execution_summary": execution_summary,
         "stage_readiness": stage_readiness,
         "stage_advancement_summary": stage_advancement_summary,
@@ -783,6 +826,73 @@ def build_markdown_report(ctx: ProjectContext) -> str:
                 "- Failed traces without EvalCase: "
                 + ", ".join(trace_backfill_summary.get("failed_trace_ids_without_eval_case") or [])
             )
+
+    lines.extend(["", "## 15.5 Evidence Lifecycle"])
+    evidence_lifecycle = (report.get("evidence_summary") or {}).get("lifecycle_counts") or {}
+    lines.append(
+        f"- submitted={evidence_lifecycle.get('submitted', 0)} "
+        f"verified={evidence_lifecycle.get('verified', 0)} "
+        f"adopted={evidence_lifecycle.get('adopted', 0)}"
+    )
+    adopted_evidence = (report.get("evidence_summary") or {}).get("adopted_evidence") or []
+    for item in adopted_evidence[:20]:
+        lines.append(
+            f"- `{item.get('evidence_id')}` adopted by "
+            f"{', '.join(item.get('linked_failure_mode_ids') or []) or 'none'} "
+            f"(stage_1 v{item.get('stage_1_version')})"
+        )
+
+    lines.extend(["", "## 15.6 Risk Treatments"])
+    treatment_summary = report.get("risk_treatment_summary") or {}
+    if not treatment_summary.get("applicable", True):
+        lines.append(
+            f"- Not applicable ({treatment_summary.get('exempt_reason') or 'public_demo'})"
+        )
+    else:
+        lines.append(
+            f"- requirements={treatment_summary.get('requirements_total', 0)} "
+            f"complete={treatment_summary.get('complete_count', 0)} "
+            f"incomplete={treatment_summary.get('incomplete_count', 0)}"
+        )
+        for item in (treatment_summary.get("items") or [])[:20]:
+            requirement = item.get("requirement") or {}
+            treatment = item.get("treatment") or {}
+            lines.append(
+                f"- `{requirement.get('source_type')}/{requirement.get('source_id')}` "
+                f"state={item.get('state')} owner={treatment.get('owner') or '-'} "
+                f"status={treatment.get('status') or '-'} "
+                f"reviewed_by={treatment.get('reviewed_by') or '-'}"
+            )
+
+    lines.extend(["", "## 15.7 Approval Status"])
+    approval_summary = report.get("approval_summary") or {}
+    report_generation = approval_summary.get("report_generation") or {}
+    evaluation_completion = approval_summary.get("evaluation_completion") or {}
+    release_approval = approval_summary.get("release_approval") or {}
+    lines.append(
+        f"- Report generation: artifacts={report_generation.get('artifact_count', 0)} "
+        f"latest={report_generation.get('latest_report_id') or '-'} "
+        "(not an approval)"
+    )
+    lines.append(
+        f"- Evaluation completion: {evaluation_completion.get('completed')} "
+        f"(state={evaluation_completion.get('current_state')})"
+    )
+    lines.append(
+        f"- Release approval: status={release_approval.get('status')} "
+        f"decided_by={release_approval.get('decided_by') or '-'} "
+        f"is_current={release_approval.get('is_current')}"
+    )
+    if release_approval.get("stale_reason"):
+        lines.append(f"  - Stale reason: {release_approval.get('stale_reason')}")
+    for blocker in (report.get("release_readiness") or {}).get("blockers", [])[:20]:
+        lines.append(
+            f"  - Release blocker `{blocker.get('code')}`: {blocker.get('message')}"
+        )
+    lines.append(
+        "- **报告生成/导出不代表上线批准；评估完成也不代表可上线。** "
+        "上线批准是独立的 admin 审批记录。"
+    )
 
     lines.extend(["", "## 16. Eval Runs"])
     eval_runs = report.get("eval_runs", [])

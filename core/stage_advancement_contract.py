@@ -37,6 +37,7 @@ BLOCKER_TYPES: Final[tuple[str, ...]] = (
     "trace_backfill_gap",
     "final_governance",
     "expert_review",
+    "risk_treatment",
     "gate_rule_error",
     "gate_data_error",
 )
@@ -64,6 +65,7 @@ REQUIRED_RESOLUTIONS: Final[tuple[str, ...]] = (
     "trace_to_eval_case",
     "create_trace_backfill_dataset",
     "approve_expert_review",
+    "complete_risk_treatment",
     "retry_gate_persistence",
 )
 
@@ -143,6 +145,11 @@ STAGE_ADVANCEMENT_CONTRACT: Final[dict[str, dict[str, object]]] = {
         "required_resolution": "approve_expert_review",
         "description": "CRITICAL 风险项目必须经专家复核批准后才能通过 Stage 3。",
         "approval_override_allowed": True,
+    },
+    "risk_treatment": {
+        "required_resolution": "complete_risk_treatment",
+        "description": "高/关键风险项必须有责任人、缓解措施、完成状态与独立复核，评估才能完成。",
+        "approval_override_allowed": False,
     },
     "gate_rule_error": {
         "required_resolution": "rerun_stage",
@@ -351,6 +358,21 @@ RESOLUTION_OPERATION_CONTRACT: Final[dict[str, dict[str, object]]] = {
         "api_method": "POST",
         "api_path_template": "/sessions/{session_id}/actions/{action_id}/resolve",
         "payload_hint": {"decision": "approve", "note": "专家复核已批准"},
+    },
+    "complete_risk_treatment": {
+        "frontend_hint": "为高风险项填写责任人、缓解措施与完成状态，并由独立复核人确认。",
+        "api_hint": "POST /sessions/{session_id}/risk-treatments",
+        "can_execute_via_api": True,
+        "api_method": "POST",
+        "api_path_template": "/sessions/{session_id}/risk-treatments",
+        "payload_hint": {
+            "source_type": "failure_mode | safety_finding",
+            "source_id": "",
+            "owner": "",
+            "mitigation_plan": "",
+            "status": "planned | in_progress | completed | accepted",
+            "note": "",
+        },
     },
     "retry_gate_persistence": {
         "frontend_hint": "Gate 评估记录写入失败，请重试推进或检查存储健康状态后重新评估。",

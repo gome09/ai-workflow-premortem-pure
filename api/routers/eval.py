@@ -7,6 +7,17 @@ from api.schemas import CalibrateEvalRunRequest, RunEvalCasesRequest, ScoreEvalC
 from auth.jwt import TenantContext, get_current_tenant
 from auth.permissions import Role, require_roles
 from core.session_service import session_service
+from core.target_testing import TargetSystemConfig
+
+
+def _target_config(body: RunEvalCasesRequest) -> TargetSystemConfig | None:
+    if body.target_config is None:
+        return None
+    return TargetSystemConfig(
+        endpoint=body.target_config.endpoint,
+        timeout_seconds=body.target_config.timeout_seconds,
+        output_field=body.target_config.output_field,
+    )
 
 router = APIRouter(prefix="/sessions", tags=["eval"])
 
@@ -75,6 +86,7 @@ def run_eval_cases(
             session_id=session_id,
             eval_ids=body.eval_ids,
             run_mode=body.run_mode,
+            target_config=_target_config(body),
             tenant_id=ctx.tenant_id,
         )
     except ValueError as e:
@@ -95,6 +107,7 @@ def run_single_eval_case(
             session_id=session_id,
             eval_ids=[eval_id],
             run_mode=body.run_mode,
+            target_config=_target_config(body),
             tenant_id=ctx.tenant_id,
         )
     except ValueError as e:

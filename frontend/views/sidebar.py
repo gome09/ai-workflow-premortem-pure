@@ -20,6 +20,7 @@ from models.api_client import (
 from models.mappings import MODEL_LABELS, STAGE_PROGRESS, STATE_LABELS
 from models.session_state import consume_session_event
 
+from views.panels.closure_panel import render_closure_panel
 from views.panels.diagnostics_panel import render_audit_panel, render_interrupt_panel
 from views.panels.eval_panels import render_eval_panel, render_redteam_section
 from views.panels.gate_panel import render_gate_panel
@@ -259,6 +260,7 @@ def _render_current_progress() -> None:
     render_interrupt_panel()
     render_redteam_section()
     render_eval_panel()
+    render_closure_panel()
 
     st.divider()
 

@@ -64,6 +64,9 @@
 | `RETENTION_SWEEP_INTERVAL_SECONDS` / `RETENTION_BATCH_SIZE` | 扫描周期与批次上限 | 默认 86400 秒、1000 行/会话；首次扫描在启动后一个周期执行 |
 | `GATE_RULES_DISABLED` | 禁用门禁规则 | 使用中；安全底线规则配置了也会被忽略 |
 | `EVAL_LLM_JUDGE` / `EVAL_LLM_JUDGE_AUTOFINAL` | LLM 建议判分 | 使用中，**默认均为 off** |
+| `TARGET_SYSTEM_ALLOWED_HOSTS` | 真实目标系统 host 白名单 | 使用中；逗号分隔（`host` 或 `host:port`），**空值表示拒绝所有外部目标调用** |
+| `TARGET_SYSTEM_TOKEN` | 真实目标系统 Bearer token | 可选；仅注入请求头，不写入上下文或审计 |
+| `TARGET_SYSTEM_TIMEOUT_SECONDS` / `TARGET_SYSTEM_MAX_RESPONSE_CHARS` | 目标调用超时与响应截断 | 默认 10 秒、4000 字符 |
 
 完整清单与默认值以 `core/config.py` 为准。
 

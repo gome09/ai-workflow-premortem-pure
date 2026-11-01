@@ -83,7 +83,8 @@
 
 - `tools/safety_classifier.py` 新增 `PII_PATTERNS` 规则组：中国大陆身份证号（18 位含校验特征）、手机号（`1[3-9]\d{9}`）、邮箱、银行卡号（Luhn 可后置）。命中产出 `sensitive_info` finding（复用现有 risk_type），敏感类别（如身份证）severity=high。
 - 新增配置 `PII_MASK_BEFORE_LLM`（默认 `false`，避免破坏现有演示行为）：开启后 `core/evidence_service.py:format_evidence_for_prompt` 对 evidence summary 与 `user_materials` 注入文本中的命中项做模式保留掩码（`110***********1234`）。
-- **当前边界**：直接 `user_message`、INIT 输入和 `conversation_history` 仍可能原文进入阶段 prompt，不受该开关覆盖。因此它不是统一的“所有 LLM 输入脱敏”开关；真实 PII 场景应避免在聊天消息中提交原文，或由部署侧增加入口级脱敏。落库的材料原文仅在 4.1 所列字段范围且配置有效密钥时加密。
+- **出站守卫（v1.5.0 起）**：`core/llm/outbound_guard.py` 在所有 `llm.invoke` 出站点（阶段执行器、INIT、eval `llm_node`、LLM judge）统一执行掩码。`sensitive_personal` 会话**始终掩码，忽略 `PII_MASK_BEFORE_LLM`**；`business_internal` / `public_demo` 继续遵循该开关。非文本消息在 `sensitive_personal` 下 fail-closed（`OutboundPIIBlockedError`）。
+- **当前边界**：掩码仍只覆盖四类正则 PII（身份证 / 手机号 / 邮箱 / 银行卡），语义敏感但未命中正则的内容不会被自动识别；该守卫不替代入口级数据最小化。
 
 ### 4.3 LangGraph checkpoint 数据副本
 

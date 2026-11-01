@@ -49,6 +49,7 @@ DecisionSource = Literal[
     "trace_backfilled_to_eval_case",
     "trace_backfill_dataset_created",
     "report_artifact_created",
+    "risk_treatment",
     "system",
 ]
 

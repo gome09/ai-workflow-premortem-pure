@@ -13,7 +13,7 @@ STATE_LABELS: dict[str, tuple[str, str]] = {
     "s3_review": ("🟠", "阶段三：等待确认"),
     "s4_running": ("🔵", "阶段四：触发方式"),
     "s4_review": ("🟠", "阶段四：等待确认"),
-    "complete": ("✅", "全流程完成"),
+    "complete": ("✅", "评估完成（不代表上线批准）"),
     "error": ("⛔", "工作流错误（已阻断）"),
     "recovery_required": ("🛠️", "需要人工恢复"),
 }
@@ -60,7 +60,7 @@ MODEL_LABELS: dict[str, str] = {
     "s3_review": "等待确认",
     "s4_running": "DeepSeek V4 Flash",
     "s4_review": "等待确认",
-    "complete": "已完成",
+    "complete": "评估完成",
     "error": "已阻断",
     "recovery_required": "等待恢复",
 }
@@ -75,7 +75,7 @@ CHAT_PLACEHOLDER: dict[str, str] = {
     "s3_review": "输入「确认」继续，或描述你的修改意见...",
     "s4_running": "补充说明或追问...",
     "s4_review": "输入「确认」完成，或描述你的修改意见...",
-    "complete": "全流程已完成，可从左侧导出报告。",
+    "complete": "评估流程已完成，可从左侧导出报告；上线仍需独立审批。",
     "error": "工作流已阻断，请先恢复会话。",
     "recovery_required": "工作流需人工恢复，请先选择目标状态。",
 }

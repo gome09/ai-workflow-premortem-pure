@@ -161,6 +161,8 @@ class GovernanceService(SessionAccess):
         idempotency_key: str | None = None,
         expected_before_hash: str | None = None,
         tenant_id: str = "",
+        actor_id: str = "",
+        actor_role: str = "",
     ) -> dict:
         """Resolve a formal human action and return the action-resolution result contract."""
         ctx = self.get_session(session_id, tenant_id)
@@ -175,6 +177,8 @@ class GovernanceService(SessionAccess):
             payload_after=payload_after,
             idempotency_key=idempotency_key,
             expected_before_hash=expected_before_hash,
+            actor_id=actor_id,
+            actor_role=actor_role,
         )
 
         action_stage = None
@@ -222,6 +226,8 @@ class GovernanceService(SessionAccess):
                     "note_length": len(note),
                     "result_status": result.result_status,
                     "log_id": result.log_id,
+                    "reviewer_id": actor_id,
+                    "reviewer_role": actor_role,
                     "stage_advancement_decision": stage_decision.model_dump(mode="json"),
                 },
             )
@@ -263,6 +269,8 @@ class GovernanceService(SessionAccess):
         idempotency_key: str | None = None,
         expected_before_hash: str | None = None,
         tenant_id: str = "",
+        actor_id: str = "",
+        actor_role: str = "",
     ) -> ProjectContext:
         """处理正式人工监督动作。"""
         ctx = self.get_session(session_id, tenant_id)
@@ -278,6 +286,8 @@ class GovernanceService(SessionAccess):
                 payload_after=payload_after,
                 idempotency_key=idempotency_key,
                 expected_before_hash=expected_before_hash,
+                actor_id=actor_id,
+                actor_role=actor_role,
             )
         except Exception:
             # Persist resolution_attempts / failure logs without advancing execution.
@@ -305,6 +315,8 @@ class GovernanceService(SessionAccess):
                 "action_id": action_id,
                 "decision": decision,
                 "note": note,
+                "reviewer_id": actor_id,
+                "reviewer_role": actor_role,
                 "stage_advancement_decision": stage_decision.model_dump(mode="json"),
             },
         )
@@ -394,3 +406,196 @@ class GovernanceService(SessionAccess):
             payload=record.model_dump(mode="json"),
         )
         return risk_profile_response(ctx)
+
+    def list_risk_treatments(self, session_id: str, tenant_id: str = "") -> dict:
+        """Return treatment records, requirements, and coverage summary."""
+        from core.risk_treatment_service import (
+            build_risk_treatment_summary,
+            high_risk_treatment_requirements,
+            is_business_session,
+        )
+
+        ctx = self.get_session(session_id, tenant_id)
+        if not ctx:
+            raise ValueError(f"Session not found: {session_id}")
+        requirements = high_risk_treatment_requirements(ctx)
+        return {
+            "session_id": session_id,
+            "applicable": is_business_session(ctx),
+            "items": [item.model_dump(mode="json") for item in ctx.risk_treatments],
+            "requirements": [
+                {
+                    "source_type": item.source_type,
+                    "source_id": item.source_id,
+                    "risk_level": item.risk_level,
+                    "title": item.title,
+                    "description": item.description,
+                }
+                for item in requirements
+            ],
+            "summary": build_risk_treatment_summary(ctx),
+        }
+
+    def upsert_risk_treatment(
+        self,
+        session_id: str,
+        *,
+        source_type: str,
+        source_id: str,
+        owner: str,
+        mitigation_plan: str,
+        status: str,
+        actor_id: str,
+        actor_role: str,
+        note: str = "",
+        tenant_id: str = "",
+    ) -> dict:
+        """Create or update a high-risk treatment record."""
+        from core.risk_treatment_service import upsert_risk_treatment
+
+        ctx = self.get_session(session_id, tenant_id)
+        if not ctx:
+            raise ValueError(f"Session not found: {session_id}")
+        treatment = upsert_risk_treatment(
+            ctx,
+            source_type=source_type,
+            source_id=source_id,
+            owner=owner,
+            mitigation_plan=mitigation_plan,
+            status=status,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            note=note,
+        )
+        self._save(ctx)
+        self._cache_set(ctx)
+        return self._with_stage_advancement(
+            ctx,
+            operation="risk_treatment_upserted",
+            result={
+                "ok": True,
+                "treatment": treatment.model_dump(mode="json"),
+            },
+            source="risk_treatment",
+            stage=4,
+            reason=f"Risk treatment updated for {source_type}/{source_id}.",
+            metadata={
+                "treatment_id": treatment.treatment_id,
+                "source_type": source_type,
+                "source_id": source_id,
+            },
+        )
+
+    def review_risk_treatment(
+        self,
+        session_id: str,
+        *,
+        treatment_id: str,
+        decision: str,
+        note: str,
+        actor_id: str,
+        actor_role: str,
+        tenant_id: str = "",
+    ) -> dict:
+        """Record an independent review decision for one treatment."""
+        from core.risk_treatment_service import review_risk_treatment
+
+        ctx = self.get_session(session_id, tenant_id)
+        if not ctx:
+            raise ValueError(f"Session not found: {session_id}")
+        treatment = review_risk_treatment(
+            ctx,
+            treatment_id=treatment_id,
+            decision=decision,  # type: ignore[arg-type]
+            note=note,
+            actor_id=actor_id,
+            actor_role=actor_role,
+        )
+        self._save(ctx)
+        self._cache_set(ctx)
+        return self._with_stage_advancement(
+            ctx,
+            operation="risk_treatment_reviewed",
+            result={
+                "ok": True,
+                "treatment": treatment.model_dump(mode="json"),
+            },
+            source="risk_treatment",
+            stage=4,
+            reason=f"Risk treatment {treatment_id} reviewed as {decision}.",
+            metadata={"treatment_id": treatment_id, "decision": decision},
+        )
+
+    def get_approval_status(self, session_id: str, tenant_id: str = "") -> dict:
+        """Read-only release readiness plus the three separated statuses."""
+        from core.approval_service import (
+            build_approval_summary,
+            build_release_readiness,
+        )
+
+        ctx = self.get_session(session_id, tenant_id)
+        if not ctx:
+            raise ValueError(f"Session not found: {session_id}")
+        readiness = build_release_readiness(ctx)
+        return {
+            "session_id": session_id,
+            "approval_summary": build_approval_summary(ctx),
+            "release_readiness": readiness.model_dump(mode="json"),
+        }
+
+    def list_project_approvals(self, session_id: str, tenant_id: str = "") -> list[dict]:
+        """Append-only release approval history."""
+        from core.approval_service import list_project_approvals
+
+        ctx = self.get_session(session_id, tenant_id)
+        if not ctx:
+            raise ValueError(f"Session not found: {session_id}")
+        return list_project_approvals(ctx)
+
+    def request_release_approval(
+        self,
+        session_id: str,
+        *,
+        decision: str,
+        note: str,
+        actor_id: str,
+        actor_role: str,
+        tenant_id: str = "",
+    ) -> dict:
+        """Grant or reject the independent release approval."""
+        from core.approval_service import (
+            build_approval_summary,
+            request_release_approval,
+        )
+
+        ctx = self.get_session(session_id, tenant_id)
+        if not ctx:
+            raise ValueError(f"Session not found: {session_id}")
+        approval, readiness, replayed = request_release_approval(
+            ctx,
+            decision=decision,
+            note=note,
+            actor_id=actor_id,
+            actor_role=actor_role,
+        )
+        self._save(ctx)
+        self._cache_set(ctx)
+        self._log_event(
+            ctx,
+            session_id=session_id,
+            event_type="release_approval_decision",
+            stage=4,
+            payload={
+                "approval_id": approval.approval_id,
+                "status": approval.status,
+                "replayed": replayed,
+            },
+        )
+        return {
+            "ok": True,
+            "session_id": session_id,
+            "approval": approval.model_dump(mode="json"),
+            "release_readiness": readiness.model_dump(mode="json"),
+            "approval_summary": build_approval_summary(ctx),
+            "replayed": replayed,
+        }

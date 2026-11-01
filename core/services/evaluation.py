@@ -61,6 +61,7 @@ from core.redteam_service import (
 from core.services.access import (
     SessionAccess,
 )
+from core.target_testing import TargetSystemConfig, sanitize_endpoint
 from core.trace_backfill_service import (
     convert_trace_to_eval_case,
     create_dataset_from_failed_traces,
@@ -140,12 +141,18 @@ class EvaluationService(SessionAccess):
         session_id: str,
         eval_ids: list[str] | None = None,
         run_mode: str = "manual",
+        target_config: TargetSystemConfig | None = None,
         tenant_id: str = "",
     ) -> dict:
         ctx = self.get_session(session_id, tenant_id)
         if not ctx:
             raise ValueError(f"Session not found: {session_id}")
-        runs = execute_eval_cases(ctx, eval_ids=eval_ids, run_mode=run_mode)
+        runs = execute_eval_cases(
+            ctx,
+            eval_ids=eval_ids,
+            run_mode=run_mode,
+            target_config=target_config,
+        )
         run_payloads = [run.model_dump(mode="json") for run in runs]
         self._store().save(ctx)
         self._cache_set(ctx)
@@ -158,6 +165,11 @@ class EvaluationService(SessionAccess):
                 "eval_ids": eval_ids or "all",
                 "run_mode": run_mode,
                 "created_runs": len(runs),
+                "target_endpoint": (
+                    sanitize_endpoint(target_config.endpoint)
+                    if target_config is not None
+                    else ""
+                ),
             },
         )
         return self._with_stage_advancement(
@@ -387,11 +399,19 @@ class EvaluationService(SessionAccess):
         model: str | None = None,
         baseline_experiment_id: str | None = None,
         run_config: dict | None = None,
+        target_config: TargetSystemConfig | None = None,
         tenant_id: str = "",
     ) -> dict:
         ctx = self.get_session(session_id, tenant_id)
         if not ctx:
             raise ValueError(f"Session not found: {session_id}")
+        config = dict(run_config or {})
+        if target_config is not None:
+            config["target_config"] = {
+                "endpoint": sanitize_endpoint(target_config.endpoint),
+                "timeout_seconds": target_config.timeout_seconds,
+                "output_field": target_config.output_field,
+            }
         experiment = create_experiment(
             ctx,
             dataset_id=dataset_id,
@@ -401,7 +421,7 @@ class EvaluationService(SessionAccess):
             provider=provider,
             model=model,
             baseline_experiment_id=baseline_experiment_id,
-            run_config=run_config or {},
+            run_config=config,
         )
         self._store().save(ctx)
         self._cache_set(ctx)

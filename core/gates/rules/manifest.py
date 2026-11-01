@@ -154,18 +154,39 @@ RULE_MANIFEST: dict[str, RuleMeta] = {
         changelog=[("1.0.0", "2026-07-13", "初始版本")],
         safety_bottom_line=True,
     ),
-    "expert_review": RuleMeta(
-        rule_id="expert_review",
+    "risk_treatment": RuleMeta(
+        rule_id="risk_treatment",
         version="1.0.0",
         owner="compliance",
-        since_app_version="1.1.0",
-        rationale="CRITICAL 风险项目必须经专家复核批准，避免高风险自动放行。",
+        since_app_version="1.6.0",
+        rationale="高/关键风险项必须有责任人、缓解措施、完成状态与独立复核，风险识别才能形成可追踪的处理结果。",
         standard_refs=[
             "NIST_AI_RMF:GOVERN",
             "ISO_42001:CLAUSE_8",
             "TC260_AGENT:HUMAN_OVERSIGHT",
         ],
-        changelog=[("1.0.0", "2026-07-14", "初始版本——补 stage3-risk-adaptive-gate.md 历史欠账")],
+        changelog=[("1.0.0", "2026-11-01", "业务闭环升级：风险处置门禁")],
+        safety_bottom_line=True,
+    ),
+    "expert_review": RuleMeta(
+        rule_id="expert_review",
+        version="1.1.0",
+        owner="compliance",
+        since_app_version="1.1.0",
+        rationale="CRITICAL 风险项目必须经 admin 专家独立复核批准，避免高风险自动放行。",
+        standard_refs=[
+            "NIST_AI_RMF:GOVERN",
+            "ISO_42001:CLAUSE_8",
+            "TC260_AGENT:HUMAN_OVERSIGHT",
+        ],
+        changelog=[
+            ("1.0.0", "2026-07-14", "初始版本——补 stage3-risk-adaptive-gate.md 历史欠账"),
+            (
+                "1.1.0",
+                "2026-11-01",
+                "审批收紧：admin 角色、令牌身份、创建者禁止自批、风险输入摘要版本绑定",
+            ),
+        ],
         safety_bottom_line=True,
     ),
 }

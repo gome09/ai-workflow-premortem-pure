@@ -4,6 +4,17 @@
 > 远程 `origin`（github.com/gome09/ai-workflow-premortem-pure）与本地共享同一根提交，**不包含更早的历史**，无法用于追溯 v1.0 之前的开发过程。
 > 截至 2026-09-01，本地 `main` 已与 `origin/main` 同步（当日推送 10 次提交，至 `08f8a99`）。
 
+## 1.6.0 — Business Closure (2026-11-01)
+
+- **证据治理**：`EvidenceSource.lifecycle_status` 派生 submitted / verified / adopted；`link_failure_modes_to_evidence` 按当前 Stage 1 内容全量重建引用，Stage 1 编辑移除引用后采纳状态自动降级。未核验证据仍无法解除 `stage1_evidence_gap`。
+- **风险处置**：新增 `RiskTreatment` 与 Stage 4 门禁规则 `risk_treatment`（14 条规则，安全底线）；high/critical 失败模式与开放 high/critical 安全发现必须有责任人、缓解措施、final 状态与独立复核，且绑定当前评估版本。public_demo 豁免。
+- **上线批准**：新增独立 `ProjectApproval` 与 `/approvals/*`、`/risk-treatments/*` API。`SessionState.COMPLETE` 只表示评估完成；上线批准要求 admin、非创建者、评估完成、无阻断治理项、证据已核验、处置闭环、当前版本真实目标测试通过。报告生成/导出不产生审批。
+- **真实目标测试**：新增 `core/target_testing/` HTTP JSON adapter 与 `target_http` eval 运行模式；`EvalRun.execution_kind` / `execution_outcome` 区分 manual/dry_run/mock/platform/real target，支持 success/failed/timeout/error。`TARGET_SYSTEM_ALLOWED_HOSTS` 为空时 fail-closed。
+- **版本一致性**：新增 `core/evaluation_version.py`（stage 版本 + 关键内容摘要）；审批、处置与 EvalRun 绑定 digest。关键内容变化后旧审批显示 stale、旧测试不再计入批准，改回原内容也不会复活旧审批。
+- **迁移**：Alembic V011 为 `eval_runs` 增加 4 列；`ProjectContext` schema `0.10.0`（`v090_to_v100` no-op 迁移）。SQLite 旧库由 `initialize()` 幂等补齐。
+- **测试**：新增 8 个测试文件覆盖证据生命周期、风险处置门禁、上线批准、真实目标适配器、评估版本绑定、完整业务闭环与 V011/schema 迁移；更新规则数量与迁移链断言。离线全量 `1102 passed, 3 skipped`（SQLite + memory + mock，25.6s）；Ruff、mypy、doc-check、version-check 通过。
+- **版本**：`1.6.0`（`core/version.py` / `pyproject.toml` / `uv.lock` 同步）。
+
 ## 1.5.0 — Milestone 2: Domain Simplification (2026-10-31)
 
 - **六因子确定性风险模型**：新增 `core/risk/`（`RiskFactorScores` / `RiskOverrideRecord` / `RiskAssessment` / 确定性加权规则与 floor）。最终等级只由 `impact` / `autonomy` / `data_sensitivity` / `reversibility` / `scale` / `external_exposure` 六因子规则产生；旧关键词库降级为确定性 `legacy_inference` 输入适配器，LLM 仅提供 `llm_explanation`，不参与等级计算。

@@ -112,6 +112,13 @@ def apply_reviewed_output_with_result(
 
     payload_to_store["_applied_to_structured_output"] = True
     setattr(ctx, target_attr, new_output)
+    if stage == 1:
+        # Stage 1 edits can add/remove evidence references. Rebuild the
+        # evidence adoption links so lifecycle_status reflects the new risk
+        # conclusions instead of stale historical references.
+        from core.evidence_service import link_failure_modes_to_evidence
+
+        link_failure_modes_to_evidence(ctx)
     ctx.reviewed_outputs[reviewed_key] = payload_to_store
     result.applied_to_structured_output = True
     ctx.parser_errors.pop(reviewed_key, None)

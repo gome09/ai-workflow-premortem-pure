@@ -923,6 +923,10 @@ class PostgresSessionStore:
                 json.dumps(run.covered_failure_mode_ids, default=str),
                 run.stage_output_version,
                 run.run_mode,
+                run.execution_kind,
+                run.execution_outcome,
+                run.evaluation_version_digest,
+                run.target_endpoint,
                 run.input_payload,
                 run.expected_behavior,
                 run.actual_output,
@@ -952,16 +956,22 @@ class PostgresSessionStore:
             INSERT INTO eval_runs (
                 run_id, session_id, eval_id, dataset_id, experiment_id, run_index,
                 target_node_id, covered_failure_mode_ids,
-                stage_output_version, run_mode, input_payload, expected_behavior,
+                stage_output_version, run_mode,
+                execution_kind, execution_outcome, evaluation_version_digest,
+                target_endpoint, input_payload, expected_behavior,
                 actual_output, judge_result, judge_reason, judge_mode, violated_criteria,
                 pass_criteria, llm_judge_suggestion,
                 status, error_message, trace_id, latency_ms, estimated_cost, created_at, completed_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (run_id) DO UPDATE SET
                 dataset_id = EXCLUDED.dataset_id,
                 experiment_id = EXCLUDED.experiment_id,
                 run_index = EXCLUDED.run_index,
+                execution_kind = EXCLUDED.execution_kind,
+                execution_outcome = EXCLUDED.execution_outcome,
+                evaluation_version_digest = EXCLUDED.evaluation_version_digest,
+                target_endpoint = EXCLUDED.target_endpoint,
                 actual_output = EXCLUDED.actual_output,
                 judge_result = EXCLUDED.judge_result,
                 judge_reason = EXCLUDED.judge_reason,

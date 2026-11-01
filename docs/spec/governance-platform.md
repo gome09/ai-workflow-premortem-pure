@@ -6,7 +6,7 @@
 
 ---
 
-> **阅读提示**：第 1 节是 2026-07-13 落地前历史基线。当前已实现 13 条版本化门禁规则、治理聚合 API/前端、业务指标和可选 LLM Judge，具体状态见后续各节及代码链接。
+> **阅读提示**：第 1 节是 2026-07-13 落地前历史基线。当前已实现 14 条版本化门禁规则、治理聚合 API/前端、业务指标、可选 LLM Judge 与业务闭环（证据生命周期 / 风险处置 / 上线批准），具体状态见后续各节及代码链接。
 
 ## 1. 落地前历史基线（2026-07-13）
 
@@ -77,11 +77,27 @@ RULE_MANIFEST = {
 
 - 新增环境配置 `GATE_RULES_DISABLED`（默认空、逗号分隔字符串；代码通过 `gate_rules_disabled_set` 转为集合）：禁用任何规则需显式配置，`/health` 暴露当前禁用集合，每次评估的 `gate_evaluation_records.rule_versions` 标注 disabled——"弱化门禁"永远留痕。
 - 告警时机以实现为准（`core/gates/engine.py`）：WARNING 只在**评估时**触发，且仅针对"试图禁用安全底线规则"这一种情况；普通规则被禁用时是**静默跳过**，不打启动告警也不打评估告警。应用启动（`api/main.py` lifespan）不检查该配置。依赖告警发现误配置的部署方需自行监控 `/health` 的 `gate_rules_disabled` 字段。
-- 安全底线规则（当前 manifest 中 `safety_bottom_line=True` 的 7 条规则）**不允许禁用**（配置了也忽略并告警）；具体清单以 `core/gates/rules/manifest.py` 为准，避免数量随规则演进后失真。
+- 安全底线规则（当前 manifest 中 `safety_bottom_line=True` 的 8 条规则）**不允许禁用**（配置了也忽略并告警）；具体清单以 `core/gates/rules/manifest.py` 为准，避免数量随规则演进后失真。
 
 ### 3.4 expert_review 落地（补历史欠账）
 
 CRITICAL 档 `require_expert_review=True` 时，Stage 3 就绪评估自动创建一条 `escalate` 类型的阻断 `PendingHumanAction`（source_type=`expert_review`，幂等键复用现有机制）；按 `graph/transition_policy.py` 既有约束，escalate 必须显式 approve 才能放行。已落地（T3.3）；[stage3-risk-adaptive-gate.md](stage3-risk-adaptive-gate.md) 中"计划中/未实现"的脚注已同步更新为"已落地"。
+
+批准校验（`core/governance/expert_review.py`，规则版本 `expert_review 1.1.0`）：
+
+1. **资质**：只有 `admin` 角色可以批准 CRITICAL 专家复核；
+2. **身份**：审核人身份来自 JWT `sub`，非空才可批准；身份与角色写入 `human_action_resolved` 审计 metadata；
+3. **独立性**：审核人不得是会话创建者（`ProjectContext.created_by`）；旧会话未记录创建者时 fail-closed；
+4. **版本绑定**：动作创建时把 `risk_assessment_digest`（六因子 + 数据分级 + 有效 override）写入 `payload_before`；风险输入变化后旧 pending / approved 动作自动失效，需重新评估并产生新动作。
+
+失败路径：资质/身份/独立性失败返回 `result_status="forbidden"`（HTTP 403）；风险摘要过期返回 `"stale"`（HTTP 409）。
+
+### 3.5 业务闭环（v1.6.0）
+
+1. **证据生命周期**：`EvidenceSource.lifecycle_status` 为派生字段——`submitted`（未核验）/ `verified`（已核验但未被风险结论引用）/ `adopted`（已核验且被当前 Stage 1 失败模式引用）。`link_failure_modes_to_evidence` 按当前 Stage 1 内容全量重建反向引用，Stage 1 编辑移除引用后状态自动降回 `verified`。高风险证据门禁仍要求 `verified=True`，未核验证据不能解除。
+2. **风险处置**：`RiskTreatment` 为每个 high/critical 失败模式与开放 high/critical 安全发现记录责任人、缓解措施、执行状态（planned/in_progress/completed/accepted）与独立复核。Stage 4 新门禁规则 `risk_treatment` 要求处置为 final 状态、已复核且绑定当前评估版本；public_demo 会话豁免。
+3. **上线批准**：`ProjectApproval` 是独立于 `SessionState.COMPLETE` 的 admin 审批记录。前置条件包括评估完成、当前版本阻断动作/解析错误/过期阶段均为空、高风险证据已核验、风险处置已闭环、每个 required 高风险节点存在当前评估版本的真实目标通过运行。报告生成/导出不写审批；`COMPLETE` 不等于可上线。
+4. **版本绑定**：`core/evaluation_version.py` 组合四个 stage 版本与关键内容摘要为 `digest`。审批、风险处置与 `EvalRun` 均存储该 digest；内容或版本变化后旧审批显示 `stale`、旧测试不再计入上线批准证据，改回原内容也不会复活旧审批。
 
 ## 4. 子系统①：组织级治理视图
 

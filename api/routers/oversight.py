@@ -95,6 +95,8 @@ def resolve_action(
             idempotency_key=body.idempotency_key,
             expected_before_hash=body.expected_before_hash,
             tenant_id=ctx.tenant_id,
+            actor_id=ctx.user_id,
+            actor_role=ctx.role,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -102,6 +104,8 @@ def resolve_action(
     status = result.get("result_status")
     if status in {"resolved", "idempotent_replay"}:
         return result
+    if status == "forbidden":
+        raise HTTPException(status_code=403, detail=result)
     if status in {"stale", "conflict", "not_pending"}:
         raise HTTPException(status_code=409, detail=result)
     if status == "validation_failed":

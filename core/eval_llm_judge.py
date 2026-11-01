@@ -13,6 +13,7 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from core.llm.outbound_guard import guarded_invoke
 from core.models import EvalCase, EvalRun, ProjectContext
 from stages.validators import extract_json_object
 
@@ -85,8 +86,11 @@ def generate_llm_judge_suggestion(
     )
     try:
         llm = _get_judge_llm()
-        response = llm.invoke(
-            [SystemMessage(content=_JUDGE_SYSTEM_PROMPT), HumanMessage(content=user_prompt)]
+        response = guarded_invoke(
+            llm,
+            [SystemMessage(content=_JUDGE_SYSTEM_PROMPT), HumanMessage(content=user_prompt)],
+            ctx=ctx,
+            stage=3,
         )
         parsed = extract_json_object(str(response.content))
         if parsed is None:

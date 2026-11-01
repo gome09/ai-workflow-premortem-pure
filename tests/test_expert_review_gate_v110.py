@@ -8,7 +8,7 @@
 - HIGH/MEDIUM/LOW 场景无 expert_review blocker
 - GATE_RULES_DISABLED 跳过普通规则（redteam_coverage）
 - GATE_RULES_DISABLED 对安全底线规则（missing_output）忽略禁用
-- registered_rules() 返回 13 条（含 expert_review）
+- registered_rules() 返回 14 条（含 expert_review 与 risk_treatment）
 - manifest 双向完整性
 """
 
@@ -425,19 +425,20 @@ def test_disable_safety_bottom_line_ignored(sqlite_store, monkeypatch):
 
 
 # ─────────────────────────────────────────────
-# 7. registered_rules() 返回 13 条（含 expert_review）
+# 7. registered_rules() 返回 14 条（含 expert_review 与 risk_treatment）
 # ─────────────────────────────────────────────
 
 
-def test_registered_rules_count_is_thirteen():
+def test_registered_rules_count_is_fourteen():
     rules = registered_rules()
-    assert len(rules) == 13
+    assert len(rules) == 14
     rule_ids = {r.rule_id for r in rules}
     assert "expert_review" in rule_ids
+    assert "risk_treatment" in rule_ids
 
 
 # ─────────────────────────────────────────────
-# 8. manifest 完整性：13 条双向匹配
+# 8. manifest 完整性：14 条双向匹配
 # ─────────────────────────────────────────────
 
 
@@ -448,7 +449,7 @@ def test_manifest_bidirectional_integrity():
         f"missing in manifest: {sorted(implemented - manifest_ids)}; "
         f"missing impl: {sorted(manifest_ids - implemented)}"
     )
-    assert len(implemented) == 13
+    assert len(implemented) == 14
 
 
 def test_expert_review_is_safety_bottom_line():

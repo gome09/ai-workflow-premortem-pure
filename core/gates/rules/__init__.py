@@ -11,6 +11,7 @@ from core.gates.rules import (
     missing_output,
     parser_error,
     redteam_coverage,
+    risk_treatment,
     safety_finding,
     stage1_evidence_gap,
     stage2_policy_gap,
@@ -39,6 +40,7 @@ def registered_rules() -> list[GateRule]:
         trace_backfill_gap.rule,
         stage4_final_governance.rule,
         expert_review.rule,
+        risk_treatment.rule,
     ]
     _verify_manifest_integrity(rules)
     return rules

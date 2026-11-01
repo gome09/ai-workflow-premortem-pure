@@ -5,9 +5,12 @@ import json
 
 import streamlit as st
 from models.api_client import (
+    request_release_approval,
     resolve_action,
     resolve_flag,
     resolve_safety_finding,
+    review_risk_treatment,
+    upsert_risk_treatment,
     verify_evidence,
 )
 from models.session_state import refresh_actions, refresh_flags
@@ -154,3 +157,47 @@ def handle_dismiss_safety_item(finding_id: str, note: str) -> None:
     ):
         refresh_actions()
         st.rerun()
+
+
+def handle_upsert_treatment(
+    source_type: str,
+    source_id: str,
+    owner: str,
+    mitigation_plan: str,
+    status: str,
+    note: str,
+) -> None:
+    if not owner.strip() or not mitigation_plan.strip():
+        st.error("责任人与缓解措施均为必填。")
+        return
+    if upsert_risk_treatment(
+        st.session_state.session_id,
+        source_type=source_type,
+        source_id=source_id,
+        owner=owner.strip(),
+        mitigation_plan=mitigation_plan.strip(),
+        status=status,
+        note=note,
+    ):
+        st.success("风险处置已保存；修改处置内容会清空旧复核记录。")
+        st.rerun()
+
+
+def handle_review_treatment(treatment_id: str, decision: str, note: str) -> None:
+    if review_risk_treatment(
+        st.session_state.session_id,
+        treatment_id=treatment_id,
+        decision=decision,
+        note=note,
+    ):
+        st.success("风险处置复核结果已记录。")
+        st.rerun()
+
+
+def handle_request_release_approval(decision: str, note: str) -> None:
+    result = request_release_approval(st.session_state.session_id, decision, note)
+    if result is None:
+        st.error("上线批准未通过：请查看 release readiness 阻断项后重试。")
+        return
+    st.success("上线批准决定已记录。")
+    st.rerun()

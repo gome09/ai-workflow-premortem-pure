@@ -18,6 +18,11 @@ from core.governance.action_state import (
     _target_object_exists,
     current_stage_output_version,
 )
+from core.governance.expert_review import (
+    ExpertReviewAuthorizationError,
+    StaleExpertReviewApprovalError,
+    validate_expert_review_approval,
+)
 from core.models import (
     ActionResolutionResult,
     HumanActionStatus,
@@ -36,6 +41,8 @@ def resolve_action(
     payload_after: dict | None = None,
     idempotency_key: str | None = None,
     expected_before_hash: str | None = None,
+    actor_id: str = "",
+    actor_role: str = "",
 ) -> PendingHumanAction:
     """处理人工动作，并同步底层 FlaggedItem / reviewed_outputs / 审计记录。
 
@@ -91,6 +98,13 @@ def resolve_action(
             raise ValueError(action.last_resolution_error)
 
         try:
+            expert_review_digest = validate_expert_review_approval(
+                ctx,
+                action,
+                decision=decision,
+                actor_id=actor_id,
+                actor_role=actor_role,
+            )
             effect = assert_action_resolution_allowed(action, decision, payload_after=payload_after)
 
             pre_effects = apply_pre_resolution_effects(
@@ -157,6 +171,10 @@ def resolve_action(
                     "idempotency_key": effective_idempotency_key,
                     "expected_before_hash": expected_before_hash,
                     "action_resolution_result": "resolved",
+                    "reviewer_id": (actor_id or "").strip(),
+                    "reviewer_role": actor_role,
+                    "risk_assessment_digest": expert_review_digest,
+                    "expert_review_approved": expert_review_digest is not None,
                 },
             )
             return action
@@ -185,6 +203,8 @@ def resolve_action_with_result(
     payload_after: dict | None = None,
     idempotency_key: str | None = None,
     expected_before_hash: str | None = None,
+    actor_id: str = "",
+    actor_role: str = "",
 ) -> ActionResolutionResult:
     """Resolve an action and return an ActionResolutionResult contract.
 
@@ -326,6 +346,38 @@ def resolve_action_with_result(
             payload_after=payload_after,
             idempotency_key=effective_idempotency_key,
             expected_before_hash=expected_before_hash,
+            actor_id=actor_id,
+            actor_role=actor_role,
+        )
+    except ExpertReviewAuthorizationError as exc:
+        error_log = _latest_action_resolution_log(ctx, action_id, effective_idempotency_key)
+        return ActionResolutionResult(
+            session_id=ctx.session_id,
+            action_id=action_id,
+            requested_status=decision,
+            result_status="forbidden",
+            action_status=action.status,
+            before_hash=before_hash,
+            action_hash=before_hash,
+            payload_before_hash=before_payload_hash,
+            payload_after_hash=payload_after_hash,
+            log_id=error_log.log_id if error_log else None,
+            error_message=str(exc),
+        )
+    except StaleExpertReviewApprovalError as exc:
+        error_log = _latest_action_resolution_log(ctx, action_id, effective_idempotency_key)
+        return ActionResolutionResult(
+            session_id=ctx.session_id,
+            action_id=action_id,
+            requested_status=decision,
+            result_status="stale",
+            action_status=action.status,
+            before_hash=before_hash,
+            action_hash=before_hash,
+            payload_before_hash=before_payload_hash,
+            payload_after_hash=payload_after_hash,
+            log_id=error_log.log_id if error_log else None,
+            error_message=str(exc),
         )
     except Exception as exc:  # noqa: BLE001 - convert legacy exception into result contract
         error_log = _latest_action_resolution_log(ctx, action_id, effective_idempotency_key)

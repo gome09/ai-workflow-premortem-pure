@@ -21,7 +21,7 @@
 | [spec/supply-chain-security.md](spec/supply-chain-security.md) | 供应链与 CI 安全规格（权限最小化 / Dependabot / SAST / Scorecard / 文档一致性检查）·代码侧已实现，分支保护与 CodeQL 转正仍待远端治理 |
 | [spec/data-classification-and-privacy.md](spec/data-classification-and-privacy.md) | 数据分类分级与隐私保护规格（分级 / 字段加密 / PII 掩码 / AI 生成标识 / PIA）·已实现（v1.0.3） |
 | [spec/risk-taxonomy-engine.md](spec/risk-taxonomy-engine.md) | 风险分类体系升级规格（OWASP LLM 2025 补齐 / Agentic ASI 2026 / NIST-AI-600-1 / TC260 智能体指引）·已实现（v1.1.0） |
-| [spec/governance-platform.md](spec/governance-platform.md) | 组织级治理平台规格（门禁规则版本化 / 治理视图 / 业务指标 / LLM Judge）·已实现（v1.2.0；LLM Judge 已于 v1.3.0 实现，flag 默认关） |
+| [spec/governance-platform.md](spec/governance-platform.md) | 组织级治理平台规格（门禁规则版本化 / 治理视图 / 业务指标 / LLM Judge / 业务闭环：证据生命周期、风险处置、上线批准）·已实现（v1.6.0） |
 
 ## compliance/ — 合规文档
 

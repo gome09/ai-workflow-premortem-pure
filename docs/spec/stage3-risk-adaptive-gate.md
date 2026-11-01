@@ -124,6 +124,19 @@ Session `ae08e110-9c31-47b4-a9c8-bf1336991a94` (LOW risk):
 
 ---
 
+## Real Target Evaluation Runs (v1.6.0)
+
+Stage 3 eval runs now distinguish execution provenance explicitly:
+
+- `manual` / `dry_run` → `manual_simulation` / `dry_run_simulation`（simulation，不计入上线批准证据）
+- `llm_node` + `LLM_MODE=mock` → `mock_model_execution`（simulation）
+- `llm_node` + `LLM_MODE=real` → `platform_model_execution`（平台模型执行，不是被测目标系统）
+- `target_http` → `real_target_execution`（真实目标系统；outcome 为 success / failed / timeout / error）
+
+`target_http` 通过 `core/target_testing/http_json.py` 调用白名单内的外部 HTTP JSON endpoint；`sensitive_personal` 的出站 payload 强制 PII 掩码。真实目标 run 必须由人工校准为 `passed` 后才能作为上线批准证据，LLM autofinal 不适用于该模式。
+
+---
+
 ## Design Principles
 
 1. **Risk tiering is not disabling safety** — LOW risk reduces advanced gates, not safety底线

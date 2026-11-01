@@ -45,7 +45,7 @@ def test_set_profile_and_read_back(service):
         **_low_factors(),
         rationale="initial factors",
         actor="alice",
-        actor_role="editor",
+        actor_role="admin",
         tenant_id="tenant-a",
     )
     assert result["effective_tier"] == "low"
@@ -60,7 +60,7 @@ def test_set_profile_and_read_back(service):
 def test_override_upgrade_records_full_audit(service):
     ctx = service.create_session(tenant_id="tenant-a")
     service.set_risk_profile(
-        ctx.session_id, **_low_factors(), actor="alice", actor_role="editor", tenant_id="tenant-a"
+        ctx.session_id, **_low_factors(), actor="alice", actor_role="admin", tenant_id="tenant-a"
     )
     result = service.override_risk_tier(
         ctx.session_id,
@@ -148,7 +148,7 @@ def test_downgrade_below_floor_is_clamped(service):
         tenant_id="tenant-a",
     )
     service.set_risk_profile(
-        ctx.session_id, **_low_factors(), actor="alice", actor_role="editor", tenant_id="tenant-a"
+        ctx.session_id, **_low_factors(), actor="alice", actor_role="admin", tenant_id="tenant-a"
     )
     assert (
         service.get_risk_profile(ctx.session_id, tenant_id="tenant-a")["effective_tier"] == "high"
@@ -170,7 +170,7 @@ def test_downgrade_below_floor_is_clamped(service):
 def test_cross_tenant_profile_access_is_not_found(service):
     ctx = service.create_session(tenant_id="tenant-a")
     service.set_risk_profile(
-        ctx.session_id, **_low_factors(), actor="alice", actor_role="editor", tenant_id="tenant-a"
+        ctx.session_id, **_low_factors(), actor="alice", actor_role="admin", tenant_id="tenant-a"
     )
     with pytest.raises(ValueError, match="Session not found"):
         service.get_risk_profile(ctx.session_id, tenant_id="tenant-b")

@@ -26,6 +26,15 @@ def judge_eval_run(case: EvalCase, run: EvalRun) -> EvalRun:
         run.judge_reason = "Dry run validates eval plumbing but does not execute a target node."
         return run
 
+    if run.run_mode == "target_http" and run.execution_outcome != "success":
+        run.judge_mode = "rule"
+        run.judge_result = "failed"
+        run.judge_reason = (
+            f"Target execution {run.execution_outcome}: {run.error_message}"
+        ).strip()
+        run.violated_criteria.append(f"target_{run.execution_outcome}")
+        return run
+
     run.judge_mode = "rule"
     if not (run.actual_output or "").strip():
         run.judge_result = "failed"

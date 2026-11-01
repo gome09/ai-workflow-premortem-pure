@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any
 
 from core.audit_service import append_audit_event
@@ -62,9 +64,61 @@ def _latest_override(ctx: ProjectContext) -> RiskOverrideRecord | None:
     return overrides[-1] if overrides else None
 
 
-def assess_project_risk(ctx: ProjectContext) -> RiskAssessment:
-    """Return the deterministic assessment consumed by gates and reports."""
-    factors, source_reasons = resolve_factors(ctx)
+def _digest_payload(payload: dict[str, Any]) -> str:
+    encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def risk_factor_digest_for(factors: RiskFactorScores, data_classification: str) -> str:
+    """Digest of the deterministic risk inputs (without any human override)."""
+    evaluation = evaluate_risk(factors, data_classification=data_classification)
+    return _digest_payload(
+        {
+            "factors": factors.as_dict(),
+            "data_classification": data_classification,
+            "structural_tier": evaluation.structural_tier.value,
+            "floor_tier": evaluation.floor_tier.value,
+        }
+    )
+
+
+def risk_factor_digest(ctx: ProjectContext) -> str:
+    factors, _ = resolve_factors(ctx)
+    return risk_factor_digest_for(factors, ctx.data_classification)
+
+
+def risk_assessment_digest(ctx: ProjectContext) -> str:
+    """Digest binding an approval to one concrete risk assessment state.
+
+    Used by the CRITICAL expert-review gate so that approvals issued for an
+    older factor set / override cannot unblock a changed risk profile.
+    """
+    assessment = assess_project_risk(ctx)
+    return _digest_payload(
+        {
+            "factor_digest": risk_factor_digest_for(assessment.factors, ctx.data_classification),
+            "effective_tier": assessment.effective_tier.value,
+            "override_id": assessment.override_id,
+        }
+    )
+
+
+def _assert_tier_downgrade_allowed(
+    actor_role: str,
+    before_tier: ProjectGateRiskTier,
+    after_tier: ProjectGateRiskTier,
+) -> None:
+    """Shared downgrade guard for every entry point that can change the tier."""
+    if TIER_ORDER[after_tier] < TIER_ORDER[before_tier] and actor_role != "admin":
+        raise RiskOverridePermissionError("Downgrading project risk tier requires admin role")
+
+
+def _build_assessment(
+    ctx: ProjectContext,
+    factors: RiskFactorScores,
+    source_reasons: list[str],
+) -> RiskAssessment:
+    """Build an assessment from explicit factors without mutating *ctx*."""
     evaluation = evaluate_risk(factors, data_classification=ctx.data_classification)
 
     reasons = [
@@ -82,6 +136,14 @@ def assess_project_risk(ctx: ProjectContext) -> RiskAssessment:
     ]
 
     override = _latest_override(ctx)
+    if override is not None and override.factors_digest:
+        current_digest = risk_factor_digest_for(factors, ctx.data_classification)
+        if override.factors_digest != current_digest:
+            reasons.append(
+                f"override: {override.override_id} invalidated because risk inputs changed"
+            )
+            override = None
+
     if override is not None:
         effective = _max_tier(_tier(override.requested_tier), evaluation.floor_tier)
         reasons.append(
@@ -109,6 +171,12 @@ def assess_project_risk(ctx: ProjectContext) -> RiskAssessment:
     )
 
 
+def assess_project_risk(ctx: ProjectContext) -> RiskAssessment:
+    """Return the deterministic assessment consumed by gates and reports."""
+    factors, source_reasons = resolve_factors(ctx)
+    return _build_assessment(ctx, factors, source_reasons)
+
+
 def classify_project_risk(ctx: ProjectContext) -> tuple[ProjectGateRiskTier, list[str]]:
     """Backward-compatible ``(tier, reasons)`` contract."""
     assessment = assess_project_risk(ctx)
@@ -123,9 +191,22 @@ def set_risk_profile(
     actor_role: str = "",
     note: str = "",
 ) -> RiskAssessment:
-    """Persist explicit factor scores on the context and write an audit event."""
+    """Persist explicit factor scores on the context and write an audit event.
+
+    Any change that lowers the effective tier is treated exactly like a risk
+    override downgrade: it requires the admin role, so editors cannot bypass
+    the override permission by editing the six factors directly.
+    """
     before = assess_project_risk(ctx)
     updated = factors.model_copy(update={"source": "human"})
+    after = _build_assessment(
+        ctx,
+        updated,
+        [f"source: explicit risk_profile (source={updated.source})"],
+    )
+    _assert_tier_downgrade_allowed(actor_role, before.effective_tier, after.effective_tier)
+    is_downgrade = TIER_ORDER[after.effective_tier] < TIER_ORDER[before.effective_tier]
+
     ctx.risk_profile = updated
     append_audit_event(
         ctx,
@@ -139,7 +220,7 @@ def set_risk_profile(
         },
         after={
             "factors": updated.as_dict(),
-            "effective_tier": assess_project_risk(ctx).effective_tier.value,
+            "effective_tier": after.effective_tier.value,
         },
         metadata={
             "actor": actor,
@@ -147,6 +228,11 @@ def set_risk_profile(
             "tenant_id": ctx.tenant_id,
             "note": note,
             "rationale": updated.rationale,
+            "before_effective_tier": before.effective_tier.value,
+            "after_effective_tier": after.effective_tier.value,
+            "is_downgrade": is_downgrade,
+            "downgrade_authorized_by": "admin" if is_downgrade else "",
+            "factors_digest": risk_factor_digest_for(updated, ctx.data_classification),
         },
     )
     return assess_project_risk(ctx)
@@ -167,8 +253,7 @@ def apply_risk_override(
         raise ValueError("Risk override reason is required")
 
     current = assess_project_risk(ctx)
-    if TIER_ORDER[requested] < TIER_ORDER[current.effective_tier] and actor_role != "admin":
-        raise RiskOverridePermissionError("Downgrading project risk tier requires admin role")
+    _assert_tier_downgrade_allowed(actor_role, current.effective_tier, requested)
 
     effective = _max_tier(requested, current.floor_tier)
     record = RiskOverrideRecord(
@@ -181,6 +266,7 @@ def apply_risk_override(
         effective_tier=effective.value,
         floor_tier=current.floor_tier.value,
         reason=normalized_reason,
+        factors_digest=risk_factor_digest(ctx),
     )
     ctx.risk_overrides.append(record)
 
@@ -203,6 +289,7 @@ def apply_risk_override(
             "actor_role": actor_role,
             "tenant_id": ctx.tenant_id,
             "clamped_by_floor": requested != effective,
+            "factors_digest": record.factors_digest,
         },
     )
     return record

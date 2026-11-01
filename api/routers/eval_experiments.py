@@ -11,6 +11,7 @@ from api.schemas import (
 from auth.jwt import TenantContext, get_current_tenant
 from auth.permissions import Role, require_roles
 from core.session_service import session_service
+from core.target_testing import TargetSystemConfig
 
 router = APIRouter(prefix="/sessions", tags=["eval-experiments"])
 
@@ -48,6 +49,15 @@ def create_eval_experiment(
             model=body.model,
             baseline_experiment_id=body.baseline_experiment_id,
             run_config=body.run_config,
+            target_config=(
+                TargetSystemConfig(
+                    endpoint=body.target_config.endpoint,
+                    timeout_seconds=body.target_config.timeout_seconds,
+                    output_field=body.target_config.output_field,
+                )
+                if body.target_config is not None
+                else None
+            ),
             tenant_id=ctx.tenant_id,
         )
     except ValueError as e:

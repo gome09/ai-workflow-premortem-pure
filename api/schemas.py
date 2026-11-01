@@ -121,9 +121,18 @@ class ScoreEvalCaseRequest(BaseModel):
     actual_output: str | None = None
 
 
+class TargetSystemConfigRequest(BaseModel):
+    """Real target system HTTP JSON contract."""
+
+    endpoint: str
+    timeout_seconds: float = Field(default=10.0, gt=0)
+    output_field: str = "output"
+
+
 class RunEvalCasesRequest(BaseModel):
     eval_ids: list[str] | None = None
-    run_mode: Literal["manual", "dry_run", "llm_node"] = "manual"
+    run_mode: Literal["manual", "dry_run", "llm_node", "target_http"] = "manual"
+    target_config: TargetSystemConfigRequest | None = None
 
 
 class StageRerunRequest(BaseModel):
@@ -197,11 +206,12 @@ class CreateEvalExperimentRequest(BaseModel):
     dataset_id: str
     name: str
     description: str = ""
-    run_mode: Literal["manual", "dry_run", "llm_node"] = "manual"
+    run_mode: Literal["manual", "dry_run", "llm_node", "target_http"] = "manual"
     provider: str | None = None
     model: str | None = None
     baseline_experiment_id: str | None = None
     run_config: dict[str, Any] = Field(default_factory=dict)
+    target_config: TargetSystemConfigRequest | None = None
 
 
 class RunEvalExperimentRequest(BaseModel):
@@ -377,6 +387,25 @@ class StageResolutionSummaryResponse(BaseModel):
 class StageResolutionOperationsResponse(BaseModel):
     stage_id: int
     operations: list[StageResolutionOperation] = Field(default_factory=list)
+
+
+class RiskTreatmentUpsertRequest(BaseModel):
+    source_type: Literal["failure_mode", "safety_finding"]
+    source_id: str = Field(min_length=1)
+    owner: str = Field(min_length=1)
+    mitigation_plan: str = Field(min_length=1)
+    status: Literal["planned", "in_progress", "completed", "accepted"] = "planned"
+    note: str = ""
+
+
+class RiskTreatmentReviewRequest(BaseModel):
+    decision: Literal["accept", "reject"]
+    note: str = ""
+
+
+class ReleaseApprovalRequest(BaseModel):
+    decision: Literal["approve", "reject"]
+    note: str = ""
 
 
 class RiskFactorScoresRequest(BaseModel):

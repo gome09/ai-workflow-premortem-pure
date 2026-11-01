@@ -14,6 +14,7 @@ from slowapi.errors import RateLimitExceeded
 
 from api.limiter import limiter
 from api.routers import (
+    approvals,
     chat,
     eval,
     eval_datasets,
@@ -24,6 +25,7 @@ from api.routers import (
     oversight,
     redteam,
     reports,
+    risk_treatments,
     safety,
     session,
     stage,
@@ -252,6 +254,8 @@ app.include_router(eval_experiments.router)
 app.include_router(redteam.router)
 app.include_router(traces.router)
 app.include_router(governance.router)
+app.include_router(risk_treatments.router)
+app.include_router(approvals.router)
 
 
 @app.get("/health/live", include_in_schema=False)

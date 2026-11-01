@@ -438,20 +438,28 @@ def list_eval_runs(session_id: str) -> list[dict]:
 
 
 def run_eval_cases(
-    session_id: str, eval_ids: list[str] | None = None, run_mode: str = "manual"
+    session_id: str,
+    eval_ids: list[str] | None = None,
+    run_mode: str = "manual",
+    target_config: dict | None = None,
 ) -> dict | None:
-    result = api_post(
-        f"/sessions/{session_id}/eval-cases/run",
-        {"eval_ids": eval_ids, "run_mode": run_mode},
-    )
+    body: dict = {"eval_ids": eval_ids, "run_mode": run_mode}
+    if target_config:
+        body["target_config"] = target_config
+    result = api_post(f"/sessions/{session_id}/eval-cases/run", body)
     return apply_stage_operation_result(result)
 
 
-def run_single_eval_case(session_id: str, eval_id: str, run_mode: str = "manual") -> dict | None:
-    result = api_post(
-        f"/sessions/{session_id}/eval-cases/{eval_id}/run",
-        {"eval_ids": [eval_id], "run_mode": run_mode},
-    )
+def run_single_eval_case(
+    session_id: str,
+    eval_id: str,
+    run_mode: str = "manual",
+    target_config: dict | None = None,
+) -> dict | None:
+    body: dict = {"eval_ids": [eval_id], "run_mode": run_mode}
+    if target_config:
+        body["target_config"] = target_config
+    result = api_post(f"/sessions/{session_id}/eval-cases/{eval_id}/run", body)
     return apply_stage_operation_result(result)
 
 
@@ -558,18 +566,19 @@ def create_eval_experiment(
     name: str,
     run_mode: str = "dry_run",
     baseline_experiment_id: str | None = None,
+    target_config: dict | None = None,
 ) -> dict | None:
-    result = api_post(
-        f"/sessions/{session_id}/eval-experiments",
-        {
-            "dataset_id": dataset_id,
-            "name": name,
-            "description": "由复核工作台创建。",
-            "run_mode": run_mode,
-            "baseline_experiment_id": baseline_experiment_id,
-            "run_config": {"runtime_validation": "deferred_by_instruction"},
-        },
-    )
+    body: dict = {
+        "dataset_id": dataset_id,
+        "name": name,
+        "description": "由复核工作台创建。",
+        "run_mode": run_mode,
+        "baseline_experiment_id": baseline_experiment_id,
+        "run_config": {"runtime_validation": "deferred_by_instruction"},
+    }
+    if target_config:
+        body["target_config"] = target_config
+    result = api_post(f"/sessions/{session_id}/eval-experiments", body)
     return apply_stage_operation_result(result)
 
 
@@ -606,6 +615,61 @@ def get_report_artifact(session_id: str, report_id: str) -> dict | None:
         f"/sessions/{session_id}/reports/{report_id}",
         _STATIC_READ_TTL,
     )
+
+
+def list_risk_treatments(session_id: str) -> dict:
+    result = api_get(f"/sessions/{session_id}/risk-treatments")
+    return result if isinstance(result, dict) else {}
+
+
+def upsert_risk_treatment(
+    session_id: str,
+    *,
+    source_type: str,
+    source_id: str,
+    owner: str,
+    mitigation_plan: str,
+    status: str,
+    note: str = "",
+) -> dict | None:
+    body = {
+        "source_type": source_type,
+        "source_id": source_id,
+        "owner": owner,
+        "mitigation_plan": mitigation_plan,
+        "status": status,
+        "note": note,
+    }
+    result = api_post(f"/sessions/{session_id}/risk-treatments", body)
+    return apply_stage_operation_result(result)
+
+
+def review_risk_treatment(
+    session_id: str, treatment_id: str, decision: str, note: str = ""
+) -> dict | None:
+    result = api_post(
+        f"/sessions/{session_id}/risk-treatments/{treatment_id}/review",
+        {"decision": decision, "note": note},
+    )
+    return apply_stage_operation_result(result)
+
+
+def get_approval_status(session_id: str) -> dict:
+    result = api_get(f"/sessions/{session_id}/approval-status")
+    return result if isinstance(result, dict) else {}
+
+
+def list_project_approvals(session_id: str) -> list[dict]:
+    result = api_get(f"/sessions/{session_id}/approvals")
+    return result if isinstance(result, list) else []
+
+
+def request_release_approval(session_id: str, decision: str, note: str = "") -> dict | None:
+    result = api_post(
+        f"/sessions/{session_id}/approvals/release",
+        {"decision": decision, "note": note},
+    )
+    return result if isinstance(result, dict) else None
 
 
 def add_materials_to_session(session_id: str, materials: list[str]) -> bool:

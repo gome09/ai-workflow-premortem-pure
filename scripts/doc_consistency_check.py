@@ -21,6 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # 扫描全部项目 Markdown；升级历史、运行时产物和工具缓存不属于当前产品文档。
 EXCLUDED_DIRS = {
     ".git",
+    ".trae",
     ".upgrade",
     ".venv",
     ".pytest_cache",

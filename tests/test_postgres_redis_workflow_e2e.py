@@ -49,6 +49,7 @@ from alembic.config import Config  # noqa: E402
 from alembic import command  # noqa: E402
 from core.config import settings  # noqa: E402
 from core.models import SessionState  # noqa: E402
+from core.risk.assessment import RiskOverridePermissionError  # noqa: E402
 from core.session_service import SessionService  # noqa: E402
 from core.workflow_state_service import WorkflowBlockedError  # noqa: E402
 from scenarios import read_scenario_input  # noqa: E402
@@ -313,6 +314,20 @@ def test_pg_redis_workflow_lifecycle(service, migrated_database):
     assert recovered["after"] == SessionState.S1_REVIEW.value
 
     # ── 6b. risk profile + override audit and tenant isolation ─────────────
+    with pytest.raises(RiskOverridePermissionError):
+        svc.set_risk_profile(
+            ctx.session_id,
+            impact=0,
+            autonomy=0,
+            data_sensitivity=0,
+            reversibility=0,
+            scale=0,
+            external_exposure=0,
+            rationale="e2e editor downgrade attempt",
+            actor="e2e-editor",
+            actor_role="editor",
+            tenant_id=tenant_a,
+        )
     profile = svc.set_risk_profile(
         ctx.session_id,
         impact=0,
@@ -322,8 +337,8 @@ def test_pg_redis_workflow_lifecycle(service, migrated_database):
         scale=0,
         external_exposure=0,
         rationale="e2e explicit factors",
-        actor="e2e-editor",
-        actor_role="editor",
+        actor="e2e-admin",
+        actor_role="admin",
         tenant_id=tenant_a,
     )
     assert profile["effective_tier"] == "low"

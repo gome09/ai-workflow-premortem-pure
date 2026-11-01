@@ -48,8 +48,13 @@ class SessionService:
         self._evaluation = EvaluationService(_get_session)
         self._audit = AuditTraceService(_get_session)
 
-    def create_session(self, tenant_id: str = "", scenario_id: str | None = None) -> ProjectContext:
-        return self._workflow.create_session(tenant_id, scenario_id)
+    def create_session(
+        self,
+        tenant_id: str = "",
+        scenario_id: str | None = None,
+        created_by: str = "",
+    ) -> ProjectContext:
+        return self._workflow.create_session(tenant_id, scenario_id, created_by)
 
     def get_session(self, session_id: str, tenant_id: str = "") -> ProjectContext | None:
         return self._access.get_session(session_id, tenant_id)
@@ -132,6 +137,8 @@ class SessionService:
         idempotency_key: str | None = None,
         expected_before_hash: str | None = None,
         tenant_id: str = "",
+        actor_id: str = "",
+        actor_role: str = "",
     ) -> dict:
         return self._governance.resolve_action_with_result(
             session_id,
@@ -142,6 +149,8 @@ class SessionService:
             idempotency_key,
             expected_before_hash,
             tenant_id,
+            actor_id,
+            actor_role,
         )
 
     def resolve_action(
@@ -154,6 +163,8 @@ class SessionService:
         idempotency_key: str | None = None,
         expected_before_hash: str | None = None,
         tenant_id: str = "",
+        actor_id: str = "",
+        actor_role: str = "",
     ) -> ProjectContext:
         return self._governance.resolve_action(
             session_id,
@@ -164,6 +175,8 @@ class SessionService:
             idempotency_key,
             expected_before_hash,
             tenant_id,
+            actor_id,
+            actor_role,
         )
 
     def list_traces(
@@ -247,9 +260,16 @@ class SessionService:
         session_id: str,
         eval_ids: list[str] | None = None,
         run_mode: str = "manual",
+        target_config=None,
         tenant_id: str = "",
     ) -> dict:
-        return self._evaluation.run_eval_cases(session_id, eval_ids, run_mode, tenant_id)
+        return self._evaluation.run_eval_cases(
+            session_id,
+            eval_ids=eval_ids,
+            run_mode=run_mode,
+            target_config=target_config,
+            tenant_id=tenant_id,
+        )
 
     def list_eval_datasets(self, session_id: str, tenant_id: str = "") -> list[dict]:
         return self._evaluation.list_eval_datasets(session_id, tenant_id)
@@ -348,6 +368,7 @@ class SessionService:
         model: str | None = None,
         baseline_experiment_id: str | None = None,
         run_config: dict | None = None,
+        target_config=None,
         tenant_id: str = "",
     ) -> dict:
         return self._evaluation.create_eval_experiment(
@@ -360,6 +381,7 @@ class SessionService:
             model=model,
             baseline_experiment_id=baseline_experiment_id,
             run_config=run_config,
+            target_config=target_config,
             tenant_id=tenant_id,
         )
 
@@ -652,6 +674,82 @@ class SessionService:
             requested_tier=requested_tier,
             reason=reason,
             actor=actor,
+            actor_role=actor_role,
+            tenant_id=tenant_id,
+        )
+
+    def list_risk_treatments(self, session_id: str, tenant_id: str = "") -> dict:
+        return self._governance.list_risk_treatments(session_id, tenant_id)
+
+    def upsert_risk_treatment(
+        self,
+        session_id: str,
+        *,
+        source_type: str,
+        source_id: str,
+        owner: str,
+        mitigation_plan: str,
+        status: str,
+        actor_id: str,
+        actor_role: str,
+        note: str = "",
+        tenant_id: str = "",
+    ) -> dict:
+        return self._governance.upsert_risk_treatment(
+            session_id,
+            source_type=source_type,
+            source_id=source_id,
+            owner=owner,
+            mitigation_plan=mitigation_plan,
+            status=status,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            note=note,
+            tenant_id=tenant_id,
+        )
+
+    def review_risk_treatment(
+        self,
+        session_id: str,
+        *,
+        treatment_id: str,
+        decision: str,
+        note: str,
+        actor_id: str,
+        actor_role: str,
+        tenant_id: str = "",
+    ) -> dict:
+        return self._governance.review_risk_treatment(
+            session_id,
+            treatment_id=treatment_id,
+            decision=decision,
+            note=note,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            tenant_id=tenant_id,
+        )
+
+    def get_approval_status(self, session_id: str, tenant_id: str = "") -> dict:
+        return self._governance.get_approval_status(session_id, tenant_id)
+
+    def list_project_approvals(self, session_id: str, tenant_id: str = "") -> list[dict]:
+        return self._governance.list_project_approvals(session_id, tenant_id)
+
+    def request_release_approval(
+        self,
+        session_id: str,
+        *,
+        decision: str,
+        note: str,
+        actor_id: str,
+        actor_role: str,
+        tenant_id: str = "",
+    ) -> dict:
+        return self._governance.request_release_approval(
+            session_id,
+            decision=decision,
+            note=note,
+            actor_id=actor_id,
             actor_role=actor_role,
             tenant_id=tenant_id,
         )

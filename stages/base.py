@@ -8,6 +8,7 @@ from abc import ABC
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from core.context_manager import get_llm_for_stage_with_context
+from core.llm.outbound_guard import guarded_invoke
 from core.llm.structured_output import StructuredOutputClient, StructuredOutputResult
 from core.models import Message, MessageRole, ProjectContext
 from core.traces import append_llm_trace, create_llm_trace
@@ -73,7 +74,7 @@ class BaseStageExecutor(ABC):
         started = time.perf_counter()
         trace = None
         try:
-            response = llm.invoke(messages)
+            response = guarded_invoke(llm, messages, ctx=ctx, stage=self.stage_id)
             latency_ms = int((time.perf_counter() - started) * 1000)
             ai_text = response.content
             trace = append_llm_trace(

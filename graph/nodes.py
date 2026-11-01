@@ -14,6 +14,7 @@ from core.context_manager import (
     format_pending_flags,
     parse_review_action,
 )
+from core.llm.outbound_guard import guarded_invoke
 from core.models import Message, MessageRole, ProjectContext, SessionState
 from core.oversight_service import bump_stage_output_version
 from core.scenario_context import current_domain_profile
@@ -217,7 +218,7 @@ def node_init(state: ProjectContext, user_input: str) -> ProjectContext:
                     messages.append(AIMessage(content=msg.content))
             messages.append(HumanMessage(content=user_input))
 
-            response = llm.invoke(messages)
+            response = guarded_invoke(llm, messages, ctx=state, stage=0)
             ai_text = cast(str, response.content)
     except Exception as exc:
         err_str = str(exc)

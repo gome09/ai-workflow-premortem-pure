@@ -42,7 +42,7 @@
 | PATCH | `/sessions/{session_id}/name` | 修改会话名称（editor / admin；租户隔离并记录审计事件） |
 | PATCH | `/sessions/{session_id}/data-classification` | 覆写会话数据分级（editor+；降级须 admin 并写审计事件） |
 | GET | `/sessions/{session_id}/risk-profile` | 读取六因子风险画像、结构/floor/生效等级与 override 历史（viewer+） |
-| PUT | `/sessions/{session_id}/risk-profile` | 显式设置六因子（0–3；editor+；写 `risk_profile_updated` 审计事件） |
+| PUT | `/sessions/{session_id}/risk-profile` | 显式设置六因子（0–3；editor+；若生效等级下降则须 admin；写 `risk_profile_updated` 审计事件） |
 | POST | `/sessions/{session_id}/risk-profile/override` | 人工覆写风险等级（editor+；降级须 admin 且不得低于确定性 floor；写 `risk_tier_overridden` 审计事件，含原等级/请求等级/生效等级/floor/原因/操作者/租户） |
 | DELETE | `/sessions/{session_id}` | 删除会话（admin；审计归档保留，写 `session_purged` 处置事件） |
 | POST | `/chat/{session_id}` | 发送消息并推进一个执行回合；会话处于 `ERROR` / `RECOVERY_REQUIRED` 时返回 409 |
@@ -81,7 +81,7 @@
 | GET | `/sessions/{session_id}/actions` | 列出人工动作 |
 | GET | `/sessions/{session_id}/actions/{action_id}` | 查看单个人工动作 |
 | GET | `/sessions/{session_id}/actions/{action_id}/resolution-logs` | 查看动作处理日志 |
-| POST | `/sessions/{session_id}/actions/{action_id}/resolve` | 处理人工动作 |
+| POST | `/sessions/{session_id}/actions/{action_id}/resolve` | 处理人工动作；CRITICAL `expert_review` 批准须 admin 且非会话创建者，资质/身份/独立性失败返回 403，风险摘要过期返回 409 |
 | GET | `/sessions/{session_id}/audit-events` | 查看审计事件 |
 
 ---
@@ -98,6 +98,21 @@
 
 ---
 
+## 业务闭环（风险处置与上线批准）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/sessions/{session_id}/risk-treatments` | 查看风险处置记录、要求项与覆盖摘要（viewer+） |
+| POST | `/sessions/{session_id}/risk-treatments` | 创建/更新高风险项处置（editor+） |
+| POST | `/sessions/{session_id}/risk-treatments/{treatment_id}/review` | 独立复核处置（editor+，复核人不得是最后更新人） |
+| GET | `/sessions/{session_id}/approval-status` | 查看报告生成/评估完成/上线批准三段状态与 release readiness |
+| GET | `/sessions/{session_id}/approvals` | 查看 append-only 上线批准历史（含 effective stale 状态） |
+| POST | `/sessions/{session_id}/approvals/release` | 申请上线批准（仅 admin；前置条件不满足返回 409 blockers） |
+
+错误口径：403 = 角色/身份/自审批；409 = 前置条件不满足或处置版本过期；400 = public_demo 不适用或非法处置来源。
+
+---
+
 ## Eval
 
 | 方法 | 路径 | 说明 |
@@ -105,11 +120,13 @@
 | GET | `/sessions/{session_id}/eval-cases` | 查看 EvalCase 列表 |
 | POST | `/sessions/{session_id}/eval-cases/{eval_id}/score` | 人工评分单个 EvalCase |
 | GET | `/sessions/{session_id}/eval-runs` | 查看 EvalRun 列表 |
-| POST | `/sessions/{session_id}/eval-cases/run` | 批量运行 EvalCase |
-| POST | `/sessions/{session_id}/eval-cases/{eval_id}/run` | 运行单个 EvalCase |
+| POST | `/sessions/{session_id}/eval-cases/run` | 批量运行 EvalCase（`run_mode`：manual / dry_run / llm_node / target_http） |
+| POST | `/sessions/{session_id}/eval-cases/{eval_id}/run` | 运行单个 EvalCase（同上） |
 | GET | `/sessions/{session_id}/eval-judgments` | 查看自动评判记录 |
 | GET | `/sessions/{session_id}/human-calibrations` | 查看人工校准记录 |
 | POST | `/sessions/{session_id}/eval-runs/{run_id}/calibrate` | 对 EvalRun 做人工校准 |
+
+`target_http` 是真实目标系统执行：请求体需带 `target_config`（endpoint / timeout_seconds / output_field），endpoint host 必须在 `TARGET_SYSTEM_ALLOWED_HOSTS` 白名单内。响应写入 `EvalRun.execution_kind`（`real_target_execution`）与 `execution_outcome`（success / failed / timeout / error）；模拟执行（manual / dry_run / mock_model_execution）不会计入上线批准证据。
 
 ---
 

@@ -98,11 +98,11 @@ Phase 4: In progress
 
 ## current_task
 
-Release gate integration implemented; full offline regression, PostgreSQL migration verification in CI, and remote governance actions remain
+Release gate integration committed as `3ad2838` and pushed to `origin/main` via SSH; CI verification for that commit, PostgreSQL migration verification and remote governance actions remain
 
 ## last_completed_task
 
-Release Gate Integration (2026-11-07): version 1.8.0 / Alembic V013; tenant-scoped service tokens and admin-only credential management; read-only `GET /release-gate/{session_id}` with allow-only-current-approval semantics; cache bypass; append-only `release_gate_checks`; fail-closed 503 on audit failure; new tests, contract assertions, PG-only lifecycle test, metrics and docs. Full offline baseline recorded in the final task summary.
+Release Gate Integration (2026-11-07): version 1.8.0 / Alembic V013; tenant-scoped service tokens and admin-only credential management; read-only `GET /release-gate/{session_id}` with allow-only-current-approval semantics; cache bypass; append-only `release_gate_checks`; fail-closed 503 on audit failure; new tests, contract assertions, PG-only lifecycle test, metrics and docs. Committed as `3ad2838` and pushed to `origin/main` via SSH (`28f8e79..3ad2838`).
 
 ## next_action
 
@@ -112,7 +112,7 @@ Verify branch protection, private vulnerability reporting, and CodeQL required c
 
 - Date: 2026-11-07T12:00:00+08:00
 - Updated by: Phase 3 release gate integration
-- Summary: Version 1.8.0; Alembic V013 adds `service_tokens` and `release_gate_checks`. Read-only `GET /release-gate/{session_id}` allows release only for a currently valid `ProjectApproval`; stale/rejected/invalidated/not-requested/public_demo/credential failures and audit-write failures all block. Gate bypasses the 72h context cache and records every authenticated check. New service-token lifecycle, contract, migration and PG-only tests; full offline baseline and lint/type/doc/version checks recorded in the final task summary. Dependency audit posture and remote governance actions remain unchanged.
+- Summary: Version 1.8.0; Alembic V013 adds `service_tokens` and `release_gate_checks`. Read-only `GET /release-gate/{session_id}` allows release only for a currently valid `ProjectApproval`; stale/rejected/invalidated/not-requested/public_demo/credential failures and audit-write failures all block. Gate bypasses the 72h context cache and records every authenticated check. New service-token lifecycle, contract, migration and PG-only tests; full offline baseline and lint/type/doc/version checks recorded in the final task summary. Committed as `3ad2838` and pushed to `origin/main` via SSH. Dependency audit posture and remote governance actions remain unchanged.
 
 ## last_validation
 
@@ -120,13 +120,13 @@ Verify branch protection, private vulnerability reporting, and CodeQL required c
 - Check: `ruff check` + `ruff format --check` + `mypy` + `doc-check` + `version-check` + `pytest`（离线全量，含发布门禁决策/凭证/缓存绕过/审计失败恢复测试）
 - Environment: local SQLite/memory/mock/single_step；Windows PowerShell（GNU make 不可用，执行底层等价命令），`UV_CACHE_DIR=.upgrade/tmp/uv-cache`
 - Scope: phase-3-release-gate-integration
-- Subject: git-worktree (uncommitted Phase 3 release gate changes)
+- Subject: commit 3ad2838 (pushed to origin/main via SSH)
 - Subject digest: not_applicable
 - Recorded: 2026-11-07T12:00:00+08:00
 
 ## unverified_items
 
-Main branch protection, private vulnerability reporting, CodeQL required check, GitHub Release, local Docker smoke (daemon unavailable), local PostgreSQL V008→V013 migration (CI production-safety covers it), and `.upgrade/validation/records.jsonl` append (subject_digest semantics unavailable without the maintainer CLI) remain unverified. The verification backfill commit's own CI result is reported in the final task summary rather than self-referenced in this file.
+Main branch protection, private vulnerability reporting, CodeQL required check, GitHub Release, local Docker smoke (daemon unavailable), local PostgreSQL V008→V013 migration (CI production-safety covers it), the CI result for commit `3ad2838`, and `.upgrade/validation/records.jsonl` append (subject_digest semantics unavailable without the maintainer CLI) remain unverified. The verification backfill commit's own CI result is reported in the final task summary rather than self-referenced in this file.
 
 ## current_blockers
 

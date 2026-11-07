@@ -474,6 +474,43 @@ CREATE TABLE IF NOT EXISTS gate_evaluation_records (
 );
 CREATE INDEX IF NOT EXISTS idx_gate_eval_tenant_time ON gate_evaluation_records (tenant_id, evaluated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_gate_eval_session ON gate_evaluation_records (session_id, stage_id);
+
+CREATE TABLE IF NOT EXISTS service_tokens (
+    token_id     TEXT PRIMARY KEY,
+    tenant_id    TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+    name         TEXT NOT NULL,
+    token_hash   TEXT NOT NULL,
+    scope        TEXT NOT NULL DEFAULT 'release_gate:read'
+                 CHECK (scope IN ('release_gate:read')),
+    created_by   TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at   TEXT NOT NULL,
+    revoked_at   TEXT,
+    last_used_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_service_tokens_token_hash
+ON service_tokens (token_hash);
+CREATE INDEX IF NOT EXISTS idx_service_tokens_tenant
+ON service_tokens (tenant_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS release_gate_checks (
+    check_id                  TEXT PRIMARY KEY,
+    tenant_id                 TEXT NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+    token_id                  TEXT REFERENCES service_tokens(token_id) ON DELETE SET NULL,
+    session_id                TEXT NOT NULL,
+    decision                  TEXT NOT NULL CHECK (decision IN ('allow', 'block')),
+    reason_code               TEXT NOT NULL,
+    approval_status           TEXT NOT NULL,
+    approval_id               TEXT NOT NULL DEFAULT '',
+    evaluation_version_digest TEXT NOT NULL DEFAULT '',
+    evidence_digest           TEXT NOT NULL DEFAULT '',
+    release_batch_id          TEXT NOT NULL DEFAULT '',
+    checked_at                TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_release_gate_checks_tenant_time
+ON release_gate_checks (tenant_id, checked_at DESC);
+CREATE INDEX IF NOT EXISTS idx_release_gate_checks_session
+ON release_gate_checks (session_id, checked_at DESC);
 """
 
 
@@ -2085,6 +2122,137 @@ class SQLiteSessionStore:
                 ).fetchone()
                 conn.commit()
         return dict(user) if user else None
+
+    # ── Service tokens / release gate ────────────────────────────────────────
+
+    def create_service_token(
+        self,
+        *,
+        token_id: str,
+        tenant_id: str,
+        name: str,
+        token_hash: str,
+        scope: str,
+        created_by: str,
+        expires_at: datetime,
+    ) -> dict:
+        with self._lock:
+            with self._get_conn() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO service_tokens (
+                        token_id, tenant_id, name, token_hash, scope, created_by, expires_at
+                    ) VALUES (?,?,?,?,?,?,?)
+                    """,
+                    (
+                        token_id,
+                        tenant_id,
+                        name,
+                        token_hash,
+                        scope,
+                        created_by or "",
+                        _dt(expires_at),
+                    ),
+                )
+                row = conn.execute(
+                    "SELECT token_id, tenant_id, name, scope, created_by, created_at, "
+                    "expires_at, revoked_at, last_used_at "
+                    "FROM service_tokens WHERE token_id=?",
+                    (token_id,),
+                ).fetchone()
+                conn.commit()
+        return dict(row)
+
+    def get_service_token_by_hash(self, token_hash: str) -> dict | None:
+        with self._lock:
+            with self._get_conn() as conn:
+                row = conn.execute(
+                    "SELECT token_id, tenant_id, name, scope, created_by, created_at, "
+                    "expires_at, revoked_at, last_used_at "
+                    "FROM service_tokens WHERE token_hash=?",
+                    (token_hash,),
+                ).fetchone()
+        return dict(row) if row else None
+
+    def list_service_tokens_by_tenant(self, tenant_id: str) -> list[dict]:
+        with self._lock:
+            with self._get_conn() as conn:
+                rows = conn.execute(
+                    "SELECT token_id, tenant_id, name, scope, created_by, created_at, "
+                    "expires_at, revoked_at, last_used_at "
+                    "FROM service_tokens WHERE tenant_id=? ORDER BY created_at DESC",
+                    (tenant_id,),
+                ).fetchall()
+        return [dict(row) for row in rows]
+
+    def revoke_service_token(
+        self, *, tenant_id: str, token_id: str, revoked_at: datetime
+    ) -> dict | None:
+        with self._lock:
+            with self._get_conn() as conn:
+                conn.execute(
+                    "UPDATE service_tokens SET revoked_at=COALESCE(revoked_at, ?) "
+                    "WHERE token_id=? AND tenant_id=?",
+                    (_dt(revoked_at), token_id, tenant_id),
+                )
+                row = conn.execute(
+                    "SELECT token_id, tenant_id, name, scope, created_by, created_at, "
+                    "expires_at, revoked_at, last_used_at "
+                    "FROM service_tokens WHERE token_id=? AND tenant_id=?",
+                    (token_id, tenant_id),
+                ).fetchone()
+                conn.commit()
+        return dict(row) if row else None
+
+    def touch_service_token(self, token_id: str, tenant_id: str, last_used_at: datetime) -> None:
+        with self._lock:
+            with self._get_conn() as conn:
+                conn.execute(
+                    "UPDATE service_tokens SET last_used_at=? WHERE token_id=? AND tenant_id=?",
+                    (_dt(last_used_at), token_id, tenant_id),
+                )
+                conn.commit()
+
+    def record_release_gate_check(
+        self,
+        *,
+        check_id: str,
+        tenant_id: str,
+        token_id: str,
+        session_id: str,
+        decision: str,
+        reason_code: str,
+        approval_status: str,
+        approval_id: str,
+        evaluation_version_digest: str,
+        evidence_digest: str,
+        release_batch_id: str,
+    ) -> None:
+        with self._lock:
+            with self._get_conn() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO release_gate_checks (
+                        check_id, tenant_id, token_id, session_id, decision, reason_code,
+                        approval_status, approval_id, evaluation_version_digest,
+                        evidence_digest, release_batch_id
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        check_id,
+                        tenant_id,
+                        token_id,
+                        session_id,
+                        decision,
+                        reason_code,
+                        approval_status,
+                        approval_id,
+                        evaluation_version_digest,
+                        evidence_digest,
+                        release_batch_id,
+                    ),
+                )
+                conn.commit()
 
     # ── Governance trend analytics (T3.2) ─────────────────────────────────────
 

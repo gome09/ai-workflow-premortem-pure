@@ -2114,6 +2114,127 @@ class PostgresSessionStore:
             row = conn.execute(sql, (user_id,)).fetchone()
         return dict(row) if row else None
 
+    # ── Service tokens / release gate ────────────────────────────────────────
+
+    def create_service_token(
+        self,
+        *,
+        token_id: str,
+        tenant_id: str,
+        name: str,
+        token_hash: str,
+        scope: str,
+        created_by: str,
+        expires_at: datetime,
+    ) -> dict:
+        sql = """
+            INSERT INTO service_tokens (
+                token_id, tenant_id, name, token_hash, scope, created_by, expires_at
+            ) VALUES (%s::uuid, %s::uuid, %s, %s, %s, %s, %s)
+            RETURNING token_id::text, tenant_id::text, name, scope, created_by,
+                      created_at, expires_at, revoked_at, last_used_at
+        """
+        with self._get_conn() as conn:
+            row = conn.execute(
+                sql,
+                (
+                    token_id,
+                    tenant_id,
+                    name,
+                    token_hash,
+                    scope,
+                    created_by or "",
+                    expires_at,
+                ),
+            ).fetchone()
+            conn.commit()
+        return dict(cast(dict[str, Any], row))
+
+    def get_service_token_by_hash(self, token_hash: str) -> dict | None:
+        sql = (
+            "SELECT token_id::text, tenant_id::text, name, scope, created_by, created_at, "
+            "expires_at, revoked_at, last_used_at "
+            "FROM service_tokens WHERE token_hash = %s"
+        )
+        with self._get_conn() as conn:
+            row = conn.execute(sql, (token_hash,)).fetchone()
+        return dict(row) if row else None
+
+    def list_service_tokens_by_tenant(self, tenant_id: str) -> list[dict]:
+        sql = (
+            "SELECT token_id::text, tenant_id::text, name, scope, created_by, created_at, "
+            "expires_at, revoked_at, last_used_at "
+            "FROM service_tokens WHERE tenant_id = %s::uuid ORDER BY created_at DESC"
+        )
+        with self._get_conn() as conn:
+            rows = conn.execute(sql, (tenant_id,)).fetchall()
+        return [dict(row) for row in rows]
+
+    def revoke_service_token(
+        self, *, tenant_id: str, token_id: str, revoked_at: datetime
+    ) -> dict | None:
+        sql = """
+            UPDATE service_tokens
+            SET revoked_at = COALESCE(revoked_at, %s)
+            WHERE token_id = %s::uuid AND tenant_id = %s::uuid
+            RETURNING token_id::text, tenant_id::text, name, scope, created_by,
+                      created_at, expires_at, revoked_at, last_used_at
+        """
+        with self._get_conn() as conn:
+            row = conn.execute(sql, (revoked_at, token_id, tenant_id)).fetchone()
+            conn.commit()
+        return dict(row) if row else None
+
+    def touch_service_token(self, token_id: str, tenant_id: str, last_used_at: datetime) -> None:
+        sql = (
+            "UPDATE service_tokens SET last_used_at = %s "
+            "WHERE token_id = %s::uuid AND tenant_id = %s::uuid"
+        )
+        with self._get_conn() as conn:
+            conn.execute(sql, (last_used_at, token_id, tenant_id))
+            conn.commit()
+
+    def record_release_gate_check(
+        self,
+        *,
+        check_id: str,
+        tenant_id: str,
+        token_id: str,
+        session_id: str,
+        decision: str,
+        reason_code: str,
+        approval_status: str,
+        approval_id: str,
+        evaluation_version_digest: str,
+        evidence_digest: str,
+        release_batch_id: str,
+    ) -> None:
+        sql = """
+            INSERT INTO release_gate_checks (
+                check_id, tenant_id, token_id, session_id, decision, reason_code,
+                approval_status, approval_id, evaluation_version_digest,
+                evidence_digest, release_batch_id
+            ) VALUES (%s::uuid, %s::uuid, %s::uuid, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        with self._get_conn() as conn:
+            conn.execute(
+                sql,
+                (
+                    check_id,
+                    tenant_id,
+                    token_id,
+                    session_id,
+                    decision,
+                    reason_code,
+                    approval_status,
+                    approval_id,
+                    evaluation_version_digest,
+                    evidence_digest,
+                    release_batch_id,
+                ),
+            )
+            conn.commit()
+
     def create_invitation(
         self,
         *,

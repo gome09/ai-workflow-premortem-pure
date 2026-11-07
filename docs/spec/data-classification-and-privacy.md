@@ -43,11 +43,11 @@
 |---|---|---|
 | `public_demo` | 内置演示场景数据，无真实业务信息 | 会话由 `scenarios/registry.py` 场景创建 |
 | `business_internal` | 用户输入的真实业务材料 | 非场景创建的会话默认值 |
-| `sensitive_personal` | 材料含敏感个人信息（PIPL 28 条：医疗健康、未成年人、生物识别等） | 当前四类正则 PII 命中时自动升级；语义敏感但未命中正则的材料必须人工标记 |
+| `sensitive_personal` | 材料或聊天正文含敏感个人信息（PIPL 28 条：医疗健康、未成年人、生物识别等） | 当前四类正则 PII 命中时自动升级；语义敏感但未命中正则的内容必须人工标记 |
 
 ### 3.2 判定与覆写
 
-- 会话创建时只按是否为内置场景设置 `public_demo` / `business_internal`；加入材料时扫描身份证号、手机号、邮箱、银行卡号四类模式，命中后可升级为 `sensitive_personal`。当前不识别姓名、学号或“心理健康”等语义类别，部署方必须人工覆写这类敏感场景。
+- 会话创建时只按是否为内置场景设置 `public_demo` / `business_internal`；加入材料以及每轮聊天正文进入模型前都会扫描身份证号、手机号、邮箱、银行卡号四类模式，命中后升级为 `sensitive_personal`（`public_demo` 命中真实 PII 时同样升级）。当前不识别姓名、学号或“心理健康”等语义类别，部署方必须人工覆写这类敏感场景。
 - 人工覆写走新增端点 `PATCH /sessions/{id}/data-classification`（editor/admin），**只允许升级或同级修改，降级必须 admin** 且写 `AuditEvent`。
 - 分级**向上联动 AI 风险分级**：`sensitive_personal` 会话在 `core/gates/risk_profile.py:classify_project_risk` 中作为升档信号，把 MEDIUM 升为 HIGH、把 HIGH 升为 CRITICAL；该升档同时是**地板值（floor）**，后续 low-scope 降档不得把 `sensitive_personal` 会话拉回 MEDIUM/LOW。数据分级与 AI 风险分级仍是两个独立维度（一个关于"处理的数据"，一个关于"被评估的 AI 系统"），仅单向联动。
 
@@ -80,11 +80,12 @@
 
 ### 4.2 PII 检测与出境前掩码
 
-动机：用户材料会随 prompt 发送到外部 LLM API（DeepSeek），这是一次"向第三方提供个人信息"的数据流转，PIPL 视角必须可控。
+动机：用户材料与聊天正文会随 prompt 发送到外部 LLM API（DeepSeek），这是一次"向第三方提供个人信息"的数据流转，PIPL 视角必须可控。
 
 - `tools/safety_classifier.py` 新增 `PII_PATTERNS` 规则组：中国大陆身份证号（18 位含校验特征）、手机号（`1[3-9]\d{9}`）、邮箱、银行卡号（Luhn 可后置）。命中产出 `sensitive_info` finding（复用现有 risk_type），敏感类别（如身份证）severity=high。
 - 新增配置 `PII_MASK_BEFORE_LLM`（默认 `false`，避免破坏现有演示行为）：开启后 `core/evidence_service.py:format_evidence_for_prompt` 对 evidence summary 与 `user_materials` 注入文本中的命中项做模式保留掩码（`110***********1234`）。
 - **出站守卫（v1.5.0 起）**：`core/llm/outbound_guard.py` 在所有 `llm.invoke` 出站点（阶段执行器、INIT、eval `llm_node`、LLM judge）统一执行掩码。`sensitive_personal` 会话**始终掩码，忽略 `PII_MASK_BEFORE_LLM`**；`business_internal` / `public_demo` 继续遵循该开关。非文本消息在 `sensitive_personal` 下 fail-closed（`OutboundPIIBlockedError`）。
+- **聊天正文覆盖（2026-11-07 起）**：`SessionWorkflowService.send_message` 在写入 `pending_input` 前调用 `tools.safety_classifier.scan_user_message_pii`，把聊天正文纳入与补充材料相同的四类正则检测和分级升级。命中后会话升级为 `sensitive_personal`，`guard_messages` 会对 system prompt、历史消息与本轮消息统一掩码，不再存在“直接消息/历史不覆盖”的缺口。
 - **当前边界**：掩码仍只覆盖四类正则 PII（身份证 / 手机号 / 邮箱 / 银行卡），语义敏感但未命中正则的内容不会被自动识别；该守卫不替代入口级数据最小化。
 
 ### 4.3 LangGraph checkpoint 数据副本
@@ -138,7 +139,7 @@
   → 落库：business_internal 及以上字段级加密；生产/PG 缺密钥或密钥错误 fail-closed
   → 事件/审计：自由文本改写为 {"_redacted", "sha256", "length"}，用户消息只留 input_sha256/input_length
   → 可选中断执行：完整 ProjectContext 写入独立 Fernet 加密的 PostgreSQL checkpoint
-  → 进 prompt：evidence/user_materials 路径可选 PII 掩码；直接消息/历史当前不覆盖 → DeepSeek API
+  → 进 prompt：聊天正文与 evidence/user_materials 均在模型调用前扫描；命中即升级 sensitive_personal 并强制掩码 → DeepSeek API
   → 报告导出：首屏双语 AI 标识（新）+ 分级标签展示
   → 生命周期：retention 定期清理 / admin 删除（checkpoint → 派生表 → 租户谓词）+ 审计痕迹
 ```

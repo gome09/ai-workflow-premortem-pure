@@ -24,6 +24,7 @@ from api.routers import (
     interrupts,
     oversight,
     redteam,
+    release_gate,
     reports,
     risk_treatments,
     safety,
@@ -42,6 +43,7 @@ from core.execution_service import (
     start_interrupt_resume_scheduler,
     stop_interrupt_resume_scheduler,
 )
+from core.llm.errors import LLMCallError
 from core.retention_service import (
     retention_scheduler_status,
     start_retention_scheduler,
@@ -78,6 +80,34 @@ except ImportError:
 class _JSONFormatter(logging.Formatter):
     """stdlib-only JSON log formatter — Docker log drivers consume structured output."""
 
+    _RESERVED_ATTRS = frozenset(
+        {
+            "name",
+            "msg",
+            "args",
+            "levelname",
+            "levelno",
+            "pathname",
+            "filename",
+            "module",
+            "exc_info",
+            "exc_text",
+            "stack_info",
+            "lineno",
+            "funcName",
+            "created",
+            "msecs",
+            "relativeCreated",
+            "thread",
+            "threadName",
+            "processName",
+            "process",
+            "message",
+            "asctime",
+            "taskName",
+        }
+    )
+
     def format(self, record: logging.LogRecord) -> str:
         payload: dict = {
             "time": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
@@ -85,9 +115,15 @@ class _JSONFormatter(logging.Formatter):
             "name": record.name,
             "message": record.getMessage(),
         }
+        # 保留调用方通过 extra={} 传入的结构化字段（event/session_id/error_code 等），
+        # 便于日志系统按业务键检索；保留字段与下划线私有键不重复输出。
+        for key, value in record.__dict__.items():
+            if key in self._RESERVED_ATTRS or key.startswith("_"):
+                continue
+            payload[key] = value
         if record.exc_info:
             payload["exc_info"] = self.formatException(record.exc_info)
-        return json.dumps(payload, ensure_ascii=False)
+        return json.dumps(payload, ensure_ascii=False, default=str)
 
 
 _handler = logging.StreamHandler(sys.stdout)
@@ -225,9 +261,25 @@ async def _workflow_blocked_handler(request: Request, exc: Exception) -> JSONRes
     )
 
 
+async def _llm_call_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """模型上游失败：返回 502 固定契约，不泄露 provider 原文或凭据。"""
+    error = exc if isinstance(exc, LLMCallError) else None
+    return JSONResponse(
+        status_code=502,
+        content={
+            "detail": "Model provider call failed. Retry later or contact the administrator.",
+            "error_code": error.error_code if error else "provider_error",
+            "retryable": error.retryable if error else True,
+            "session_id": error.session_id if error else "",
+            "stage": error.stage if error else None,
+        },
+    )
+
+
 app.add_exception_handler(StaleContextError, _stale_context_handler)
 app.add_exception_handler(TenantIsolationError, _tenant_isolation_handler)
 app.add_exception_handler(WorkflowBlockedError, _workflow_blocked_handler)
+app.add_exception_handler(LLMCallError, _llm_call_error_handler)
 
 origins = [o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()]
 app.add_middleware(
@@ -256,6 +308,7 @@ app.include_router(traces.router)
 app.include_router(governance.router)
 app.include_router(risk_treatments.router)
 app.include_router(approvals.router)
+app.include_router(release_gate.router)
 
 
 @app.get("/health/live", include_in_schema=False)

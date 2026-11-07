@@ -36,11 +36,12 @@ def _insert_legacy_row(
     session_id: str,
     goal: str,
     classification: str = "business_internal",
+    tenant_id: str = _TENANT,
 ) -> None:
     context = {
         "context_schema_version": "0.10.0",
         "session_id": session_id,
-        "tenant_id": _TENANT,
+        "tenant_id": tenant_id,
         "goal": goal,
         "data_classification": classification,
         "current_state": "init",
@@ -54,7 +55,7 @@ def _insert_legacy_row(
                 session_id,
                 "init",
                 json.dumps(context, ensure_ascii=False),
-                _TENANT,
+                tenant_id,
                 "2026-01-01T00:00:00",
                 "2026-01-01T00:00:00",
             ),
@@ -162,3 +163,35 @@ def test_invalid_json_is_reported_without_aborting(store):
     assert result["scanned"] == 1
     assert result["status_counts"] == {"invalid_json": 1}
     assert result["changed"] == 0
+
+
+def test_dry_run_and_apply_counts_are_consistent(store):
+    _insert_legacy_row(store, session_id="s-a", goal="目标 A")
+    _insert_legacy_row(store, session_id="s-b", goal="目标 B")
+
+    dry = store.backfill_goal_encryption(dry_run=True)
+    applied = store.backfill_goal_encryption(dry_run=False)
+
+    assert dry["scanned"] == applied["scanned"] == 2
+    assert dry["changed"] == applied["changed"] == 2
+
+
+def test_backfill_preserves_cross_tenant_isolation(store):
+    _insert_legacy_row(store, session_id="s-a", goal="目标 A")
+    _insert_legacy_row(
+        store,
+        session_id="s-b",
+        goal="目标 B",
+        tenant_id="tenant-other",
+    )
+
+    store.backfill_goal_encryption(dry_run=False)
+
+    loaded_a = store.load("s-a", _TENANT)
+    loaded_b = store.load("s-b", "tenant-other")
+    assert loaded_a is not None
+    assert loaded_a.goal == "目标 A"
+    assert store.load("s-a", "tenant-other") is None
+    assert loaded_b is not None
+    assert loaded_b.goal == "目标 B"
+    assert store.load("s-b", _TENANT) is None

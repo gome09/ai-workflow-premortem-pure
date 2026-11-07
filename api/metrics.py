@@ -83,6 +83,67 @@ premortem_llm_tokens_total = Counter(
     "LLM tokens total (input+output)",
 )
 
+# ─────────────────────────────────────────────────────────
+# 模型调用失败与结构化输出（可靠性观测）
+# ─────────────────────────────────────────────────────────
+premortem_llm_failures_total = Counter(
+    "premortem_llm_failures_total",
+    "LLM call failures by stage and fixed error code",
+    ["stage", "error_code"],  # timeout | rate_limit | auth | connection | server_error | ...
+)
+
+premortem_structured_output_failures_total = Counter(
+    "premortem_structured_output_failures_total",
+    "Structured output parse failures by stage and parser status",
+    ["stage", "status"],  # non_json | validation_failed | failed | ...
+)
+
+# ─────────────────────────────────────────────────────────
+# 真实目标执行（target_http）
+# ─────────────────────────────────────────────────────────
+premortem_target_executions_total = Counter(
+    "premortem_target_executions_total",
+    "Real target executions by outcome",
+    ["outcome"],  # success | failed | timeout | error
+)
+
+# ─────────────────────────────────────────────────────────
+# 数据留存清理
+# ─────────────────────────────────────────────────────────
+premortem_retention_sessions_purged_total = Counter(
+    "premortem_retention_sessions_purged_total",
+    "Sessions purged by the retention executor",
+)
+
+premortem_retention_audit_rows_purged_total = Counter(
+    "premortem_retention_audit_rows_purged_total",
+    "Audit rows purged by the retention executor",
+    ["source"],  # live | archive
+)
+
+premortem_retention_errors_total = Counter(
+    "premortem_retention_errors_total",
+    "Retention sweep errors (purge or checkpoint cleanup)",
+)
+
+# ─────────────────────────────────────────────────────────
+# 上线审批决策
+# ─────────────────────────────────────────────────────────
+premortem_release_approvals_total = Counter(
+    "premortem_release_approvals_total",
+    "Release approval decisions",
+    ["decision"],  # granted | rejected | denied
+)
+
+# ─────────────────────────────────────────────────────────
+# 发布门禁检查（Counter，机器调用）
+# ─────────────────────────────────────────────────────────
+premortem_release_gate_checks_total = Counter(
+    "premortem_release_gate_checks_total",
+    "Release gate checks by decision and fixed reason code",
+    ["decision", "reason_code"],
+)
+
 
 def record_gate_evaluation_metrics(passed: bool, blocking_rule_ids: list[str]) -> None:
     """评估路径打点——在 engine._try_persist_gate_evaluation 内调用。"""
@@ -98,6 +159,69 @@ def record_llm_usage(call_count_delta: int = 1, token_delta: int = 0) -> None:
         premortem_llm_calls_total.inc(call_count_delta)
     if token_delta:
         premortem_llm_tokens_total.inc(token_delta)
+
+
+def record_llm_failure(stage: int | None, error_code: str) -> None:
+    """模型调用失败打点——由 core.llm.errors 统一调用，失败不阻断主路径。"""
+    try:
+        premortem_llm_failures_total.labels(
+            stage=str(stage) if stage is not None else "unknown",
+            error_code=error_code,
+        ).inc()
+    except Exception:  # pragma: no cover - metrics must never break the error path
+        logger.debug("record_llm_failure failed; non-fatal", exc_info=True)
+
+
+def record_structured_output_failure(stage: int, status: str) -> None:
+    """结构化输出解析失败打点——由 BaseStageExecutor.parse_structured_output 调用。"""
+    try:
+        premortem_structured_output_failures_total.labels(stage=str(stage), status=status).inc()
+    except Exception:  # pragma: no cover
+        logger.debug("record_structured_output_failure failed; non-fatal", exc_info=True)
+
+
+def record_target_execution(outcome: str) -> None:
+    """真实目标执行打点——由 eval_runner 在 target_http 分支调用。"""
+    try:
+        premortem_target_executions_total.labels(outcome=outcome).inc()
+    except Exception:  # pragma: no cover
+        logger.debug("record_target_execution failed; non-fatal", exc_info=True)
+
+
+def record_retention_cycle(result: dict) -> None:
+    """留存清理统计打点——会话/审计删除量与错误数。"""
+    try:
+        premortem_retention_sessions_purged_total.inc(int(result.get("sessions_purged", 0) or 0))
+        premortem_retention_audit_rows_purged_total.labels(source="live").inc(
+            int(result.get("audit_events_deleted", 0) or 0)
+        )
+        premortem_retention_audit_rows_purged_total.labels(source="archive").inc(
+            int(result.get("archived_events_deleted", 0) or 0)
+        )
+        premortem_retention_errors_total.inc(
+            int(result.get("errors_count", len(result.get("errors", []) or [])) or 0)
+        )
+    except Exception:  # pragma: no cover
+        logger.debug("record_retention_cycle failed; non-fatal", exc_info=True)
+
+
+def record_release_approval(decision: str) -> None:
+    """上线审批决策打点——granted / rejected / denied。"""
+    try:
+        premortem_release_approvals_total.labels(decision=decision).inc()
+    except Exception:  # pragma: no cover
+        logger.debug("record_release_approval failed; non-fatal", exc_info=True)
+
+
+def record_release_gate_check(decision: str, reason_code: str) -> None:
+    """发布门禁检查打点——decision=allow|block + 固定 reason_code。"""
+    try:
+        premortem_release_gate_checks_total.labels(
+            decision=decision,
+            reason_code=reason_code,
+        ).inc()
+    except Exception:  # pragma: no cover
+        logger.debug("record_release_gate_check failed; non-fatal", exc_info=True)
 
 
 def refresh_gauge_metrics(tenant_name: str = "default") -> None:

@@ -4,6 +4,16 @@
 > 远程 `origin`（github.com/gome09/ai-workflow-premortem-pure）与本地共享同一根提交，**不包含更早的历史**，无法用于追溯 v1.0 之前的开发过程。
 > 截至 2026-09-01，本地 `main` 已与 `origin/main` 同步（当日推送 10 次提交，至 `08f8a99`）。
 
+## 1.8.0 — Release Gate Integration (2026-11-07)
+
+- **发布门禁**：新增只读 `GET /release-gate/{session_id}`，供 CI 在部署前调用。仅当当前 `ProjectApproval.effective_status=approved` 且 readiness 全部满足时返回 HTTP 200 + `decision=allow`；未批准、被驳回、stale、invalidated、public_demo、跨租户、凭证无效或门禁不可用一律阻断。
+- **服务凭证**：新增 `service_tokens` 租户级机器凭证（SHA-256 存储、原始 token 仅返回一次、默认 90 天、可撤销、scope 固定 `release_gate:read`）与 admin-only `/auth/service-tokens` 创建/列表/撤销接口；人类 JWT 不能调用门禁端点。
+- **安全边界**：门禁绕过 72 小时上下文缓存，直接读取存储，避免失效审批被旧缓存放行；每次通过认证的检查写入 append-only `release_gate_checks`（decision / reason / approval_status / 版本与证据摘要）；审计写入失败返回 503 + `gate_unavailable`（fail-closed）；响应不包含会话正文或审批备注。
+- **可观测性**：新增 `premortem_release_gate_checks_total{decision,reason_code}`；401/404 只记录哈希前缀/租户与固定原因，不记录原始 token。
+- **迁移**：Alembic V013 新增 `service_tokens` 与 `release_gate_checks` 两张表，不修改既有表；SQLite 由 `initialize()` 幂等补齐。
+- **测试**：新增 `test_release_gate.py`（决策状态、凭证生命周期、人类 JWT 拒绝、跨租户 404、过期/撤销 401、缓存绕过、审计失败 fail-closed）与 `test_alembic_v013_release_gate.py`；扩展 API 契约、metrics、PG-only 与 V008→V013 迁移断言。离线全量 `1219 passed, 6 skipped`（SQLite + memory + mock + single_step，70.7s）；Ruff、format（403 files）、mypy（205 files）、doc-check、version-check（1.8.0）通过。
+- **版本**：`1.8.0`（`core/version.py` / `pyproject.toml` / `uv.lock` 同步）。
+
 ## 1.7.0 — P1 Business Closure Hardening (2026-11-01)
 
 - **团队与身份**：新增 `workspace_invitations`（token 哈希、7 天有效期、同租户加入）与 `/auth/invitations` 创建/列表/接受接口；注册创建工作区时创建者固定为 admin。`/auth/refresh` 重新读取当前用户角色；EvalRun 人工校准复核人固定取 JWT `user_id`，移除请求体 `reviewer_id`。

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from core.approval_service import build_release_readiness
+from core.eval_judgment_service import calibrate_eval_run
 from core.evaluation_version import (
     build_evaluation_version,
     current_evaluation_digest,
@@ -193,25 +194,32 @@ def test_current_digest_eval_run_is_counted():
     ctx = _ctx()
     current_digest = current_evaluation_digest(ctx)
     case = ctx.eval_cases[0]
-    ctx.eval_runs.append(
-        EvalRun(
-            session_id=ctx.session_id,
-            eval_id=case.eval_id,
-            target_node_id="N-1",
-            run_mode="target_http",
-            execution_kind="real_target_execution",
-            execution_outcome="success",
-            evaluation_version_digest=current_digest,
-            target_endpoint=ctx.target_deployment.endpoint,
-            target_deployment_version=ctx.target_deployment.version,
-            case_version_digest=eval_case_digest(case),
-            input_payload="policy question",
-            expected_behavior="answer",
-            pass_criteria=["citation"],
-            actual_output="answer",
-            judge_result="passed",
-            status="completed",
-        )
+    run = EvalRun(
+        session_id=ctx.session_id,
+        eval_id=case.eval_id,
+        target_node_id="N-1",
+        run_mode="target_http",
+        execution_kind="real_target_execution",
+        execution_outcome="success",
+        evaluation_version_digest=current_digest,
+        target_endpoint=ctx.target_deployment.endpoint,
+        target_deployment_version=ctx.target_deployment.version,
+        case_version_digest=eval_case_digest(case),
+        input_payload="policy question",
+        expected_behavior="answer",
+        pass_criteria=["citation"],
+        actual_output="answer",
+        judge_result="passed",
+        status="completed",
+    )
+    ctx.eval_runs.append(run)
+    calibrate_eval_run(
+        ctx,
+        eval_run_id=run.run_id,
+        human_label="passed",
+        human_comment="人工核对输出满足 pass_criteria。",
+        reviewer_id="reviewer-b",
+        actor_role="editor",
     )
 
     readiness = build_release_readiness(ctx)

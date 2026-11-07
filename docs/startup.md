@@ -73,7 +73,7 @@ make prod-up  # 启动前自动做前置检查（secrets/ 八文件 + 证书存�
 - `deepseek_api_key` / `tavily_api_key` 无法生成，保留占位文件，`LLM_MODE=real` 时需手动填入真实值。
 - `make prod-up` 前置检查失败（缺 secrets 文件或证书）会直接报错并提示先跑 `make setup`，不会进入晦涩的 compose 挂载错误。
 - `gen_secrets.sh` 默认将 secret 文件设为 `0600`。Linux 主机若宿主用户与容器内非 root UID 不同，需由部署方用受控 ACL/属主映射确保容器可读；不要在生产环境把长期密钥直接改成全局可读。
-- API 启动时 `PostgresSessionStore.initialize()` 会自动执行 `alembic upgrade head`；手工迁移可用 `docker compose run --rm api python -m alembic upgrade head`。当前迁移链为 V001→V012，升级早于 Alembic 的旧库前先按 [storage/README.md](../storage/README.md) 备份并补齐 V001 基线列。
+- API 启动时 `PostgresSessionStore.initialize()` 会自动执行 `alembic upgrade head`；手工迁移可用 `docker compose run --rm api python -m alembic upgrade head`。当前迁移链为 V001→V013，升级早于 Alembic 的旧库前先按 [storage/README.md](../storage/README.md) 备份并补齐 V001 基线列。
 
 若只需开发证书而不做完整 setup：
 
@@ -136,6 +136,8 @@ curl -k https://localhost/api/health/ready
 启动时会先执行一次中断恢复 outbox 对账，之后由进程内调度器按 `INTERRUPT_RESUME_RETRY_INTERVAL_SECONDS`（默认 600 秒）周期重试失败行。该调度器只在 `langgraph_interrupt` 模式启动，`/health` 的 `interrupt_resume_scheduler` 字段可确认状态（`running` / `not_started` / `disabled`）；设为 0 可关闭周期重试，仅保留启动对账。运行期瞬时失败不再需要重启进程才能重试。
 
 生产 Compose 强制 `DEMO_AUTO_AUTH=false`，前端显示交互式登录/注册表单。只有开发 override 与 `.env.demo` 显式启用固定演示账号自动认证；生产不得开启该选项。
+
+`APP_ENV=production` 的启动校验还会拒绝 `LLM_MODE=mock`、`STORAGE_BACKEND=sqlite`、`DEMO_AUTO_AUTH=true`，并要求 `DATA_ENCRYPTION_KEY` 存在且为合法 Fernet key；任一条件不满足时 `Settings` 在导入阶段 fail fast，不会带病启动。
 
 本地 SQLite 可用于功能调试，但不可用于持久化恢复或生产：
 

@@ -45,8 +45,10 @@ def test_metrics_module_importable() -> None:
     assert hasattr(metrics_mod, "premortem_pending_actions")
     assert hasattr(metrics_mod, "premortem_llm_calls_total")
     assert hasattr(metrics_mod, "premortem_llm_tokens_total")
+    assert hasattr(metrics_mod, "premortem_release_gate_checks_total")
     assert callable(metrics_mod.record_gate_evaluation_metrics)
     assert callable(metrics_mod.record_llm_usage)
+    assert callable(metrics_mod.record_release_gate_check)
     assert callable(metrics_mod.refresh_gauge_metrics)
 
 
@@ -104,6 +106,24 @@ def test_record_gate_evaluation_blocked_multiple_rules() -> None:
     for rid in rule_ids:
         after = _get_counter_value(premortem_gate_blocked_total, rule_id=rid)
         assert after == before_values[rid] + 1.0
+
+
+def test_record_release_gate_check() -> None:
+    """release-gate counter 按 decision + reason_code 递增。"""
+    from api.metrics import premortem_release_gate_checks_total, record_release_gate_check
+
+    before = _get_counter_value(
+        premortem_release_gate_checks_total,
+        decision="block",
+        reason_code="approval_invalidated",
+    )
+    record_release_gate_check("block", "approval_invalidated")
+    after = _get_counter_value(
+        premortem_release_gate_checks_total,
+        decision="block",
+        reason_code="approval_invalidated",
+    )
+    assert after == before + 1.0
 
 
 def test_record_llm_usage_call_count() -> None:
@@ -291,3 +311,103 @@ def test_grafana_panels_reference_premortem_metrics(expr_fragment: str) -> None:
         t.get("expr", "") for panel in data["panels"] for t in panel.get("targets", [])
     )
     assert expr_fragment in all_exprs, f"metric {expr_fragment} not referenced in any panel"
+
+
+def test_phase2_metrics_importable() -> None:
+    import api.metrics as metrics_mod
+
+    assert hasattr(metrics_mod, "premortem_llm_failures_total")
+    assert hasattr(metrics_mod, "premortem_structured_output_failures_total")
+    assert hasattr(metrics_mod, "premortem_target_executions_total")
+    assert hasattr(metrics_mod, "premortem_retention_sessions_purged_total")
+    assert hasattr(metrics_mod, "premortem_retention_audit_rows_purged_total")
+    assert hasattr(metrics_mod, "premortem_retention_errors_total")
+    assert hasattr(metrics_mod, "premortem_release_approvals_total")
+    assert callable(metrics_mod.record_llm_failure)
+    assert callable(metrics_mod.record_structured_output_failure)
+    assert callable(metrics_mod.record_target_execution)
+    assert callable(metrics_mod.record_retention_cycle)
+    assert callable(metrics_mod.record_release_approval)
+
+
+def test_record_llm_failure_metric() -> None:
+    from api.metrics import premortem_llm_failures_total, record_llm_failure
+
+    before = _get_counter_value(premortem_llm_failures_total, stage="3", error_code="timeout")
+    record_llm_failure(3, "timeout")
+    after = _get_counter_value(premortem_llm_failures_total, stage="3", error_code="timeout")
+
+    assert after == before + 1.0
+
+
+def test_record_structured_output_failure_metric() -> None:
+    from api.metrics import (
+        premortem_structured_output_failures_total,
+        record_structured_output_failure,
+    )
+
+    before = _get_counter_value(
+        premortem_structured_output_failures_total, stage="1", status="non_json"
+    )
+    record_structured_output_failure(1, "non_json")
+    after = _get_counter_value(
+        premortem_structured_output_failures_total, stage="1", status="non_json"
+    )
+
+    assert after == before + 1.0
+
+
+def test_record_target_execution_metric() -> None:
+    from api.metrics import premortem_target_executions_total, record_target_execution
+
+    before = _get_counter_value(premortem_target_executions_total, outcome="success")
+    record_target_execution("success")
+    after = _get_counter_value(premortem_target_executions_total, outcome="success")
+
+    assert after == before + 1.0
+
+
+def test_record_retention_cycle_metrics() -> None:
+    from api.metrics import (
+        premortem_retention_audit_rows_purged_total,
+        premortem_retention_errors_total,
+        premortem_retention_sessions_purged_total,
+        record_retention_cycle,
+    )
+
+    before_sessions = _get_counter_value(premortem_retention_sessions_purged_total)
+    before_live = _get_counter_value(premortem_retention_audit_rows_purged_total, source="live")
+    before_archive = _get_counter_value(
+        premortem_retention_audit_rows_purged_total, source="archive"
+    )
+    before_errors = _get_counter_value(premortem_retention_errors_total)
+
+    record_retention_cycle(
+        {
+            "sessions_purged": 2,
+            "audit_events_deleted": 3,
+            "archived_events_deleted": 1,
+            "errors_count": 1,
+        }
+    )
+
+    assert _get_counter_value(premortem_retention_sessions_purged_total) == before_sessions + 2
+    assert (
+        _get_counter_value(premortem_retention_audit_rows_purged_total, source="live")
+        == before_live + 3
+    )
+    assert (
+        _get_counter_value(premortem_retention_audit_rows_purged_total, source="archive")
+        == before_archive + 1
+    )
+    assert _get_counter_value(premortem_retention_errors_total) == before_errors + 1
+
+
+def test_record_release_approval_metric() -> None:
+    from api.metrics import premortem_release_approvals_total, record_release_approval
+
+    before = _get_counter_value(premortem_release_approvals_total, decision="granted")
+    record_release_approval("granted")
+    after = _get_counter_value(premortem_release_approvals_total, decision="granted")
+
+    assert after == before + 1.0

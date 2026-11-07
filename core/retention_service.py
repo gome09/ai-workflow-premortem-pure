@@ -34,8 +34,31 @@ def _utc_now(now: datetime | None) -> datetime:
     return value
 
 
-def _purge_one_session(store: Any, cache: Any, session_id: str, tenant_id: str) -> None:
-    """按会话删除生命周期清理单个到期会话。"""
+def _append_error(result: dict[str, Any], entry: dict[str, str]) -> None:
+    """记录本轮错误；计数不受列表长度上限影响，便于指标准确。"""
+    result["errors_count"] = int(result.get("errors_count", 0)) + 1
+    if len(result["errors"]) < 10:
+        result["errors"].append(entry)
+
+
+def _record_retention_metrics(result: dict[str, Any]) -> None:
+    try:
+        from api.metrics import record_retention_cycle
+
+        record_retention_cycle(result)
+    except Exception:  # pragma: no cover - metrics must never break retention
+        logger.debug("record_retention_cycle failed; non-fatal", exc_info=True)
+
+
+def _purge_one_session(
+    store: Any, cache: Any, session_id: str, tenant_id: str
+) -> dict[str, str] | None:
+    """按会话删除生命周期清理单个到期会话。
+
+    数据库删除（审计归档 + 会话行）是提交点；checkpoint 是派生数据，
+    只有在数据库提交成功后才清理。若 checkpoint 清理失败，返回错误条目
+    供本轮统计记录，但不会把已删除的会话“恢复”回来。
+    """
     from graph.checkpoint_manager import delete_session_checkpoints
     from storage.backends.postgres import PostgresSessionStore
 
@@ -45,9 +68,6 @@ def _purge_one_session(store: Any, cache: Any, session_id: str, tenant_id: str) 
         tenant_id,
         system_access=None if tenant_id else SYSTEM_ACCESS,
     )
-    if ctx is not None:
-        delete_session_checkpoints(ctx, persistent=isinstance(store, PostgresSessionStore))
-
     summary = {
         "session_id": session_id,
         "tenant_id": tenant_id or None,
@@ -56,7 +76,28 @@ def _purge_one_session(store: Any, cache: Any, session_id: str, tenant_id: str) 
         "retention_days": settings.session_retention_days,
     }
     store.purge_session(session_id, tenant_id, "retention", summary)
+
+    cleanup_error: dict[str, str] | None = None
+    if ctx is not None:
+        try:
+            delete_session_checkpoints(ctx, persistent=isinstance(store, PostgresSessionStore))
+        except Exception as exc:
+            logger.warning(
+                "retention_checkpoint_cleanup_failed",
+                extra={
+                    "event": "retention_checkpoint_cleanup_failed",
+                    "session_id": session_id,
+                    "tenant_id": tenant_id or None,
+                    "error_type": type(exc).__name__,
+                },
+            )
+            cleanup_error = {
+                "session_id": session_id,
+                "stage": "checkpoint_cleanup",
+                "error": str(exc),
+            }
     cache.delete(session_id, tenant_id)
+    return cleanup_error
 
 
 def run_retention_cycle(
@@ -81,9 +122,11 @@ def run_retention_cycle(
         "sessions_matched": 0,
         "sessions_purged": 0,
         "audit_events_matched": 0,
+        "archived_events_matched": 0,
         "audit_events_deleted": 0,
         "archived_events_deleted": 0,
         "errors": [],
+        "errors_count": 0,
     }
 
     if settings.session_retention_days > 0:
@@ -98,23 +141,32 @@ def run_retention_cycle(
                 session_id = str(row["session_id"])
                 tenant_id = str(row["tenant_id"] or "")
                 try:
-                    _purge_one_session(target_store, target_cache, session_id, tenant_id)
+                    cleanup_error = _purge_one_session(
+                        target_store, target_cache, session_id, tenant_id
+                    )
                     result["sessions_purged"] += 1
+                    if cleanup_error:
+                        _append_error(result, cleanup_error)
                 except Exception as exc:  # 单个会话失败不阻断整轮清理
                     logger.warning(
-                        "Retention purge failed: session_id=%s error=%s",
-                        session_id,
-                        exc,
-                        exc_info=True,
+                        "retention_purge_failed",
+                        extra={
+                            "event": "retention_purge_failed",
+                            "session_id": session_id,
+                            "error_type": type(exc).__name__,
+                        },
                     )
-                    if len(result["errors"]) < 10:
-                        result["errors"].append({"session_id": session_id, "error": str(exc)})
+                    _append_error(
+                        result,
+                        {"session_id": session_id, "stage": "purge", "error": str(exc)},
+                    )
 
     if settings.audit_retention_days > 0:
         cutoff = current - timedelta(days=settings.audit_retention_days)
         result["audit_cutoff"] = cutoff.isoformat()
         audit_match = target_store.count_audit_events_before(cutoff)
         result["audit_events_matched"] = int(audit_match["audit_events"])
+        result["archived_events_matched"] = int(audit_match["archived_events"])
         if not effective_dry_run:
             deleted = target_store.purge_audit_events_before(
                 cutoff, limit=settings.retention_batch_size
@@ -122,6 +174,7 @@ def run_retention_cycle(
             result["audit_events_deleted"] = int(deleted["audit_events"])
             result["archived_events_deleted"] = int(deleted["archived_events"])
 
+    _record_retention_metrics(result)
     return result
 
 
@@ -130,7 +183,31 @@ async def _retention_loop(interval_seconds: int) -> None:
         await asyncio.sleep(interval_seconds)
         try:
             summary = await asyncio.to_thread(run_retention_cycle)
-            logger.info("Retention sweep finished: %s", summary)
+            # 不把 errors 中的原始异常文本写入日志，只保留计数与错误码级信息。
+            logger.info(
+                "retention_sweep_finished",
+                extra={
+                    "event": "retention_sweep_finished",
+                    "dry_run": summary.get("dry_run"),
+                    "sessions_matched": summary.get("sessions_matched"),
+                    "sessions_purged": summary.get("sessions_purged"),
+                    "audit_events_matched": summary.get("audit_events_matched"),
+                    "audit_events_deleted": summary.get("audit_events_deleted"),
+                    "archived_events_deleted": summary.get("archived_events_deleted"),
+                    "errors_count": summary.get("errors_count", 0),
+                },
+            )
+            if summary.get("errors_count"):
+                logger.warning(
+                    "retention_sweep_errors",
+                    extra={
+                        "event": "retention_sweep_errors",
+                        "errors_count": summary.get("errors_count"),
+                        "session_ids": [
+                            item.get("session_id") for item in summary.get("errors", [])
+                        ],
+                    },
+                )
         except asyncio.CancelledError:
             raise
         except Exception:

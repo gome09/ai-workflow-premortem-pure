@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import cast
+from typing import Any, cast
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -13,6 +13,12 @@ from core.context_manager import (
     build_llm_kwargs_for_stage,
     format_pending_flags,
     parse_review_action,
+)
+from core.llm.errors import (
+    LLMCallError,
+    classify_llm_error,
+    record_llm_failure,
+    summarize_llm_error,
 )
 from core.llm.outbound_guard import guarded_invoke
 from core.models import Message, MessageRole, ProjectContext, SessionState
@@ -198,6 +204,7 @@ def node_init(state: ProjectContext, user_input: str) -> ProjectContext:
     """
     # 用户消息先落盘，LLM 失败时不丢失用户输入
     _append_user_message(state, 0, user_input)
+    llm: Any = None
 
     try:
         profile = current_domain_profile(state)
@@ -221,23 +228,27 @@ def node_init(state: ProjectContext, user_input: str) -> ProjectContext:
             response = guarded_invoke(llm, messages, ctx=state, stage=0)
             ai_text = cast(str, response.content)
     except Exception as exc:
-        err_str = str(exc)
-        if "401" in err_str or "authentication" in err_str.lower():
-            error_summary = f"LLM authentication failure ({type(exc).__name__})"
-        elif (
-            "timeout" in err_str.lower()
-            or "connect" in err_str.lower()
-            or "refused" in err_str.lower()
-        ):
-            error_summary = f"LLM connection/timeout ({type(exc).__name__})"
-        else:
-            # Truncate to avoid leaking raw response bodies; keep type for diagnostics
-            safe_detail = err_str.split("api key")[0][:120].strip()
-            error_summary = f"LLM invocation failure ({type(exc).__name__}): {safe_detail}"
-
+        # 统一分类与脱敏摘要：不拼接上游原文，只保留固定错误码与异常类型。
+        error_code, _retryable = classify_llm_error(exc)
+        record_llm_failure(
+            exc,
+            stage=0,
+            session_id=state.session_id,
+            model=getattr(llm, "model_name", ""),
+            provider="openai_compatible",
+            logger=logger,
+        )
+        error_summary = summarize_llm_error(exc)
         state.last_error = error_summary
         state.current_state = SessionState.INIT
-        logger.error("[%s] node_init LLM error: %s", state.session_id, error_summary)
+        logger.error(
+            "node_init_llm_error",
+            extra={
+                "event": "node_init_llm_error",
+                "session_id": state.session_id,
+                "error_code": error_code,
+            },
+        )
         return state
 
     _append_assistant_message(state, 0, ai_text)
@@ -294,6 +305,16 @@ def node_stage_running(
 
         logger.info(f"[{state.session_id}] Stage {stage} round done → REVIEW")
 
+    except LLMCallError as exc:
+        # 模型上游故障必须映射为 502，不能被静默降级为 200 空回复。
+        state.last_error = str(exc)
+        state.current_state = {
+            1: SessionState.S1_RUNNING,
+            2: SessionState.S2_RUNNING,
+            3: SessionState.S3_RUNNING,
+            4: SessionState.S4_RUNNING,
+        }[stage]
+        raise
     except Exception as e:
         state.last_error = str(e)
         logger.error(f"[{state.session_id}] Stage {stage} error: {e}")

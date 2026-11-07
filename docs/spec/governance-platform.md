@@ -1,7 +1,7 @@
 # 组织级治理平台设计规格
 
-> Status: Implemented（v1.2.0 落地 T3.1–T3.5 与 T3.7、v1.3.0 落地 T3.6（flag 默认关）、v1.6.0–v1.7.0 落地业务闭环（证据生命周期 / 风险处置 / 上线批准 / 工作区邀请）。落地任务见 [../archive/plan/phase-3-governance-platform.md](../archive/plan/phase-3-governance-platform.md)）
-> Last updated: 2026-11-01
+> Status: Implemented（v1.2.0 落地 T3.1–T3.5 与 T3.7、v1.3.0 落地 T3.6（flag 默认关）、v1.6.0–v1.7.0 落地业务闭环、v1.8.0 落地发布门禁接入）。落地任务见 [../archive/plan/phase-3-governance-platform.md](../archive/plan/phase-3-governance-platform.md)）
+> Last updated: 2026-11-07
 > 对标依据：ISO/IEC 42001:2023（AI 管理体系）——从"单次评估工具"升级为"可审计的组织级 AI 治理台账"
 
 ---
@@ -98,8 +98,20 @@ CRITICAL 档 `require_expert_review=True` 时，Stage 3 就绪评估自动创建
 2. **风险处置**：`RiskTreatment` 为每个 high/critical 失败模式与开放 high/critical 安全发现记录责任人、缓解措施、执行状态（planned/in_progress/completed/accepted）与独立复核。Stage 4 新门禁规则 `risk_treatment` 要求处置为 final 状态、已复核且绑定当前评估版本；public_demo 会话豁免。v1.7.0 起，评估版本变化后即使原样重提处置也会清空旧复核，必须重新独立复核。
 3. **上线批准**：`ProjectApproval` 是独立于 `SessionState.COMPLETE` 的 admin 审批记录。前置条件包括评估完成、当前版本阻断动作/解析错误/过期阶段均为空、高风险证据已核验、风险处置已闭环、已声明目标部署、每个必测用例在同一个已完成的 `target_http` 评估批次中通过。报告生成/导出不写审批；`COMPLETE` 不等于可上线。
 4. **版本绑定**：`core/evaluation_version.py` 组合 stage 版本、输入版本（材料/目标部署）、关键内容摘要、EvalCase 定义与策略版本为 `digest`。审批、风险处置与 `EvalRun` 均存储该 digest；内容或版本变化后旧审批显示 `stale`、旧测试不再计入上线批准证据，改回原内容也不会复活旧审批。`EvalRun` 额外绑定不可变 `case_version_digest` 与 `target_deployment_version`。
-5. **有效授权计算**：批准后驳回处置、改判关键测试或新增高危安全发现会改变发布证据快照，`effective_status` 变为 `invalidated`；历史批准记录保留，但条件恢复后仍需新的批准记录，旧批准不会复活。
-6. **测试可信度**：执行成功（`execution_outcome == success`）与语义判分（`judge_result == passed`）分别约束；HTTP 500 / timeout / 响应契约错误不可通过人工改判成为成功证据。
+5. **有效授权计算**：批准后驳回处置、改判关键测试、修改测试实际输出或人工判定依据、新增高危安全发现都会改变发布证据快照，`effective_status` 变为 `invalidated`；历史批准记录保留，但条件恢复后仍需新的批准记录，旧批准不会复活。
+6. **测试可信度**：执行成功（`execution_outcome == success`）与语义判分分别约束；真实目标 `passed` 必须来自 `judge_mode=human` 且带非空 `human_comment` 的 `human_label=passed` 人工校准，裸写 `judge_result=passed` 不计入上线证据。HTTP 500 / timeout / 响应契约错误不可通过人工改判成为成功证据。人工校准会用 approve/reject 关闭对应的 `eval_run` 阻断动作，避免高风险节点的复核动作永久阻塞上线批准。
+
+### 3.6 发布门禁接入（v1.8.0）
+
+上线批准不再只停留在内部台账：外部部署流水线可以在发布前调用只读 `GET /release-gate/{session_id}`。
+
+- **拉取模型**：CI 主动调用，系统不主动推送 webhook。只有 HTTP 200 且 `decision=allow` 才允许部署；其他响应（包括 401/403/404/503 与 200 + `decision=block`）都必须阻断。
+- **判定来源**：`core/release_gate_service.py` 复用 `build_release_readiness` 与 `effective_approval_status`，以当前 `evaluation_version_digest` 与 `evidence_digest` 为准；不复制审批规则、不调用门禁引擎、不调用 LLM。
+- **机器凭证**：`service_tokens` 为租户级、可撤销、默认 90 天、scope 固定 `release_gate:read`；原始 token 只返回一次，数据库只存 SHA-256。人类 JWT 不能调用门禁。
+- **缓存边界**：门禁绕过 72 小时 `context_cache`，直接 `session_store.load()`，避免失效审批在缓存过期前仍被放行。
+- **审计**：每次通过认证的检查写入 `release_gate_checks`；写入失败返回 503 + `gate_unavailable`，不返回 `allow`。响应不含会话正文或审批备注。
+- **迁移**：Alembic V013 新增 `service_tokens` 与 `release_gate_checks`，不修改既有表。
+- **不在本阶段**：webhook 推送、门禁结果缓存、异步任务、Eval 批次异步化与双后端数据访问层重构。
 
 ## 4. 子系统①：组织级治理视图
 
@@ -132,6 +144,11 @@ Streamlit 新增"治理总览"页：指标卡片（项目数/积压动作/安全
   - `premortem_gate_evaluations_total{result}` / `premortem_gate_blocked_total{rule_id}`（Counter，评估路径打点）
   - `premortem_pending_actions{risk_level}`（Gauge；语义为"待处理人工动作数按 risk_level"——2026-09-01 修复：此前被错喂会话风险档位分布且恒为零值，现取跨租户真实 pending 动作计数。仍无周期性调度）
   - `premortem_llm_calls_total` / `premortem_llm_tokens_total`（Counter，与阶段 2 LLM10 计数共用数据源）
+  - `premortem_llm_failures_total{stage,error_code}` / `premortem_structured_output_failures_total{stage,status}`（Counter，模型故障与结构化输出失败）
+  - `premortem_target_executions_total{outcome}`（Counter，真实目标执行 success / failed / timeout / error）
+  - `premortem_retention_sessions_purged_total` / `premortem_retention_audit_rows_purged_total{source}` / `premortem_retention_errors_total`（Counter，留存清理结果）
+  - `premortem_release_approvals_total{decision="granted|rejected|denied"}`（Counter，上线审批决策）
+  - `premortem_release_gate_checks_total{decision,reason_code}`（Counter，发布门禁机器检查；reason_code 为固定枚举）
 - Grafana 新增 `governance-overview.json` 面板（与现有 fastapi-overview.json 并列，provisioning 自动加载）。
 - 注意基数控制：tenant 标签用 tenant 名而非 UUID，且内部工具租户数有限，无高基数风险。
 
@@ -143,7 +160,7 @@ Streamlit 新增"治理总览"页：指标卡片（项目数/积压动作/安全
 
 - 新增 `judge_mode="llm"`：`core/eval_judge.py` 保持现有规则分支为第一层；新增第二层——配置 `EVAL_LLM_JUDGE=on`（默认 off）时，对规则层判为 `needs_review` 的 run 调用 LLM（走 `core/llm/provider.py` 现有工厂，mock 模式天然可测）生成结构化建议：`{"suggested_result": "passed|failed", "rationale": str, "confidence": float}`，写入 `EvalRun.llm_judge_suggestion`（`core/models.py:522` 的 Pydantic 字段）。**该字段没有独立的数据库列**：它随 `ProjectContext` 序列化进 `context_json` 落库，并镜像一份到 `eval_judgments` 的 `metadata`（`core/eval_runner.py:190-193`）。因此无法直接对它做 SQL 聚合查询。
 - **judge_result 本身不被 LLM 直接改写**：HIGH/CRITICAL 风险会话的 run 永远保持 `needs_review` 待人工；LOW/MEDIUM 会话允许配置 `EVAL_LLM_JUDGE_AUTOFINAL=on` 后采纳 LLM 建议为终值（该开关的启用属于 3.3 同级的显式治理决策）。
-- **校准闭环**：人工最终判定与 LLM 建议的一致率通过 `human_calibrations` 累计，并在 Eval 实验/报告链路展示。当前治理总览的三个 `/governance/*` 端点尚未聚合该一致率；它仍是决定是否扩大 AUTOFINAL 范围的量化依据。
+- **校准闭环**：人工最终判定与 LLM 建议的一致率通过 `human_calibrations` 累计，并在 Eval 实验/报告链路展示。人工校准即该运行的正式复核结论：`passed → approve`、`failed → reject` 关闭对应 `eval_run` 的 `PendingHumanAction`（escalate 类型保留人工升级）；校准记录同时保存实际输出摘要、pass_criteria 与复核人。当前治理总览的三个 `/governance/*` 端点尚未聚合该一致率；它仍是决定是否扩大 AUTOFINAL 范围的量化依据。
 - Prompt 注入面：eval 输入本身可能含对抗内容，judge prompt 采用防注入模板（材料置于明确分隔的引用块、指令置后），且 judge 输出仅结构化字段入库。
 
 ## 6. ISO/IEC 42001 对齐说明

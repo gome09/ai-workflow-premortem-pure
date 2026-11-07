@@ -172,6 +172,64 @@ def _scan_unsupported_claims(
     return findings
 
 
+def _pii_findings(
+    ctx: ProjectContext,
+    *,
+    stage_id: int | None,
+    location: str,
+    text: str,
+    source_label: str,
+) -> list[SafetyFinding]:
+    """Detect PII, emit a finding and escalate the session classification."""
+    findings: list[SafetyFinding] = []
+    pii_hits = scan_pii(text)
+    if not pii_hits:
+        return findings
+    pii_kinds = sorted({kind for _, kind, _ in pii_hits})
+    sev_rank = {"low": 0, "medium": 1, "high": 2}
+    max_severity = max((sev for _, _, sev in pii_hits), key=lambda s: sev_rank.get(s, 0))
+    findings.append(
+        _finding(
+            ctx,
+            stage_id=stage_id,
+            risk_type="sensitive_info",
+            severity=max_severity,
+            location=location,
+            description=f"{source_label}包含 PII：{', '.join(pii_kinds)}。",
+            recommended_action=(
+                "确认 PII 是否必要；命中后会话已升级为 sensitive_personal，"
+                "出站 LLM 消息会强制掩码。"
+            ),
+        )
+    )
+    # T1.1 联动：PII 命中自动升级数据分级到 sensitive_personal
+    if hasattr(ctx, "data_classification"):
+        if ctx.data_classification != "sensitive_personal":
+            ctx.data_classification = "sensitive_personal"
+    return findings
+
+
+def scan_user_message_pii(
+    ctx: ProjectContext,
+    *,
+    stage_id: int | None,
+    text: str,
+) -> list[SafetyFinding]:
+    """Scan chat input before the outbound LLM call.
+
+    Chat body PII must be detected before the model call so the classification
+    upgrade can force outbound masking. Post-response ``scan_stage_io`` runs
+    too late for that guarantee.
+    """
+    return _pii_findings(
+        ctx,
+        stage_id=stage_id,
+        location=f"user_message.stage_{stage_id or 0}",
+        text=text,
+        source_label="聊天正文",
+    )
+
+
 def scan_text(
     ctx: ProjectContext,
     *,
@@ -223,28 +281,18 @@ def scan_text(
             )
         )
 
-    # PII 检测（T1.4）— 仅对用户材料/证据源启用，避免 LLM 输出误报
+    # PII 检测（T1.4）— 仅对用户材料/证据源启用，避免 LLM 输出误报。
+    # 聊天正文由 send_message 在模型调用前通过 scan_user_message_pii 预扫描。
     if location.startswith(("user_materials", "evidence_source")):
-        pii_hits = scan_pii(content)
-        if pii_hits:
-            pii_kinds = sorted({kind for _, kind, _ in pii_hits})
-            sev_rank = {"low": 0, "medium": 1, "high": 2}
-            max_severity = max((sev for _, _, sev in pii_hits), key=lambda s: sev_rank.get(s, 0))
-            findings.append(
-                _finding(
-                    ctx,
-                    stage_id=stage_id,
-                    risk_type="sensitive_info",
-                    severity=max_severity,
-                    location=location,
-                    description=f"用户材料包含 PII：{', '.join(pii_kinds)}。",
-                    recommended_action="确认 PII 是否必要；如必要，启用 PII_MASK_BEFORE_LLM 掩码后再发送 LLM。",
-                )
+        findings.extend(
+            _pii_findings(
+                ctx,
+                stage_id=stage_id,
+                location=location,
+                text=content,
+                source_label="用户材料",
             )
-            # T1.1 联动：PII 命中自动升级数据分级到 sensitive_personal
-            if hasattr(ctx, "data_classification"):
-                if ctx.data_classification != "sensitive_personal":
-                    ctx.data_classification = "sensitive_personal"
+        )
 
     if any(
         re.search(pattern, content, flags=re.IGNORECASE | re.S)

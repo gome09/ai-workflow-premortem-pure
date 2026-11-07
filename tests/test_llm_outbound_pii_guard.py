@@ -1,10 +1,12 @@
 # tests/test_llm_outbound_pii_guard.py
 """Outbound LLM PII guard.
 
-覆盖：
+Covered:
 - sensitive_personal 会话即使 PII_MASK_BEFORE_LLM=False 也强制掩码；
 - business_internal 保留原开关语义（关闭时原文可见）；
 - public_demo 在开关开启时掩码；
+- 聊天正文在 send_message 内预扫描并升级分级后强制掩码；
+- 补充材料扫描升级后，注入 system prompt 的原文同样被掩码；
 - INIT 节点与 LLM judge 路径同样受守卫保护；
 - 非文本敏感消息 fail-closed。
 """
@@ -12,6 +14,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 from langchain_core.messages import HumanMessage
@@ -20,7 +23,9 @@ from core import eval_llm_judge
 from core.config import settings
 from core.llm.outbound_guard import OutboundPIIBlockedError, guard_messages
 from core.models import EvalCase, EvalRun, ProjectContext
+from core.session_service import SessionService
 from stages.base import BaseStageExecutor
+from tools.safety_classifier import add_findings_dedup, scan_user_materials
 
 _ID_CARD = "110101199001011234"
 _MASKED_ID_CARD = "110101********1234"
@@ -132,6 +137,59 @@ def test_judge_outbound_messages_are_masked(monkeypatch):
     monkeypatch.setattr(eval_llm_judge, "_get_judge_llm", lambda: model)
 
     eval_llm_judge.generate_llm_judge_suggestion(ctx, case, run)
+
+    prompt = _joined(model.messages)
+    assert _MASKED_ID_CARD in prompt
+    assert _ID_CARD not in prompt
+
+
+def test_send_message_scans_chat_pii_before_outbound(monkeypatch):
+    import graph.nodes as graph_nodes
+
+    monkeypatch.setattr(settings, "pii_mask_before_llm", False)
+    monkeypatch.setattr(graph_nodes.settings, "llm_mode", "real")
+    model = _CapturingChatModel(content="请补充更多信息")
+    monkeypatch.setattr(graph_nodes, "_get_init_llm", lambda: model)
+
+    ctx = ProjectContext()
+    ctx.data_classification = "business_internal"
+    service = SessionService()
+
+    def fake_turn(state):
+        return graph_nodes.node_init(state, state.pending_input)
+
+    with (
+        patch.object(service, "get_session", return_value=ctx),
+        patch("core.session_service.execute_one_turn", side_effect=fake_turn),
+        patch("core.session_service.session_store"),
+        patch("core.session_service.context_cache"),
+    ):
+        _reply, updated = service.send_message(ctx.session_id, f"我的身份证是 {_ID_CARD}")
+
+    prompt = _joined(model.messages)
+    assert _MASKED_ID_CARD in prompt
+    assert _ID_CARD not in prompt
+    assert updated.data_classification == "sensitive_personal"
+    assert any(f.risk_type == "sensitive_info" for f in updated.safety_findings)
+
+
+class _MaterialPromptExecutor(_TestExecutor):
+    def build_system_prompt(self, ctx: ProjectContext) -> str:
+        return "用户材料原文：\n" + "\n".join(ctx.user_materials)
+
+
+def test_material_pii_is_masked_before_outbound(monkeypatch):
+    monkeypatch.setattr(settings, "pii_mask_before_llm", False)
+    ctx = ProjectContext()
+    ctx.data_classification = "business_internal"
+    ctx.user_materials.append(f"身份证 {_ID_CARD}")
+    add_findings_dedup(ctx, scan_user_materials(ctx, ctx.user_materials, stage_id=1))
+    assert ctx.data_classification == "sensitive_personal"
+
+    model = _CapturingChatModel()
+    monkeypatch.setattr("stages.base.get_llm_for_stage_with_context", lambda stage, ctx: model)
+
+    _MaterialPromptExecutor().run(ctx, "请分析补充材料")
 
     prompt = _joined(model.messages)
     assert _MASKED_ID_CARD in prompt

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import gc
 import json
+import shutil
 import uuid
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -139,6 +142,7 @@ def test_audit_retention_deletes_expired_live_and_archived_rows(store, monkeypat
     result = run_retention_cycle(now=now, store=store, cache=MemoryCache())
 
     assert result["audit_events_matched"] == 1
+    assert result["archived_events_matched"] == 1
     assert result["audit_events_deleted"] == 1
     assert result["archived_events_deleted"] == 1
     with store._get_conn() as conn:
@@ -181,3 +185,124 @@ def test_zero_retention_days_means_forever(store, monkeypatch):
     assert result["sessions_matched"] == 0
     assert result["sessions_purged"] == 0
     assert store.load(ctx.session_id, "tenant-a") is not None
+
+
+def test_repeated_sweep_is_idempotent(store, monkeypatch):
+    now = datetime(2026, 10, 29, tzinfo=UTC)
+    ctx = _create_session(store)
+    _backdate_session(store, ctx.session_id, now - timedelta(days=400))
+    cache = MemoryCache()
+
+    monkeypatch.setattr(settings, "session_retention_days", 30)
+    monkeypatch.setattr(settings, "audit_retention_days", 0)
+    monkeypatch.setattr(settings, "retention_dry_run", False)
+
+    first = run_retention_cycle(now=now, store=store, cache=cache)
+    second = run_retention_cycle(now=now, store=store, cache=cache)
+
+    assert first["sessions_purged"] == 1
+    assert second["sessions_matched"] == 0
+    assert second["sessions_purged"] == 0
+    assert second["errors_count"] == 0
+    assert store.load(ctx.session_id, "tenant-a") is None
+
+
+def test_purge_failure_is_recorded_and_retried_next_sweep(store, monkeypatch):
+    now = datetime(2026, 10, 29, tzinfo=UTC)
+    ctx = _create_session(store)
+    _backdate_session(store, ctx.session_id, now - timedelta(days=400))
+    cache = MemoryCache()
+
+    original = store.purge_session
+    calls = {"count": 0}
+
+    def flaky_purge(session_id, tenant_id, purged_by, summary):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise RuntimeError("simulated purge failure")
+        return original(session_id, tenant_id, purged_by, summary)
+
+    monkeypatch.setattr(store, "purge_session", flaky_purge)
+    monkeypatch.setattr(settings, "session_retention_days", 30)
+    monkeypatch.setattr(settings, "audit_retention_days", 0)
+    monkeypatch.setattr(settings, "retention_dry_run", False)
+
+    first = run_retention_cycle(now=now, store=store, cache=cache)
+
+    assert first["sessions_matched"] == 1
+    assert first["sessions_purged"] == 0
+    assert first["errors_count"] == 1
+    assert first["errors"][0]["stage"] == "purge"
+    assert store.load(ctx.session_id, "tenant-a") is not None
+
+    second = run_retention_cycle(now=now, store=store, cache=cache)
+
+    assert second["sessions_purged"] == 1
+    assert second["errors_count"] == 0
+    assert store.load(ctx.session_id, "tenant-a") is None
+
+
+def test_checkpoint_cleanup_failure_keeps_session_deleted(store, monkeypatch):
+    now = datetime(2026, 10, 29, tzinfo=UTC)
+    ctx = _create_session(store)
+    _backdate_session(store, ctx.session_id, now - timedelta(days=400))
+
+    def broken_checkpoint_cleanup(ctx_arg, *, persistent=False):
+        raise RuntimeError("checkpoint store unavailable")
+
+    monkeypatch.setattr(
+        "graph.checkpoint_manager.delete_session_checkpoints",
+        broken_checkpoint_cleanup,
+    )
+    monkeypatch.setattr(settings, "session_retention_days", 30)
+    monkeypatch.setattr(settings, "audit_retention_days", 0)
+    monkeypatch.setattr(settings, "retention_dry_run", False)
+
+    result = run_retention_cycle(now=now, store=store, cache=MemoryCache())
+
+    assert result["sessions_purged"] == 1
+    assert result["errors_count"] == 1
+    assert result["errors"][0]["stage"] == "checkpoint_cleanup"
+    with store._get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM sessions WHERE session_id = ?",
+            (ctx.session_id,),
+        ).fetchone()
+    assert row["n"] == 0
+
+
+def test_sqlite_backup_restore_preserves_session(tmp_path, monkeypatch):
+    now = datetime(2026, 10, 29, tzinfo=UTC)
+    db_path = tmp_path / "retention_backup.db"
+    backup_path = tmp_path / "retention_backup_copy.db"
+    store = SQLiteSessionStore(db_path=str(db_path))
+    store.initialize()
+    ctx = _create_session(store)
+    _backdate_session(store, ctx.session_id, now - timedelta(days=400))
+
+    # SQLite WAL 模式下先把数据落回主文件，再复制为备份。
+    checkpoint_conn = store._get_conn()
+    try:
+        checkpoint_conn.execute("PRAGMA wal_checkpoint(FULL)")
+        checkpoint_conn.commit()
+    finally:
+        checkpoint_conn.close()
+    shutil.copy2(db_path, backup_path)
+
+    monkeypatch.setattr(settings, "session_retention_days", 30)
+    monkeypatch.setattr(settings, "audit_retention_days", 0)
+    monkeypatch.setattr(settings, "retention_dry_run", False)
+    run_retention_cycle(now=now, store=store, cache=MemoryCache())
+    assert store.load(ctx.session_id, "tenant-a") is None
+
+    gc.collect()
+    for suffix in ("-wal", "-shm"):
+        Path(f"{db_path}{suffix}").unlink(missing_ok=True)
+    shutil.copy2(backup_path, db_path)
+
+    restored = SQLiteSessionStore(db_path=str(db_path))
+    restored.initialize()
+    restored_ctx = restored.load(ctx.session_id, "tenant-a")
+
+    assert restored_ctx is not None
+    assert restored_ctx.session_id == ctx.session_id

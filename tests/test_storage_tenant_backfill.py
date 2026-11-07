@@ -158,3 +158,45 @@ def test_explicit_session_ids_scope_the_backfill() -> None:
     )
     # 更新只作用于实际匹配到的孤儿会话，与 sessions_matched 计数保持一致。
     assert update_params == ("tenant-a", ["s-1"])
+
+
+def test_dry_run_and_apply_report_same_match_count() -> None:
+    dry_conn = _BackfillConnection(orphan_ids=["s-1", "s-2", "s-3"])
+    dry = _store_with_conn(dry_conn).backfill_orphan_sessions("tenant-a")
+
+    apply_conn = _BackfillConnection(
+        orphan_ids=["s-1", "s-2", "s-3"],
+        update_counts={
+            "sessions": 3,
+            "human_actions": 6,
+            "interrupt_resume_outbox": 0,
+            "gate_evaluation_records": 2,
+        },
+    )
+    applied = _store_with_conn(apply_conn).backfill_orphan_sessions("tenant-a", dry_run=False)
+
+    assert dry["sessions_matched"] == applied["sessions_matched"] == 3
+    assert applied["sessions_updated"] == 3
+    assert applied["human_actions_updated"] == 6
+    assert applied["gate_evaluation_records_updated"] == 2
+
+
+def test_repeat_backfill_and_other_tenant_do_not_move_owned_rows() -> None:
+    first_conn = _BackfillConnection(
+        orphan_ids=["s-1", "s-2"],
+        update_counts={"sessions": 2},
+    )
+    first = _store_with_conn(first_conn).backfill_orphan_sessions("tenant-a", dry_run=False)
+    assert first["sessions_updated"] == 2
+
+    # 回填后这些会话已有 tenant-a 归属；换 tenant-b 再跑时必须匹配 0 行，
+    # 因为 SELECT/UPDATE 都以 tenant_id IS NULL 为前提（跨租户隔离）。
+    second_conn = _BackfillConnection(orphan_ids=[])
+    second = _store_with_conn(second_conn).backfill_orphan_sessions("tenant-b", dry_run=False)
+
+    assert second["sessions_matched"] == 0
+    assert second["sessions_updated"] == 0
+    assert not any(sql.startswith("UPDATE") for sql, _ in second_conn.executed)
+    updates = [sql for sql, _ in first_conn.executed if sql.startswith("UPDATE")]
+    assert updates
+    assert all("tenant_id IS NULL" in sql for sql in updates)

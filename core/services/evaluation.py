@@ -598,6 +598,7 @@ class EvaluationService(SessionAccess):
         human_label: str,
         human_comment: str = "",
         reviewer_id: str = "human_reviewer",
+        actor_role: str = "",
         disagreement_reason: str = "",
         tenant_id: str = "",
     ) -> dict:
@@ -610,6 +611,7 @@ class EvaluationService(SessionAccess):
             human_label=human_label,  # type: ignore[arg-type]
             human_comment=human_comment,
             reviewer_id=reviewer_id,
+            actor_role=actor_role,
             disagreement_reason=disagreement_reason,
         )
         self._store().save(ctx)

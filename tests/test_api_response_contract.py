@@ -62,6 +62,10 @@ def _schema_ref(openapi_schema: dict, path: str, method: str) -> str:
         ("/sessions/{session_id}/gate-report", "get", "GateReport"),
         ("/sessions/{session_id}/data-classification", "patch", "UpdateDataClassificationResponse"),
         ("/sessions/{session_id}/stages/{stage_id}/rerun", "post", "StageOperationResultResponse"),
+        ("/release-gate/{session_id}", "get", "ReleaseGateDecision"),
+        ("/auth/service-tokens", "post", "ServiceTokenCreatedResponse"),
+        ("/auth/service-tokens", "get", "ServiceTokenListItem"),
+        ("/auth/service-tokens/{token_id}", "delete", "ServiceTokenListItem"),
     ],
 )
 def test_key_endpoints_declare_response_model(openapi_schema, path, method, expected):

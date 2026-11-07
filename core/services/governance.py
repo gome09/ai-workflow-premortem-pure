@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+import logging
+import uuid
+
 from core.execution_service import (
     prepare_execution_after_action_resolutions,
 )
@@ -32,6 +35,8 @@ from core.stage_advancement_coordinator import (
     build_stage_advancement_decision,
 )
 from core.stage_resolution_service import get_next_required_operation
+
+logger = logging.getLogger(__name__)
 
 
 class GovernanceService(SessionAccess):
@@ -542,6 +547,66 @@ class GovernanceService(SessionAccess):
             "approval_summary": build_approval_summary(ctx, readiness=readiness),
             "release_readiness": readiness.model_dump(mode="json"),
         }
+
+    def get_release_gate_decision(
+        self,
+        session_id: str,
+        *,
+        token_id: str = "",
+        tenant_id: str = "",
+    ) -> dict:
+        """Read-only machine gate; bypasses the 72h context cache on purpose."""
+        from core.release_gate_service import (
+            ReleaseGateNotFoundError,
+            ReleaseGateUnavailableError,
+            evaluate_release_gate,
+        )
+
+        ctx = self._store().load(session_id, tenant_id)
+        if not ctx:
+            logger.warning(
+                "release_gate_session_not_found",
+                extra={
+                    "event": "release_gate_session_not_found",
+                    "tenant_id": tenant_id,
+                    "token_id": token_id,
+                    "session_id": session_id,
+                },
+            )
+            raise ReleaseGateNotFoundError("Session not found")
+
+        decision = evaluate_release_gate(ctx)
+        check_id = str(uuid.uuid4())
+        try:
+            self._store().record_release_gate_check(
+                check_id=check_id,
+                tenant_id=tenant_id,
+                token_id=token_id,
+                session_id=session_id,
+                decision=decision.decision,
+                reason_code=decision.reason_code,
+                approval_status=decision.approval_status,
+                approval_id=decision.approval_id,
+                evaluation_version_digest=decision.evaluation_version_digest,
+                evidence_digest=decision.evidence_digest,
+                release_batch_id=decision.release_batch_id,
+            )
+        except Exception as exc:  # pragma: no cover - exercised via fault injection
+            logger.error(
+                "release_gate_audit_write_failed",
+                extra={
+                    "event": "release_gate_audit_write_failed",
+                    "tenant_id": tenant_id,
+                    "token_id": token_id,
+                    "session_id": session_id,
+                    "decision": decision.decision,
+                    "reason_code": decision.reason_code,
+                },
+                exc_info=True,
+            )
+            raise ReleaseGateUnavailableError("Release gate audit write failed") from exc
+
+        return {**decision.model_dump(mode="json"), "check_id": check_id}
 
     def list_project_approvals(self, session_id: str, tenant_id: str = "") -> list[dict]:
         """Append-only release approval history."""

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import time
 from typing import Any
 from urllib.parse import urlparse, urlunparse
@@ -14,6 +15,8 @@ from core.config import settings
 from core.llm.outbound_guard import should_mask
 from core.target_testing.models import TargetSystemConfig, TargetTestResponse
 from tools.safety_classifier import mask_pii_in_text
+
+MAX_ERROR_MESSAGE_CHARS = 500
 
 
 def sanitize_endpoint(endpoint: str) -> str:
@@ -55,6 +58,46 @@ def endpoint_is_allowed(sanitized: str) -> bool:
 
 def _digest_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8", errors="replace")).hexdigest()
+
+
+def _truncate_error_message(message: str) -> str:
+    """Bound persisted target error text; full bodies never enter EvalRun context."""
+    if len(message) <= MAX_ERROR_MESSAGE_CHARS:
+        return message
+    suffix = "...<truncated>"
+    keep = MAX_ERROR_MESSAGE_CHARS - len(suffix)
+    return message[:keep] + suffix
+
+
+def _declared_content_length(response: httpx.Response) -> int | None:
+    raw = response.headers.get("content-length")
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+def _read_limited(response: httpx.Response, max_bytes: int) -> tuple[bytes, bool]:
+    """Read at most ``max_bytes`` of the response body.
+
+    Returns ``(payload, too_large)``. Once the cap is crossed, iteration stops
+    immediately so a hostile or misconfigured target cannot exhaust memory.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    for chunk in response.iter_bytes():
+        if not chunk:
+            continue
+        total += len(chunk)
+        if total > max_bytes:
+            remaining = max_bytes - (total - len(chunk))
+            if remaining > 0:
+                chunks.append(chunk[:remaining])
+            return b"".join(chunks), True
+        chunks.append(chunk)
+    return b"".join(chunks), False
 
 
 class HttpJsonTargetAdapter:
@@ -134,6 +177,9 @@ class HttpJsonTargetAdapter:
             if self._max_response_chars is not None
             else settings.target_system_max_response_chars
         )
+        # 字符上限推导字节上限（UTF-8 最坏 4 字节/字符 + JSON 结构开销），
+        # 防止先读完整个 body 再截断导致的内存占用不受控。
+        max_bytes = max(max_chars * 4 + 4096, 16_384)
 
         started = time.monotonic()
         try:
@@ -141,14 +187,31 @@ class HttpJsonTargetAdapter:
                 timeout=self.config.timeout_seconds,
                 transport=self._transport,
             ) as client:
-                response = client.post(endpoint, json=body, headers=headers)
-            latency_ms = int((time.monotonic() - started) * 1000)
+                with client.stream("POST", endpoint, json=body, headers=headers) as response:
+                    status_code = response.status_code
+                    declared_length = _declared_content_length(response)
+                    if declared_length is not None and declared_length > max_bytes:
+                        return TargetTestResponse(
+                            outcome="error",
+                            status_code=status_code,
+                            latency_ms=int((time.monotonic() - started) * 1000),
+                            error_code="response_too_large",
+                            error_message=_truncate_error_message(
+                                f"Target response declares {declared_length} bytes; "
+                                f"limit is {max_bytes} bytes."
+                            ),
+                            endpoint=endpoint,
+                            truncated=True,
+                        )
+                    raw_bytes, body_too_large = _read_limited(response, max_bytes)
+                    latency_ms = int((time.monotonic() - started) * 1000)
+                    full_text = raw_bytes.decode(response.encoding or "utf-8", errors="replace")
         except httpx.TimeoutException as exc:
             return TargetTestResponse(
                 outcome="timeout",
                 latency_ms=int((time.monotonic() - started) * 1000),
                 error_code="target_timeout",
-                error_message=str(exc) or "Target request timed out",
+                error_message=_truncate_error_message(str(exc) or "Target request timed out"),
                 endpoint=endpoint,
             )
         except httpx.RequestError as exc:
@@ -156,7 +219,7 @@ class HttpJsonTargetAdapter:
                 outcome="error",
                 latency_ms=int((time.monotonic() - started) * 1000),
                 error_code="target_request_error",
-                error_message=str(exc),
+                error_message=_truncate_error_message(str(exc)),
                 endpoint=endpoint,
             )
         except Exception as exc:  # noqa: BLE001 - transport errors are eval evidence
@@ -164,13 +227,26 @@ class HttpJsonTargetAdapter:
                 outcome="error",
                 latency_ms=int((time.monotonic() - started) * 1000),
                 error_code="target_unexpected_error",
-                error_message=str(exc),
+                error_message=_truncate_error_message(str(exc)),
                 endpoint=endpoint,
             )
 
-        raw_text = response.text or ""
-        response_digest = _digest_text(raw_text)
-        text = raw_text
+        response_digest = _digest_text(full_text)
+        if body_too_large:
+            return TargetTestResponse(
+                outcome="error",
+                status_code=status_code,
+                latency_ms=latency_ms,
+                error_code="response_too_large",
+                error_message=_truncate_error_message(
+                    f"Target response exceeded {max_bytes} byte limit."
+                ),
+                endpoint=endpoint,
+                response_digest=response_digest,
+                truncated=True,
+            )
+
+        text = full_text
         truncated = False
         if len(text) > max_chars:
             text = text[:max_chars]
@@ -178,24 +254,24 @@ class HttpJsonTargetAdapter:
         if should_mask(classification):
             text = mask_pii_in_text(text)
 
-        if response.status_code < 200 or response.status_code >= 300:
+        if status_code < 200 or status_code >= 300:
             return TargetTestResponse(
                 outcome="failed",
-                status_code=response.status_code,
+                status_code=status_code,
                 latency_ms=latency_ms,
-                error_code=f"http_{response.status_code}",
-                error_message=text,
+                error_code=f"http_{status_code}",
+                error_message=_truncate_error_message(text),
                 endpoint=endpoint,
                 response_digest=response_digest,
                 truncated=truncated,
             )
 
         try:
-            data: Any = response.json()
+            data: Any = json.loads(full_text)
         except ValueError:
             return TargetTestResponse(
                 outcome="error",
-                status_code=response.status_code,
+                status_code=status_code,
                 latency_ms=latency_ms,
                 error_code="response_contract_error",
                 error_message="Target response is not valid JSON.",
@@ -208,7 +284,7 @@ class HttpJsonTargetAdapter:
         if not isinstance(output, str):
             return TargetTestResponse(
                 outcome="error",
-                status_code=response.status_code,
+                status_code=status_code,
                 latency_ms=latency_ms,
                 error_code="response_contract_error",
                 error_message=(
@@ -228,7 +304,7 @@ class HttpJsonTargetAdapter:
         return TargetTestResponse(
             outcome="success",
             output=output,
-            status_code=response.status_code,
+            status_code=status_code,
             latency_ms=latency_ms,
             endpoint=endpoint,
             response_digest=response_digest,

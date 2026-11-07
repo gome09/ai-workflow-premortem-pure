@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
+from core.eval_judgment_service import calibrate_eval_run
 from core.evaluation_version import current_evaluation_digest, eval_case_digest
 from core.models import (
     EvalCase,
@@ -179,6 +180,14 @@ def _complete_context(
         status="completed",
     )
     ctx.eval_runs.append(run)
+    calibrate_eval_run(
+        ctx,
+        eval_run_id=run.run_id,
+        human_label="passed",
+        human_comment="人工核对实际输出，包含 pass_criteria 要求的 citation。",
+        reviewer_id=reviewer_id,
+        actor_role="admin",
+    )
     ctx.eval_experiments.append(
         EvalExperiment(
             session_id=ctx.session_id,

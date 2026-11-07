@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import hashlib
+import logging
 from typing import Any, Literal
 
 from core.audit_service import append_audit_event
-from core.models import EvalJudgment, EvalRun, HumanCalibration, ProjectContext
+from core.models import EvalJudgment, EvalRun, HumanActionStatus, HumanCalibration, ProjectContext
 from core.version import APP_VERSION
 
 JudgeLabel = Literal["passed", "failed", "needs_review"]
+
+logger = logging.getLogger(__name__)
+
+
+def _text_sha256(value: str | None) -> str:
+    return hashlib.sha256((value or "").encode("utf-8")).hexdigest()
 
 
 def _find_run(ctx: ProjectContext, eval_run_id: str) -> EvalRun:
@@ -106,6 +114,55 @@ def create_judgment_from_eval_run(
     return judgment
 
 
+def _resolve_eval_run_action(
+    ctx: ProjectContext,
+    run: EvalRun,
+    *,
+    human_label: JudgeLabel,
+    reviewer: str,
+    human_comment: str,
+    actor_role: str,
+    calibration_id: str,
+) -> None:
+    """Close the pending eval_run action with the human review decision.
+
+    The human calibration *is* the review of that run. Leaving the action
+    pending would permanently block release approval for high-risk nodes.
+    """
+    if human_label not in {"passed", "failed"}:
+        return
+    decision = "approve" if human_label == "passed" else "reject"
+    from core.governance.action_resolution import resolve_action
+
+    for action in list(ctx.pending_actions):
+        if (
+            action.source_type != "eval_run"
+            or action.source_id != run.run_id
+            or action.status != HumanActionStatus.PENDING.value
+        ):
+            continue
+        if human_label == "failed" and action.action_type == "escalate":
+            # critical 风险必须显式升级处理，不能由 failed 判定直接关闭。
+            continue
+        try:
+            resolve_action(
+                ctx,
+                action_id=action.action_id,
+                decision=decision,
+                note=human_comment or f"EvalRun {run.run_id} calibrated to {human_label}.",
+                idempotency_key=f"calibration:{calibration_id}",
+                actor_id=reviewer,
+                actor_role=actor_role,
+            )
+        except Exception:  # noqa: BLE001 - calibration audit must still succeed
+            logger.warning(
+                "Failed to close eval_run action %s after calibration %s",
+                action.action_id,
+                calibration_id,
+                exc_info=True,
+            )
+
+
 def calibrate_eval_run(
     ctx: ProjectContext,
     *,
@@ -113,6 +170,7 @@ def calibrate_eval_run(
     human_label: JudgeLabel,
     human_comment: str = "",
     reviewer_id: str = "human_reviewer",
+    actor_role: str = "",
     disagreement_reason: str = "",
 ) -> HumanCalibration:
     run = _find_run(ctx, eval_run_id)
@@ -128,6 +186,17 @@ def calibrate_eval_run(
             "A failed real-target execution cannot be calibrated to passed; "
             "rerun the target before claiming a passing result"
         )
+    if human_label == "passed" and run.run_mode == "target_http":
+        if run.status != "completed":
+            raise ValueError(
+                "A real-target run must be completed before it can be calibrated to passed"
+            )
+        if not (run.actual_output or "").strip():
+            raise ValueError("A real-target run with empty output cannot be calibrated to passed")
+        if not (human_comment or "").strip():
+            raise ValueError(
+                "Human pass calibration requires a written judgment basis (human_comment)"
+            )
     latest = _latest_judgment(ctx, eval_run_id)
     before = run.model_copy(deep=True)
     judge_label = latest.label if latest else run.judge_result
@@ -143,7 +212,18 @@ def calibrate_eval_run(
         agreement=agreement,
         disagreement_reason=disagreement_reason,
         reviewer_id=reviewer,
-        metadata={"runtime_validation": "deferred_by_instruction"},
+        metadata={
+            "runtime_validation": "deferred_by_instruction",
+            "run_mode": run.run_mode,
+            "execution_outcome": run.execution_outcome,
+            "actual_output_sha256": _text_sha256(run.actual_output),
+            "actual_output_length": len(run.actual_output or ""),
+            "pass_criteria": list(run.pass_criteria or []),
+            "target_endpoint": run.target_endpoint,
+            "target_deployment_version": run.target_deployment_version,
+            "evaluation_version_digest": run.evaluation_version_digest,
+            "case_version_digest": run.case_version_digest,
+        },
     )
     ctx.human_calibrations.append(calibration)
 
@@ -152,6 +232,16 @@ def calibrate_eval_run(
     run.judge_reason = human_comment or f"Human calibration set final label to {human_label}."
     if human_label == "passed":
         run.violated_criteria = []
+
+    _resolve_eval_run_action(
+        ctx,
+        run,
+        human_label=human_label,
+        reviewer=reviewer,
+        human_comment=human_comment,
+        actor_role=actor_role,
+        calibration_id=calibration.calibration_id,
+    )
 
     append_audit_event(
         ctx,

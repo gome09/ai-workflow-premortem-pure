@@ -14,8 +14,8 @@ class Settings(BaseSettings):
         case_sensitive=False,
         secrets_dir="/run/secrets",
         # `.env` 由 compose、`make demo-*` 与 CI 多服务共享，除后端字段外还包含
-        # 前端专用键（DEMO_AUTO_AUTH / DEMO_USER_*）与容器键（SQLITE_PATH）。
-        # 未知键必须忽略，否则 `cp .env.demo .env` 会在导入时触发 extra_forbidden。
+        # 前端专用键（DEMO_USER_*）与容器键（SQLITE_PATH）。未知键必须忽略，
+        # 否则 `cp .env.demo .env` 会在导入时触发 extra_forbidden。
         extra="ignore",
     )
 
@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     model_stage_4_thinking: Literal["enabled", "disabled", "default"] = "disabled"
     # DeepSeek V4 thinking mode 推理强度：high / max。仅在 thinking=enabled 时传递。
     deepseek_reasoning_effort: Literal["high", "max"] = "high"
+
+    # 真实模型调用的显式超时与 SDK 重试上限。此前依赖 SDK 默认值，
+    # 挂起请求会长期占用线程且重试次数不可验收。
+    llm_timeout_seconds: float = 120.0
+    llm_max_retries: int = 1
 
     # 搜索
     tavily_api_key: str = ""
@@ -100,6 +105,9 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = 15
     jwt_refresh_token_expire_days: int = 7
     frontend_service_token: str = ""
+    # 前端演示自动认证开关。后端仅在 production 启动校验时读取，
+    # 用于阻止演示凭据登录路径随生产部署启用。
+    demo_auto_auth: bool = False
 
     # Data encryption (T1.3) — Fernet key, base64-encoded 32 bytes
     # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
@@ -198,10 +206,31 @@ class Settings(BaseSettings):
             raise ValueError("STAGE3_MIN_COVERAGE_RATIO must be between 0 and 1")
         if self.stage3_min_cases_per_high_risk_node < 1:
             raise ValueError("STAGE3_MIN_CASES_PER_HIGH_RISK_NODE must be >= 1")
+        if self.llm_timeout_seconds <= 0:
+            raise ValueError("LLM_TIMEOUT_SECONDS must be > 0")
+        if self.llm_max_retries < 0:
+            raise ValueError("LLM_MAX_RETRIES must be >= 0")
         if self.target_system_timeout_seconds <= 0:
             raise ValueError("TARGET_SYSTEM_TIMEOUT_SECONDS must be > 0")
         if self.target_system_max_response_chars < 1:
             raise ValueError("TARGET_SYSTEM_MAX_RESPONSE_CHARS must be >= 1")
+
+        if self.app_env.lower() == "production":
+            # 生产启动 fail-closed：拒绝演示/开发配置与缺失的字段加密 key。
+            if self.llm_mode != "real":
+                raise ValueError("LLM_MODE must be real in production")
+            if self.storage_backend != "postgres":
+                raise ValueError("STORAGE_BACKEND must be postgres in production")
+            if self.demo_auto_auth:
+                raise ValueError("DEMO_AUTO_AUTH must be false in production")
+            if not self.data_encryption_key:
+                raise ValueError("DATA_ENCRYPTION_KEY must be set in production")
+            from cryptography.fernet import Fernet
+
+            try:
+                Fernet(self.data_encryption_key)
+            except Exception as exc:  # noqa: BLE001 - startup validation
+                raise ValueError("DATA_ENCRYPTION_KEY must be a valid Fernet key") from exc
 
         execution_mode = WorkflowExecutionMode.normalize(self.workflow_execution_mode)
         if execution_mode == WorkflowExecutionMode.LANGGRAPH_INTERRUPT:

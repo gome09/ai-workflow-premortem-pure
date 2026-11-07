@@ -220,6 +220,37 @@ def test_run_eval_case_records_target_outcome(
     assert run.target_endpoint == "http://target.local/eval"
 
 
+def test_http_success_with_mismatched_output_requires_human_review(monkeypatch):
+    """HTTP 200 + 契约合法但业务输出不满足预期时，不得自动判定 passed。"""
+    ctx, case = _ctx_with_eval_case()
+
+    class FakeAdapter:
+        def __init__(self, config):
+            self.config = config
+
+        def execute(self, *args, **kwargs):
+            return TargetTestResponse(
+                outcome="success",
+                output="irrelevant answer without citation",
+                status_code=200,
+            )
+
+    monkeypatch.setattr(eval_runner, "HttpJsonTargetAdapter", FakeAdapter)
+
+    run = run_eval_case(
+        ctx,
+        eval_id=case.eval_id,
+        run_mode="target_http",
+        target_config=_config(),
+    )
+
+    assert run.execution_outcome == "success"
+    assert run.status == "completed"
+    assert run.judge_result == "needs_review"
+    assert run.judge_mode == "inherited"
+    assert "human confirmation" in run.judge_reason.lower()
+
+
 def test_simulation_modes_are_not_real_target_execution(monkeypatch):
     ctx, case = _ctx_with_eval_case()
 

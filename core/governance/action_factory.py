@@ -554,13 +554,18 @@ def create_actions_from_eval_failures(
         )
         if needs_review and not is_high_risk_path:
             continue
-        action_type = (
-            "escalate"
-            if risk_level == "critical"
-            else "edit"
-            if risk_level == "high"
-            else "approve"
-        )
+        if needs_review and not failed and run.run_mode == "target_http":
+            # 真实目标运行的人工复核是 approve/reject 决策，不是结构化编辑；
+            # 人工校准会用同一个 decision 关闭本动作。
+            action_type = "approve"
+        else:
+            action_type = (
+                "escalate"
+                if risk_level == "critical"
+                else "edit"
+                if risk_level == "high"
+                else "approve"
+            )
         title_prefix = (
             "Review required eval run" if needs_review and not failed else "Resolve failed eval run"
         )

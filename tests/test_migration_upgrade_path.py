@@ -136,6 +136,8 @@ def test_v008_to_head_adds_projection_and_digest_columns(migrated_database):
     assert "target_deployment_version" not in eval_columns
     assert "standard_version" not in _eval_case_columns()
     assert not _table_exists("workspace_invitations")
+    assert not _table_exists("service_tokens")
+    assert not _table_exists("release_gate_checks")
 
     command.upgrade(config, head)
 
@@ -152,6 +154,10 @@ def test_v008_to_head_adds_projection_and_digest_columns(migrated_database):
     assert "target_deployment_version" in eval_columns
     assert "standard_version" in _eval_case_columns()
     assert _table_exists("workspace_invitations")
+    assert _table_exists("service_tokens")
+    assert _table_exists("release_gate_checks")
+    assert _table_exists("service_tokens")
+    assert _table_exists("release_gate_checks")
 
 
 def test_downgrade_to_v008_then_reupgrade_restores_head(migrated_database):
@@ -170,6 +176,8 @@ def test_downgrade_to_v008_then_reupgrade_restores_head(migrated_database):
     assert "target_deployment_version" not in eval_columns
     assert "standard_version" not in _eval_case_columns()
     assert not _table_exists("workspace_invitations")
+    assert not _table_exists("service_tokens")
+    assert not _table_exists("release_gate_checks")
 
     command.upgrade(config, head)
     assert _version() == head
@@ -183,3 +191,5 @@ def test_downgrade_to_v008_then_reupgrade_restores_head(migrated_database):
     assert "target_deployment_version" in eval_columns
     assert "standard_version" in _eval_case_columns()
     assert _table_exists("workspace_invitations")
+    assert _table_exists("service_tokens")
+    assert _table_exists("release_gate_checks")

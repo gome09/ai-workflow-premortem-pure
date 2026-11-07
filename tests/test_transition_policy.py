@@ -48,3 +48,17 @@ def test_edit_requires_payload_after():
     )
     effect = evaluate_action_resolution(action, "edit", payload_after=None)
     assert effect.allow_resolve is False
+
+
+def test_edit_eval_run_action_can_be_approved_after_human_review():
+    action = PendingHumanAction(
+        session_id="s1",
+        stage_id=3,
+        source_type="eval_run",
+        action_type="edit",
+        title="legacy eval review",
+        description="legacy eval review",
+    )
+    effect = evaluate_action_resolution(action, "approve")
+    assert effect.allow_resolve is True
+    assert effect.allow_continue is True

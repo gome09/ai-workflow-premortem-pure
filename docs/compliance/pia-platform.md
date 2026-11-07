@@ -40,7 +40,7 @@
 - **传输对象**：DeepSeek API（深度求索）
 - **传输内容**：用户材料 + 证据摘要 + 阶段 prompt
 - **传输路径**：平台服务器 → DeepSeek API 端点
-- **保护措施**：`PII_MASK_BEFORE_LLM=true` 时，仅 evidence summary / user_materials 格式化路径会掩码四类正则 PII；直接用户消息与历史消息当前不覆盖，且该开关默认关闭
+- **保护措施**：聊天正文在 `send_message` 进入模型前、补充材料在加入时统一做四类正则 PII 检测；命中后会话升级为 `sensitive_personal`，所有出站 LLM 消息强制掩码。`PII_MASK_BEFORE_LLM` 仅对未被升级的 `business_internal` / `public_demo` 内容保留开关语义
 - **法律依据**：PIPL 第 38 条（需单独同意 + 评估）
 - **第三方合规**：DeepSeek 隐私政策参见其官方声明
 
@@ -57,7 +57,7 @@
 | 风险项 | 影响 | 严重度 | 现有措施 |
 |--------|------|--------|----------|
 | 用户材料含 PII 被存储 | 隐私泄露 | 高 | T1.3 支持字段加密（enc:v1:）；必须配置 `DATA_ENCRYPTION_KEY`，否则仍为明文 |
-| PII 通过 prompt 传到 DeepSeek | 跨境传输 | 高 | evidence/user_materials 路径支持可选掩码；直接消息/历史仍是缺口，默认关闭时不掩码 |
+| PII 通过 prompt 传到 DeepSeek | 跨境传输 | 高 | 聊天正文与补充材料进入模型前统一检测；四类 PII 命中后升级 `sensitive_personal` 并强制掩码；`PII_MASK_BEFORE_LLM` 仅保留未升级内容的开关语义 |
 | 审计日志含操作者信息 | 关联分析 | 中 | 审计事件仅记录角色（system/user/ai），不记录 PII |
 | 数据库泄露 | 批量泄露 | 高 | JWT 认证 + 租户隔离；Fernet 仅在 `DATA_ENCRYPTION_KEY` 有效时启用 |
 | checkpoint 或其密钥泄露 | 中断时的完整上下文副本可被读取 | 高 | PostgreSQL checkpoint 强制独立 `CHECKPOINT_ENCRYPTION_KEY` 加密、tenant-scoped thread、单 worker和 fail-closed readiness；密钥需由部署方独立备份与轮换 |

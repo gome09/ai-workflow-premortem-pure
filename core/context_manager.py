@@ -65,6 +65,8 @@ def build_llm_kwargs_for_stage(
         "api_key": settings.deepseek_api_key,
         "base_url": settings.deepseek_base_url,
         "max_tokens": max_tokens,
+        "timeout": settings.llm_timeout_seconds,
+        "max_retries": settings.llm_max_retries,
     }
 
     if thinking_mode is not None:

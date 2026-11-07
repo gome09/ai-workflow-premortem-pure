@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from cryptography.fernet import Fernet
 from jose import jwt as jose_jwt
 from pydantic import ValidationError
 
@@ -18,6 +19,25 @@ def _settings(**overrides) -> Settings:
         "jwt_secret": "x" * 32,
         "llm_mode": "mock",
         "storage_backend": "sqlite",
+        "_env_file": None,
+    }
+    values.update(overrides)
+    return Settings(**values)
+
+
+def _production_settings(**overrides) -> Settings:
+    values = {
+        "jwt_secret": "x" * 32,
+        "llm_mode": "real",
+        "deepseek_api_key": "real-key",
+        "tavily_api_key": "real-key",
+        "storage_backend": "postgres",
+        "postgres_password": "db-password",
+        "app_env": "production",
+        "demo_auto_auth": False,
+        "data_encryption_key": Fernet.generate_key().decode(),
+        "workflow_execution_mode": "single_step",
+        "checkpoint_backend": "postgres",
         "_env_file": None,
     }
     values.update(overrides)
@@ -61,9 +81,32 @@ def test_demo_config_explicitly_enables_demo_auth():
 
 def test_demo_env_file_loads_with_frontend_only_keys():
     """CI 与 make demo-* 会把 .env.demo 复制为 .env；共享 env 文件中的
-    DEMO_* / SQLITE_PATH 等前端/容器专用键必须被 Settings 忽略，而非导入即失败。"""
+    DEMO_USER_* 等前端/容器专用键必须被 Settings 忽略，而非导入即失败。
+    DEMO_AUTO_AUTH 现在是后端已知开关，仅用于 production 启动拒绝。"""
     loaded = Settings(_env_file=str(ROOT / ".env.demo"))
-    assert not hasattr(loaded, "demo_auto_auth")
+    assert loaded.demo_auto_auth is True
+    assert not hasattr(loaded, "demo_user_email")
+
+
+def test_valid_production_settings_load():
+    loaded = _production_settings()
+    assert loaded.app_env == "production"
+    assert loaded.demo_auto_auth is False
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("llm_mode", "mock", "LLM_MODE must be real"),
+        ("storage_backend", "sqlite", "STORAGE_BACKEND must be postgres"),
+        ("demo_auto_auth", True, "DEMO_AUTO_AUTH must be false"),
+        ("data_encryption_key", "", "DATA_ENCRYPTION_KEY must be set"),
+        ("data_encryption_key", "not-a-fernet-key", "valid Fernet key"),
+    ],
+)
+def test_production_rejects_development_config(field: str, value, message: str):
+    with pytest.raises(ValidationError, match=message):
+        _production_settings(**{field: value})
 
 
 def test_example_encryption_secrets_are_placeholders_only():

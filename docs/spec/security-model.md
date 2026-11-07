@@ -15,7 +15,7 @@ This project has two security layers:
 
 ### Authentication
 
-认证实现位于 `auth/`，API 采用 JWT Bearer Token。
+认证实现位于 `auth/`，API 采用 JWT Bearer Token。人类用户与机器调用分离：人类使用 access/refresh JWT；发布门禁使用独立的租户级服务凭证（`Authorization: Bearer pmgate_...`），两者不可互换。
 
 | Token Type | Lifetime | Purpose |
 |------------|----------|---------|
@@ -50,6 +50,20 @@ This project has two security layers:
 - `admin`：额外拥有用户管理等高权限操作
 
 每次注册都会创建独立工作区，创建者固定为 `admin`。同租户成员只能通过 `workspace_invitations` 加入（原始 token 只返回一次，数据库仅存 SHA-256，有效期 7 天）；不提供多工作区切换。`/auth/refresh` 重新读取当前用户记录并签发当前角色，不沿用旧刷新令牌中的 role。EvalRun 人工校准的复核人只取 JWT `user_id`，请求体不接受 `reviewer_id`。
+
+### Service Tokens and Release Gate
+
+发布门禁 `GET /release-gate/{session_id}` 只接受租户级服务凭证，不接受任何人类 access/refresh JWT。
+
+- 凭证由 `admin` 通过 `/auth/service-tokens` 创建/列出/撤销；租户只取自 JWT，请求体不接受 `tenant_id`。
+- 原始 token 形如 `pmgate_<随机值>`，只在创建响应中返回一次；数据库 `service_tokens` 只存 SHA-256，不存明文或可逆哈希。
+- 默认有效期 90 天（创建时 1–365 天），可随时撤销；撤销或到期后认证失败。
+- scope 固定为 `release_gate:read`，不能审批、不能写会话、不能读取会话正文。
+- 门禁端点绕过 72 小时上下文缓存，直接 `session_store.load()` 读取存储，避免失效审批被旧缓存放行。
+- 跨租户或会话不存在统一返回 404；凭证无效/撤销/过期返回 401；scope 不允许返回 403；计算或审计写入失败返回 503 + `decision=block` + `gate_unavailable`（fail-closed）。
+- 每次通过认证的检查写入 append-only `release_gate_checks`（decision / reason_code / approval_status / approval_id / evaluation_version_digest / evidence_digest / release_batch_id）；写入失败不得返回 `allow`。
+- 401/404 只记录 token hash 前缀、`token_id`、租户与会话 ID；绝不记录原始 token、token_hash 全文或审批备注。
+- 门禁响应不含会话正文、用户材料、审批备注或人工判定依据，并设置 `Cache-Control: no-store`。
 
 ### Multi-Tenant Isolation
 
@@ -126,7 +140,7 @@ Phase 1（T1.1–T1.4，自 v1.0.3 起落地并沿用至今）的数据安全能
 | 数据分类分级 | `ProjectContext` 落库数据打三级标签（公开示例 / 客户业务材料 / 敏感个人信息），支持覆写并留审计 | `core/models.py` `data_classification` 字段；`PATCH /sessions/{id}/data-classification` |
 | 字段级加密 | 存储层 Fernet 对称加密，密文带 `enc:v1:` 前缀；覆盖 `research_target` / `goal` / `user_materials` / 用户材料型 evidence summary+claims / conversation content / pending actions / report content。`make setup` / `scripts/gen_secrets.sh` 会生成 `secrets/data_encryption_key` 并以 Docker secrets 注入；PostgreSQL 后端或 `APP_ENV=production` 下缺失/错误密钥必须 `FieldDecryptionError` fail-closed，不会静默返回明文 | `storage/field_security.py`；`/health.data_encryption` |
 | 事件/审计脱敏 | `session_events` 与 `audit_events` 的自由文本字段按分级改写为 `{"_redacted": true, "sha256": ..., "length": ...}`；用户消息只记录 `input_sha256` / `input_length` / state，不落原文；`public_demo` 保持可读 | `core/data_protection.py`；`core/audit_service.py`；`core/session_service.py` |
-| PII 掩码 | `PII_MASK_BEFORE_LLM` 开启后，仅在 evidence summary / `user_materials` 格式化路径做四类正则检测与掩码并产出 finding；直接用户消息和会话历史当前不覆盖 | `tools/safety_classifier.py`（`PII_PATTERNS`）；`core/evidence_service.py` |
+| PII 掩码 | 聊天正文在 `send_message` 进入模型前、补充材料在加入时做四类正则检测；命中升级为 `sensitive_personal` 并强制出站掩码。`PII_MASK_BEFORE_LLM` 仅对仍为 `business_internal` / `public_demo` 的内容保留开关语义 | `tools/safety_classifier.py`（`PII_PATTERNS` / `scan_user_message_pii`）；`core/llm/outbound_guard.py`；`core/evidence_service.py` |
 | 中断 checkpoint | `langgraph_interrupt` + PostgreSQL 使用独立 Fernet key 加密完整 `ProjectContext` checkpoint；要求持久 PostgreSQL 后端、单 worker，并在初始化或健康异常时 fail closed。SQLite 的 memory checkpoint 仅供本地调试且进程重启即丢失 | `graph/checkpoint_manager.py`；Alembic V006/V007；`/health/ready` |
 | AI 生成标识 | 报告导出首屏中文免责声明，对齐《生成合成内容标识办法》 | `core/report_service.py` |
 
@@ -135,8 +149,8 @@ Phase 1（T1.1–T1.4，自 v1.0.3 起落地并沿用至今）的数据安全能
 - **工作区邀请**：`workspace_invitations` 只存 token 的 SHA-256；原始 token 仅在创建响应返回一次，默认 7 天有效。接受邀请在同一事务内校验 pending/未过期/邮箱未注册并创建同租户成员。
 - **刷新令牌**：`/auth/refresh` 不再信任旧 refresh token 内的 role，而是按 `sub` 重新读取当前用户记录并签发当前角色；用户不存在或角色非法时返回 401。
 - **复核身份**：上线批准、风险处置、专家复核与 EvalRun 人工校准的复核人固定取 JWT `user_id`，请求体不再接受 `reviewer_id`。
-- **发布授权**：`ProjectApproval.evidence_digest` 绑定批准时的测试运行、人工校准、处置复核、安全发现与阻断动作快照；任一证据变化使 `effective_status` 变为 `invalidated`，历史记录保留但不复活。
-- **测试可信度**：上线证据要求 `execution_kind=real_target_execution`、`execution_outcome=success`、`judge_result=passed`，且同一已完成 `target_http` 评估批次覆盖全部必测用例；HTTP 500 / timeout / 契约错误不可通过人工改判成为成功证据。
+- **发布授权**：`ProjectApproval.evidence_digest` 绑定批准时的测试运行（含实际输出摘要）、人工校准（含判定依据摘要与复核人）、处置复核、安全发现与阻断动作快照；任一证据变化使 `effective_status` 变为 `invalidated`，历史记录保留但不复活。
+- **测试可信度**：上线证据要求 `execution_kind=real_target_execution`、`execution_outcome=success`、`judge_result=passed`、`judge_mode=human`，并存在带非空 `human_comment` 的 `human_label=passed` 人工校准；同一已完成 `target_http` 评估批次必须覆盖全部必测用例。HTTP 500 / timeout / 契约错误不可通过人工改判成为成功证据。
 
 ### Workflow State Fail-Closed
 
@@ -149,7 +163,7 @@ Phase 1（T1.1–T1.4，自 v1.0.3 起落地并沿用至今）的数据安全能
 
 ### Production Safety Gate
 
-CI 的 `production-safety` job 为 blocking，覆盖：Alembic V008→动态 head（当前 V012）升级/回滚、production safety 测试集（状态 fail-closed、HIGH/CRITICAL 阻断、事件脱敏、字段加密、retention 租户边界、ID 唯一性）以及 PostgreSQL + Redis 业务 E2E。job 设置 `PRODUCTION_SAFETY_REQUIRED=1`，缺少数据库、Redis 或加密密钥时测试失败而不是跳过。
+CI 的 `production-safety` job 为 blocking，覆盖：Alembic V008→动态 head（当前 V013）升级/回滚、production safety 测试集（状态 fail-closed、HIGH/CRITICAL 阻断、事件脱敏、字段加密、retention 租户边界、ID 唯一性、发布门禁凭证/审计存储）以及 PostgreSQL + Redis 业务 E2E。job 设置 `PRODUCTION_SAFETY_REQUIRED=1`，缺少数据库、Redis 或加密密钥时测试失败而不是跳过。
 
 ### What This Deployment Still Does NOT Provide
 

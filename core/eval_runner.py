@@ -1,6 +1,7 @@
 # core/eval_runner.py
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from datetime import datetime
 
@@ -12,6 +13,7 @@ from core.context_manager import get_llm_for_stage
 from core.eval_judge import judge_eval_run
 from core.eval_judgment_service import create_judgment_from_eval_run
 from core.evaluation_version import current_evaluation_digest, eval_case_digest
+from core.llm.errors import record_llm_failure, summarize_llm_error
 from core.llm.outbound_guard import guarded_invoke
 from core.models import EvalCase, EvalRun, ProjectContext, WorkflowNode
 from core.oversight_service import create_actions_from_eval_failures, current_stage_output_version
@@ -21,6 +23,8 @@ from core.target_testing import (
     TargetTestResponse,
     sanitize_endpoint,
 )
+
+logger = logging.getLogger(__name__)
 
 VALID_RUN_MODES = {"manual", "dry_run", "llm_node", "target_http"}
 
@@ -267,6 +271,27 @@ def run_eval_case(
                     run.status = "failed"
                     run.completed_at = datetime.utcnow()
 
+            logger.info(
+                "target_execution_finished",
+                extra={
+                    "event": "target_execution_finished",
+                    "session_id": ctx.session_id,
+                    "run_id": run.run_id,
+                    "eval_id": case.eval_id,
+                    "outcome": target_response.outcome,
+                    "status_code": target_response.status_code,
+                    "latency_ms": target_response.latency_ms,
+                    "error_code": target_response.error_code,
+                    "endpoint": target_response.endpoint or target_endpoint,
+                },
+            )
+            try:
+                from api.metrics import record_target_execution
+
+                record_target_execution(target_response.outcome)
+            except Exception:  # pragma: no cover - metrics must never break eval runs
+                logger.debug("record_target_execution failed; non-fatal", exc_info=True)
+
         if run.status != "failed":
             judge_eval_run(case, run)
             _maybe_apply_llm_judge(ctx, case, run)
@@ -283,7 +308,35 @@ def run_eval_case(
             )
     except Exception as exc:  # noqa: BLE001 - failed eval runs must be auditable
         run.status = "failed"
-        run.error_message = str(exc)
+        error_code = "eval_execution_error"
+        if run_mode == "llm_node":
+            error_code, _retryable = record_llm_failure(
+                exc,
+                stage=3,
+                session_id=ctx.session_id,
+                logger=logger,
+                event="eval_run_failed",
+                extra_fields={
+                    "run_id": run.run_id,
+                    "eval_id": case.eval_id,
+                    "run_mode": run_mode,
+                },
+            )
+            run.error_message = summarize_llm_error(exc)
+        else:
+            run.error_message = str(exc)
+            logger.warning(
+                "eval_run_failed",
+                extra={
+                    "event": "eval_run_failed",
+                    "session_id": ctx.session_id,
+                    "run_id": run.run_id,
+                    "eval_id": case.eval_id,
+                    "run_mode": run_mode,
+                    "error_code": error_code,
+                    "error_type": type(exc).__name__,
+                },
+            )
         run.completed_at = datetime.utcnow()
 
     append_audit_event(

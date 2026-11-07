@@ -1,14 +1,21 @@
 # auth/router.py
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from api.limiter import limiter
 from auth.jwt import TenantContext, get_current_tenant
 from auth.permissions import Role, require_roles
 from auth.service import auth_service
+from auth.service_tokens import (
+    DEFAULT_TTL_DAYS,
+    MAX_TTL_DAYS,
+    service_token_service,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -35,6 +42,34 @@ class InvitationCreateRequest(BaseModel):
 class InvitationAcceptRequest(BaseModel):
     token: str
     password: str
+
+
+class ServiceTokenCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    expires_in_days: int = Field(default=DEFAULT_TTL_DAYS, ge=1, le=MAX_TTL_DAYS)
+
+
+class ServiceTokenCreatedResponse(BaseModel):
+    token_id: str
+    tenant_id: str
+    name: str
+    scope: str
+    created_by: str
+    created_at: datetime
+    expires_at: datetime
+    token: str
+
+
+class ServiceTokenListItem(BaseModel):
+    token_id: str
+    tenant_id: str
+    name: str
+    scope: str
+    created_by: str
+    created_at: datetime
+    expires_at: datetime | None = None
+    revoked_at: datetime | None = None
+    last_used_at: datetime | None = None
 
 
 @router.post("/register")
@@ -109,3 +144,55 @@ def list_invitations(ctx: TenantContext = Depends(get_current_tenant)) -> list[d
 def accept_invitation(request: Request, body: InvitationAcceptRequest) -> dict:
     """Accept an invitation, create the invited member, and return a token pair."""
     return auth_service.accept_invitation(body.token, body.password)
+
+
+@router.post(
+    "/service-tokens",
+    response_model=ServiceTokenCreatedResponse,
+    dependencies=[require_roles(Role.admin)],
+)
+@limiter.limit("10/hour")
+def create_service_token(
+    request: Request,
+    response: Response,
+    body: ServiceTokenCreateRequest,
+    ctx: TenantContext = Depends(get_current_tenant),
+) -> ServiceTokenCreatedResponse:
+    """Create a tenant-scoped machine token; the raw token is returned once."""
+    response.headers["Cache-Control"] = "no-store"
+    token = service_token_service.create(
+        tenant_id=ctx.tenant_id,
+        name=body.name,
+        expires_in_days=body.expires_in_days,
+        created_by=ctx.user_id,
+    )
+    return ServiceTokenCreatedResponse.model_validate(token)
+
+
+@router.get(
+    "/service-tokens",
+    response_model=list[ServiceTokenListItem],
+    dependencies=[require_roles(Role.admin)],
+)
+def list_service_tokens(
+    ctx: TenantContext = Depends(get_current_tenant),
+) -> list[ServiceTokenListItem]:
+    """List tenant service tokens without raw tokens or hashes."""
+    return [
+        ServiceTokenListItem.model_validate(row)
+        for row in service_token_service.list_tokens(ctx.tenant_id)
+    ]
+
+
+@router.delete(
+    "/service-tokens/{token_id}",
+    response_model=ServiceTokenListItem,
+    dependencies=[require_roles(Role.admin)],
+)
+def revoke_service_token(
+    token_id: str,
+    ctx: TenantContext = Depends(get_current_tenant),
+) -> ServiceTokenListItem:
+    """Revoke a tenant service token; repeated revocation is idempotent."""
+    row = service_token_service.revoke(tenant_id=ctx.tenant_id, token_id=token_id)
+    return ServiceTokenListItem.model_validate(row)

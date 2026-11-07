@@ -8,7 +8,8 @@ from abc import ABC
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from core.context_manager import get_llm_for_stage_with_context
-from core.llm.outbound_guard import guarded_invoke
+from core.llm.errors import build_llm_call_error, record_llm_failure, summarize_llm_error
+from core.llm.outbound_guard import OutboundPIIBlockedError, guarded_invoke
 from core.llm.structured_output import StructuredOutputClient, StructuredOutputResult
 from core.models import Message, MessageRole, ProjectContext
 from core.traces import append_llm_trace, create_llm_trace
@@ -50,6 +51,23 @@ class BaseStageExecutor(ABC):
             trace_id=trace_id,
         )
         self._last_structured_result = result
+        if result.parser_status != "parsed":
+            # 结构化输出失败要可观测：只记录 stage/status/错误条数，不记录模型原文。
+            logger.warning(
+                "structured_output_parse_failed",
+                extra={
+                    "event": "structured_output_parse_failed",
+                    "stage": self.stage_id,
+                    "parser_status": result.parser_status,
+                    "validation_error_count": len(result.validation_errors),
+                },
+            )
+            try:
+                from api.metrics import record_structured_output_failure
+
+                record_structured_output_failure(self.stage_id, result.parser_status)
+            except Exception:  # pragma: no cover - metrics must never break stage parsing
+                logger.debug("structured output metric failed; non-fatal", exc_info=True)
         return result
 
     def run(self, ctx: ProjectContext, user_message: str) -> tuple[str, ProjectContext]:
@@ -73,6 +91,8 @@ class BaseStageExecutor(ABC):
         # 调用 LLM and record a v0.7 trace.
         started = time.perf_counter()
         trace = None
+        provider_name = getattr(llm, "provider_name", type(llm).__name__)
+        model_name = getattr(llm, "model_name", getattr(llm, "model", ""))
         try:
             response = guarded_invoke(llm, messages, ctx=ctx, stage=self.stage_id)
             latency_ms = int((time.perf_counter() - started) * 1000)
@@ -83,28 +103,46 @@ class BaseStageExecutor(ABC):
                     ctx,
                     stage=self.stage_id,
                     node_name=f"stage_{self.stage_id}_executor",
-                    model=getattr(llm, "model_name", getattr(llm, "model", "")),
+                    model=model_name,
                     prompt_template_id=f"stage_{self.stage_id}_system",
                     latency_ms=latency_ms,
                 ),
             )
+        except OutboundPIIBlockedError:
+            # 出站 PII 守卫是 fail-closed 安全边界，不能被包装成模型故障。
+            raise
         except Exception as exc:  # noqa: BLE001 - trace provider failure before surfacing
             latency_ms = int((time.perf_counter() - started) * 1000)
+            error_code, retryable = record_llm_failure(
+                exc,
+                stage=self.stage_id,
+                session_id=ctx.session_id,
+                model=model_name,
+                provider=provider_name,
+                logger=logger,
+            )
             append_llm_trace(
                 ctx,
                 create_llm_trace(
                     ctx,
                     stage=self.stage_id,
                     node_name=f"stage_{self.stage_id}_executor",
-                    model=getattr(llm, "model_name", getattr(llm, "model", "")),
+                    model=model_name,
                     prompt_template_id=f"stage_{self.stage_id}_system",
                     latency_ms=latency_ms,
                     parser_status="not_started",
                     error_type=type(exc).__name__,
-                    error_message=str(exc),
+                    error_message=summarize_llm_error(exc),
+                    metadata={"error_code": error_code, "retryable": retryable},
                 ),
             )
-            raise
+            raise build_llm_call_error(
+                exc,
+                stage=self.stage_id,
+                session_id=ctx.session_id,
+                model=model_name,
+                provider=provider_name,
+            ) from exc
 
         # 记录对话历史
         ctx.append_message(self.stage_id, Message(role=MessageRole.USER, content=user_message))

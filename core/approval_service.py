@@ -14,6 +14,7 @@ engine because gate evaluation persists records and may materialize actions.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -38,6 +39,8 @@ from core.risk_treatment_service import (
 )
 
 RELEASE_APPROVER_ROLE = "admin"
+
+logger = logging.getLogger(__name__)
 
 
 class ReleaseApprovalAuthorizationError(PermissionError):
@@ -360,18 +363,65 @@ def build_release_readiness(ctx: ProjectContext) -> ReleaseReadiness:
     )
 
 
+def _record_approval_metric(decision: str) -> None:
+    try:
+        from api.metrics import record_release_approval
+
+        record_release_approval(decision)
+    except Exception:  # pragma: no cover - metrics must never break approvals
+        logger.debug("record_release_approval failed; non-fatal", exc_info=True)
+
+
+def _log_approval_denied(ctx: ProjectContext, reason: str, actor_role: str) -> None:
+    """审批拒绝日志：只记录固定原因码与角色，不记录 note 或身份明文。"""
+    logger.warning(
+        "release_approval_denied",
+        extra={
+            "event": "release_approval_denied",
+            "session_id": ctx.session_id,
+            "reason": reason,
+            "actor_role": actor_role or "unknown",
+        },
+    )
+    _record_approval_metric("denied")
+
+
+def _log_approval_decided(
+    ctx: ProjectContext,
+    approval: ProjectApproval,
+    actor_role: str,
+    *,
+    superseded_count: int = 0,
+) -> None:
+    logger.info(
+        "release_approval_decided",
+        extra={
+            "event": "release_approval_decided",
+            "session_id": ctx.session_id,
+            "approval_id": approval.approval_id,
+            "status": approval.status,
+            "actor_role": actor_role or "unknown",
+            "superseded_count": superseded_count,
+        },
+    )
+
+
 def _assert_approval_authorized(ctx: ProjectContext, actor_id: str, actor_role: str) -> str:
     reviewer = (actor_id or "").strip()
     if actor_role != RELEASE_APPROVER_ROLE:
+        _log_approval_denied(ctx, "role_not_admin", actor_role)
         raise ReleaseApprovalAuthorizationError("Release approval requires admin role")
     if not reviewer:
+        _log_approval_denied(ctx, "missing_reviewer", actor_role)
         raise ReleaseApprovalAuthorizationError("Reviewer identity is required")
     creator = (getattr(ctx, "created_by", "") or "").strip()
     if not creator:
+        _log_approval_denied(ctx, "missing_creator", actor_role)
         raise ReleaseApprovalAuthorizationError(
             "Session creator is not recorded; reviewer independence cannot be verified"
         )
     if reviewer == creator:
+        _log_approval_denied(ctx, "self_approval", actor_role)
         raise ReleaseApprovalAuthorizationError(
             "Self-approval is not allowed: the reviewer is the session creator"
         )
@@ -456,10 +506,12 @@ def request_release_approval(
 ) -> tuple[ProjectApproval, ReleaseReadiness, bool]:
     """Grant or reject release approval and return the decision record."""
     if not is_business_session(ctx):
+        _log_approval_denied(ctx, "not_applicable", actor_role)
         raise ReleaseApprovalNotApplicableError(
             "Release approval is not applicable to public_demo sessions"
         )
     if decision not in {"approve", "reject"}:
+        _log_approval_denied(ctx, "invalid_decision", actor_role)
         raise ValueError(f"Unsupported release approval decision: {decision}")
 
     reviewer = _assert_approval_authorized(ctx, actor_id, actor_role)
@@ -497,9 +549,12 @@ def request_release_approval(
                 "blockers_count": len(readiness.blockers),
             },
         )
+        _log_approval_decided(ctx, approval, actor_role)
+        _record_approval_metric("rejected")
         return approval, readiness, False
 
     if not readiness.can_approve:
+        _log_approval_denied(ctx, "prerequisites_not_met", actor_role)
         raise ReleaseApprovalPrerequisiteError(readiness.blockers)
 
     latest = latest_approval(ctx)
@@ -509,6 +564,15 @@ def request_release_approval(
         and latest.evaluation_version_digest == digest
         and latest.evidence_digest == evidence_digest
     ):
+        logger.info(
+            "release_approval_unchanged",
+            extra={
+                "event": "release_approval_unchanged",
+                "session_id": ctx.session_id,
+                "approval_id": latest.approval_id,
+                "actor_role": actor_role or "unknown",
+            },
+        )
         return latest, readiness, True
 
     approval = ProjectApproval(
@@ -546,6 +610,8 @@ def request_release_approval(
             "superseded_approval_ids": superseded,
         },
     )
+    _log_approval_decided(ctx, approval, actor_role, superseded_count=len(superseded))
+    _record_approval_metric("granted")
     return approval, readiness, False
 
 

@@ -48,7 +48,9 @@
 | `JWT_SECRET` | JWT 签名 | 使用中，且必须 ≥ 32 字符 |
 | `DOMAIN_PROFILE` | 领域配置 | 使用中，支持 `default` / `university_ai` / `medical_ai`；其他值会回落 default 并打 WARNING |
 | `LLM_MODE` | 真实或 mock | 使用中，支持 `real` / `mock`，默认 `real` |
+| `LLM_TIMEOUT_SECONDS` / `LLM_MAX_RETRIES` | 真实模型调用超时与 SDK 重试上限 | 默认 120 秒 / 1 次；超时或上游失败按固定错误码返回 502，`auth`/`bad_request` 标记为不可重试 |
 | `STORAGE_BACKEND` | 存储后端 | 使用中，支持 `postgres` / `sqlite`，默认 `postgres` |
+| `APP_ENV` | 运行环境 | 使用中；`production` 启动时拒绝 `LLM_MODE=mock`、`STORAGE_BACKEND=sqlite`、`DEMO_AUTO_AUTH=true` 及缺失/非法 `DATA_ENCRYPTION_KEY` |
 | `POSTGRES_PORT` | 应用连接 PostgreSQL 的端口 | 使用中；容器内与本机原生 PG 用 `5432`，宿主进程连 Docker DB 用 `5433`（override 映射） |
 | `SQLITE_PATH` | SQLite 文件路径 | 仅 SQLite 模式使用，默认 `data/workflow.db` |
 | `WORKFLOW_EXECUTION_MODE` | 执行模式 | 使用中，默认 `single_step`；`langgraph_interrupt` 为显式 opt-in，非生产默认 |
@@ -59,7 +61,7 @@
 | `DEMO_AUTO_AUTH` | 固定演示账号自动认证 | 生产必须为 `false`；仅本地 demo/开发 override 可启用 |
 | `UVICORN_WORKERS` | worker 数 | 使用中；`langgraph_interrupt` 当前必须为 `1` |
 | `DATA_ENCRYPTION_KEY` | 字段级加密 Fernet key | PostgreSQL 或 `APP_ENV=production` 下缺失密钥时解密 fail-closed（`FieldDecryptionError`）；仅 SQLite 开发模式允许明文并告警 |
-| `PII_MASK_BEFORE_LLM` | 送 LLM 前掩码 PII | 使用中，**默认 `false`** |
+| `PII_MASK_BEFORE_LLM` | 送 LLM 前掩码 PII | 默认 `false`；聊天正文与补充材料命中四类 PII 会先升级 `sensitive_personal` 并强制掩码，本开关仅对未升级内容生效 |
 | `AUDIT_RETENTION_DAYS` / `SESSION_RETENTION_DAYS` | 留存天数 | 使用中；到期数据由内置留存执行器按周期清理，`0` 表示永久保留 |
 | `RETENTION_ENABLED` / `RETENTION_DRY_RUN` | 留存执行器开关 | `RETENTION_ENABLED` 默认 `true`；`RETENTION_DRY_RUN` 默认 `true`，只统计候选不删除，生产需显式改为 `false` |
 | `RETENTION_SWEEP_INTERVAL_SECONDS` / `RETENTION_BATCH_SIZE` | 扫描周期与批次上限 | 默认 86400 秒、1000 行/会话；首次扫描在启动后一个周期执行 |

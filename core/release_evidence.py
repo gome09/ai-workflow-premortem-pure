@@ -22,7 +22,7 @@ from typing import Any
 
 from core.coverage.policy import required_high_risk_node_ids
 from core.evaluation_version import eval_case_digest
-from core.models import EvalCase, EvalExperiment, EvalRun, ProjectContext
+from core.models import EvalCase, EvalExperiment, EvalRun, HumanCalibration, ProjectContext
 from core.risk_treatment_service import high_risk_treatment_requirements
 
 
@@ -59,6 +59,19 @@ def _blocker(
         "source_id": source_id,
         "required_resolution": required_resolution,
     }
+
+
+def _text_sha256(value: str | None) -> str:
+    return hashlib.sha256((value or "").encode("utf-8")).hexdigest()
+
+
+def _latest_human_calibration(ctx: ProjectContext, eval_run_id: str) -> HumanCalibration | None:
+    matches = [
+        calibration
+        for calibration in getattr(ctx, "human_calibrations", []) or []
+        if calibration.eval_run_id == eval_run_id
+    ]
+    return sorted(matches, key=lambda item: item.created_at)[-1] if matches else None
 
 
 def required_release_cases(ctx: ProjectContext) -> tuple[list[EvalCase], list[str]]:
@@ -101,6 +114,19 @@ def release_run_reasons(
         reasons.append("status")
     if run.judge_result != "passed":
         reasons.append("judge_result")
+    elif run.run_mode == "target_http":
+        # 真实目标通过必须能追溯到人工复核与书面判定依据；
+        # 仅写入 judge_result=passed 或缺少 actual_output 的运行不能作为上线证据。
+        if not (run.actual_output or "").strip():
+            reasons.append("actual_output_missing")
+        calibration = _latest_human_calibration(ctx, run.run_id)
+        if run.judge_mode != "human" or calibration is None or calibration.human_label != "passed":
+            reasons.append("human_review_missing")
+        elif (
+            not (calibration.human_comment or "").strip()
+            or not (calibration.reviewer_id or "").strip()
+        ):
+            reasons.append("human_review_basis_missing")
     if run.evaluation_version_digest != evaluation_digest:
         reasons.append("stale_evaluation_version")
     if case is None:
@@ -316,6 +342,9 @@ def release_evidence_snapshot(
                     "calibration_id": calibration.calibration_id,
                     "eval_run_id": calibration.eval_run_id,
                     "human_label": calibration.human_label,
+                    "reviewer_id": calibration.reviewer_id,
+                    "human_comment_sha256": _text_sha256(calibration.human_comment),
+                    "disagreement_reason_sha256": _text_sha256(calibration.disagreement_reason),
                     "created_at": _iso(calibration.created_at),
                 }
             )
@@ -370,6 +399,9 @@ def release_evidence_snapshot(
                 "execution_outcome": run.execution_outcome,
                 "judge_result": run.judge_result,
                 "judge_mode": run.judge_mode,
+                "judge_reason_sha256": _text_sha256(run.judge_reason),
+                "actual_output_sha256": _text_sha256(run.actual_output),
+                "actual_output_length": len(run.actual_output or ""),
                 "evaluation_version_digest": run.evaluation_version_digest,
                 "case_version_digest": run.case_version_digest,
                 "target_endpoint": run.target_endpoint,

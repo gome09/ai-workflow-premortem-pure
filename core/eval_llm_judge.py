@@ -13,6 +13,7 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from core.llm.errors import record_llm_failure
 from core.llm.outbound_guard import guarded_invoke
 from core.models import EvalCase, EvalRun, ProjectContext
 from stages.validators import extract_json_object
@@ -107,6 +108,12 @@ def generate_llm_judge_suggestion(
             "rationale": rationale,
             "confidence": min(max(confidence, 0.0), 1.0),
         }
-    except Exception:  # noqa: BLE001 - judge 失败必须静默降级为无建议
-        logger.warning("LLM judge suggestion failed; falling back to no suggestion", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - judge 失败必须静默降级为无建议
+        record_llm_failure(
+            exc,
+            stage=3,
+            session_id=ctx.session_id,
+            logger=logger,
+            event="llm_judge_failed",
+        )
         return None

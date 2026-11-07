@@ -475,6 +475,7 @@ class SessionService:
         human_label: str,
         human_comment: str = "",
         reviewer_id: str = "human_reviewer",
+        actor_role: str = "",
         disagreement_reason: str = "",
         tenant_id: str = "",
     ) -> dict:
@@ -484,6 +485,7 @@ class SessionService:
             human_label=human_label,
             human_comment=human_comment,
             reviewer_id=reviewer_id,
+            actor_role=actor_role,
             disagreement_reason=disagreement_reason,
             tenant_id=tenant_id,
         )
@@ -762,6 +764,19 @@ class SessionService:
 
     def get_approval_status(self, session_id: str, tenant_id: str = "") -> dict:
         return self._governance.get_approval_status(session_id, tenant_id)
+
+    def get_release_gate_decision(
+        self,
+        session_id: str,
+        *,
+        token_id: str = "",
+        tenant_id: str = "",
+    ) -> dict:
+        return self._governance.get_release_gate_decision(
+            session_id,
+            token_id=token_id,
+            tenant_id=tenant_id,
+        )
 
     def list_project_approvals(self, session_id: str, tenant_id: str = "") -> list[dict]:
         return self._governance.list_project_approvals(session_id, tenant_id)

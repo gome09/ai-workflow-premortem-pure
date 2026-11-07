@@ -7,7 +7,7 @@
 | [startup.md](startup.md) | 启动与部署指南（四种启动方式的单一权威来源，含 SQLite 轻量模式） |
 | [local_setup.md](local_setup.md) | 环境模板、密钥职责划分、环境变量清单与仓库边界 |
 | [demo-scenarios.md](demo-scenarios.md) | 内置场景机制说明 |
-| [acceptance_report.md](acceptance_report.md) | 当前 v1.7.0 代码基线与回归验收摘要（含 2026-10-31 v1.3.0 历史基线） |
+| [acceptance_report.md](acceptance_report.md) | 当前 v1.8.0 代码基线与回归验收摘要（含 2026-10-31 v1.3.0 历史基线） |
 | [../README.en.md](../README.en.md) | English project overview |
 
 ## spec/ — 系统设计与规格文档
@@ -21,7 +21,7 @@
 | [spec/supply-chain-security.md](spec/supply-chain-security.md) | 供应链与 CI 安全规格（权限最小化 / Dependabot / SAST / pip-audit / Scorecard / 文档一致性检查）·代码侧已实现；main 分支保护与 CodeQL required check 待远端确认 |
 | [spec/data-classification-and-privacy.md](spec/data-classification-and-privacy.md) | 数据分类分级与隐私保护规格（分级 / 字段加密 / PII 掩码 / AI 生成标识 / PIA）·已实现（自 v1.0.3；v1.4.0 加固 fail-closed 解密与事件/审计统一脱敏） |
 | [spec/risk-taxonomy-engine.md](spec/risk-taxonomy-engine.md) | 风险分类体系升级规格（OWASP LLM 2025 补齐 / Agentic ASI 2026 / NIST-AI-600-1 / TC260 智能体指引）·已实现（v1.1.0） |
-| [spec/governance-platform.md](spec/governance-platform.md) | 组织级治理平台规格（门禁规则版本化 / 治理视图 / 业务指标 / LLM Judge / 业务闭环：证据生命周期、风险处置、上线批准）·已实现（v1.7.0） |
+| [spec/governance-platform.md](spec/governance-platform.md) | 组织级治理平台规格（门禁规则版本化 / 治理视图 / 业务指标 / LLM Judge / 业务闭环：证据生命周期、风险处置、上线批准、发布门禁）·已实现（v1.8.0） |
 
 ## compliance/ — 合规文档
 

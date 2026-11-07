@@ -62,6 +62,11 @@ def evaluate_action_resolution(
                 message="高风险项被驳回，需要修改或回退当前阶段后才能继续。",
             )
 
+    # 部署前生成的 eval_run 动作可能是 edit 类型；人工通过结论本身就是复核，
+    # 不应再要求结构化 payload。
+    if action_type == "edit" and decision == "approve" and str(action.source_type) == "eval_run":
+        return ResolutionEffect(True, True, message="评测运行已通过人工复核。")
+
     if action_type == "edit":
         if decision == "edit":
             if not payload_after:

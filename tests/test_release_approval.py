@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
+from core import eval_runner
 from core.approval_service import (
     ReleaseApprovalAuthorizationError,
     ReleaseApprovalNotApplicableError,
@@ -16,6 +17,7 @@ from core.approval_service import (
     request_release_approval,
 )
 from core.eval_judgment_service import calibrate_eval_run
+from core.eval_runner import run_eval_case
 from core.evaluation_version import current_evaluation_digest, eval_case_digest
 from core.models import (
     EvalCase,
@@ -24,6 +26,7 @@ from core.models import (
     EvidenceSource,
     FailureMode,
     HumanOversightPolicy,
+    PendingHumanAction,
     ProjectApproval,
     ProjectContext,
     SafetyFinding,
@@ -42,6 +45,7 @@ from core.risk_treatment_service import (
     review_risk_treatment,
     upsert_risk_treatment,
 )
+from core.target_testing import TargetSystemConfig, TargetTestResponse
 from storage.backends.sqlite_store import SQLiteSessionStore
 
 _TENANT = "test-tenant"
@@ -61,7 +65,10 @@ _LOW_RISK = RiskFactorScores(
 
 
 def _ctx(
-    *, data_classification: str = "business_internal", with_treatment: bool = True
+    *,
+    data_classification: str = "business_internal",
+    with_treatment: bool = True,
+    failure_mode_severity: str = "high",
 ) -> ProjectContext:
     ctx = ProjectContext(
         tenant_id=_TENANT,
@@ -90,7 +97,7 @@ def _ctx(
                 id="FM-001",
                 category="hallucination",
                 description="Invents policy clauses",
-                severity="high",
+                severity=failure_mode_severity,
                 evidence_ids=["EVID-1"],
             )
         ]
@@ -170,6 +177,14 @@ def _ctx(
         status="completed",
     )
     ctx.eval_runs.append(run)
+    calibrate_eval_run(
+        ctx,
+        eval_run_id=run.run_id,
+        human_label="passed",
+        human_comment="人工核对实际输出，包含 pass_criteria 要求的 citation。",
+        reviewer_id="reviewer-b",
+        actor_role="editor",
+    )
     ctx.eval_experiments.append(
         EvalExperiment(
             session_id=ctx.session_id,
@@ -560,6 +575,188 @@ def test_missing_target_deployment_blocks_release():
 
     assert readiness.checks["target_deployment_declared"] is False
     assert any(blocker.code == "target_deployment" for blocker in readiness.blockers)
+
+
+def test_uncalibrated_passed_run_is_not_release_evidence():
+    ctx = _ctx()
+    ctx.human_calibrations.clear()
+    ctx.eval_runs[0].judge_mode = "rule"
+
+    readiness = build_release_readiness(ctx)
+
+    assert readiness.checks["real_target_tests_passed"] is False
+    assert any(blocker.code == "real_target_test" for blocker in readiness.blockers)
+
+
+def test_human_review_without_written_basis_is_not_release_evidence():
+    ctx = _ctx()
+    ctx.human_calibrations[0].human_comment = ""
+
+    readiness = build_release_readiness(ctx)
+
+    assert readiness.checks["real_target_tests_passed"] is False
+    assert any(blocker.code == "real_target_test" for blocker in readiness.blockers)
+
+
+def test_calibrate_passed_requires_written_basis():
+    ctx = _ctx()
+
+    with pytest.raises(ValueError, match="written judgment basis"):
+        calibrate_eval_run(
+            ctx,
+            eval_run_id=ctx.eval_runs[0].run_id,
+            human_label="passed",
+            human_comment="",
+            reviewer_id="reviewer-b",
+            actor_role="editor",
+        )
+
+
+def test_calibration_closes_pending_eval_run_action_and_allows_approval():
+    ctx = _ctx()
+    run = ctx.eval_runs[0]
+    action = PendingHumanAction(
+        session_id=ctx.session_id,
+        stage_id=3,
+        source_type="eval_run",
+        source_id=run.run_id,
+        action_type="edit",
+        title="Review required eval run",
+        description="legacy eval review action",
+        risk_level="high",
+        blocking=True,
+        stage_output_version=1,
+    )
+    ctx.pending_actions.append(action)
+
+    assert not build_release_readiness(ctx).can_approve
+
+    calibrate_eval_run(
+        ctx,
+        eval_run_id=run.run_id,
+        human_label="passed",
+        human_comment="人工复核通过，实际输出满足 pass_criteria。",
+        reviewer_id="reviewer-b",
+        actor_role="editor",
+    )
+
+    assert action.status == "resolved"
+    assert action.reviewer_decision == "approve"
+    readiness = build_release_readiness(ctx)
+    assert readiness.can_approve is True
+
+    approval, _, _ = request_release_approval(
+        ctx,
+        decision="approve",
+        note="independent approval after human review",
+        actor_id=_REVIEWER,
+        actor_role="admin",
+    )
+    assert approval.status == "approved"
+
+
+def test_actual_output_change_invalidates_approval():
+    ctx = _ctx()
+    approval, _, _ = request_release_approval(
+        ctx,
+        decision="approve",
+        note="approved",
+        actor_id=_REVIEWER,
+        actor_role="admin",
+    )
+    assert build_approval_summary(ctx)["is_release_approved"] is True
+
+    ctx.eval_runs[0].actual_output = "tampered output"
+
+    summary = build_approval_summary(ctx)
+    assert summary["release_approval"]["status"] == "invalidated"
+    assert summary["is_release_approved"] is False
+    assert len(ctx.project_approvals) == 1
+    assert ctx.project_approvals[0].approval_id == approval.approval_id
+
+
+def test_human_comment_change_invalidates_approval():
+    ctx = _ctx()
+    _approve(ctx)
+
+    ctx.human_calibrations[0].human_comment = "different judgment basis"
+
+    summary = build_approval_summary(ctx)
+    assert summary["release_approval"]["status"] == "invalidated"
+    assert summary["is_release_approved"] is False
+
+
+def test_real_target_run_review_and_approval_end_to_end(monkeypatch):
+    ctx = _ctx(failure_mode_severity="critical")
+    ctx.eval_runs.clear()
+    ctx.eval_experiments.clear()
+    ctx.human_calibrations.clear()
+    case = ctx.eval_cases[0]
+
+    class FakeAdapter:
+        def __init__(self, config):
+            self.config = config
+
+        def execute(self, *args, **kwargs):
+            return TargetTestResponse(
+                outcome="success",
+                output="answer with citation",
+                status_code=200,
+            )
+
+    monkeypatch.setattr(eval_runner, "HttpJsonTargetAdapter", FakeAdapter)
+
+    run = run_eval_case(
+        ctx,
+        eval_id=case.eval_id,
+        run_mode="target_http",
+        target_config=TargetSystemConfig(endpoint=ctx.target_deployment.endpoint),
+    )
+    assert run.judge_result == "needs_review"
+    action = next(
+        item
+        for item in ctx.pending_actions
+        if item.source_type == "eval_run" and item.source_id == run.run_id
+    )
+    assert action.blocking is True
+    assert action.action_type == "approve"
+
+    calibrate_eval_run(
+        ctx,
+        eval_run_id=run.run_id,
+        human_label="passed",
+        human_comment="人工核对实际输出，包含 pass_criteria 要求的 citation。",
+        reviewer_id="reviewer-b",
+        actor_role="editor",
+    )
+    assert action.status == "resolved"
+    assert run.judge_mode == "human"
+    assert run.judge_result == "passed"
+
+    ctx.eval_experiments.append(
+        EvalExperiment(
+            session_id=ctx.session_id,
+            dataset_id="ds-test",
+            name="release batch",
+            status="completed",
+            run_mode="target_http",
+            eval_ids=[case.eval_id],
+            run_ids=[run.run_id],
+        )
+    )
+
+    readiness = build_release_readiness(ctx)
+    assert readiness.can_approve is True
+
+    approval, _, _ = request_release_approval(
+        ctx,
+        decision="approve",
+        note="independent release sign-off",
+        actor_id=_REVIEWER,
+        actor_role="admin",
+    )
+    assert approval.status == "approved"
+    assert build_approval_summary(ctx)["is_release_approved"] is True
 
 
 @pytest.fixture

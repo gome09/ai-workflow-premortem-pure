@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -138,3 +139,55 @@ def test_pg_workspace_invitation_and_refresh_role():
     assert refreshed["role"] == "viewer"
     assert refreshed["tenant_id"] == author["tenant_id"]
     assert verify_token(refreshed["access_token"]).role == "viewer"
+
+
+def test_pg_service_token_and_release_gate_audit(tenant_id):
+    from auth.service_tokens import hash_service_token
+
+    raw_token = f"pmgate_{uuid.uuid4().hex}"
+    token_id = str(uuid.uuid4())
+    created = session_store.create_service_token(
+        token_id=token_id,
+        tenant_id=tenant_id,
+        name="ci",
+        token_hash=hash_service_token(raw_token),
+        scope="release_gate:read",
+        created_by="admin-user",
+        expires_at=datetime.now(UTC) + timedelta(days=30),
+    )
+    assert created["tenant_id"] == tenant_id
+
+    fetched = session_store.get_service_token_by_hash(hash_service_token(raw_token))
+    assert fetched is not None
+    assert fetched["token_id"] == token_id
+
+    revoked = session_store.revoke_service_token(
+        tenant_id=tenant_id,
+        token_id=token_id,
+        revoked_at=datetime.now(UTC),
+    )
+    assert revoked is not None
+    assert revoked["revoked_at"] is not None
+
+    check_id = str(uuid.uuid4())
+    session_store.record_release_gate_check(
+        check_id=check_id,
+        tenant_id=tenant_id,
+        token_id=token_id,
+        session_id=str(uuid.uuid4()),
+        decision="block",
+        reason_code="approval_not_requested",
+        approval_status="not_requested",
+        approval_id="",
+        evaluation_version_digest="d" * 64,
+        evidence_digest="e" * 64,
+        release_batch_id="",
+    )
+    with psycopg.connect(_DATABASE_URL) as conn:
+        row = conn.execute(
+            "SELECT decision, reason_code FROM release_gate_checks WHERE check_id = %s::uuid",
+            (check_id,),
+        ).fetchone()
+    assert row is not None
+    assert row[0] == "block"
+    assert row[1] == "approval_not_requested"

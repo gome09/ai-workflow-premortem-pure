@@ -3,6 +3,7 @@
 
 Covers:
 - scan_text on user_materials produces sensitive_info finding (severity high for ID card).
+- scan_user_message_pii on chat input produces finding and upgrades classification.
 - PII hit auto-upgrades ctx.data_classification to sensitive_personal (T1.1 联动).
 - PII detection NOT triggered for stage_N.ai_output locations (avoid LLM-output false positives).
 - scan_pii returns correct kinds (email + cn_mobile).
@@ -17,7 +18,7 @@ from __future__ import annotations
 from core.config import settings
 from core.evidence_service import format_evidence_for_prompt
 from core.models import EvidenceSource, ProjectContext
-from tools.safety_classifier import mask_pii_in_text, scan_pii, scan_text
+from tools.safety_classifier import mask_pii_in_text, scan_pii, scan_text, scan_user_message_pii
 
 # 18 位身份证号（满足 cn_id_card 正则的日期结构）
 _ID_CARD = "110101199001011234"
@@ -57,7 +58,25 @@ def test_pii_auto_upgrades_data_classification():
     assert ctx.data_classification == "sensitive_personal"
 
 
-# ── 3: PII detection NOT triggered for LLM output ────────────────────
+# ── 3: chat body PII upgrades before outbound call ──────────────────
+def test_chat_message_pii_upgrades_before_outbound():
+    ctx = ProjectContext()
+    ctx.data_classification = "business_internal"
+
+    findings = scan_user_message_pii(
+        ctx,
+        stage_id=1,
+        text=f"我的身份证是 {_ID_CARD}",
+    )
+
+    pii_findings = [f for f in findings if f.risk_type == "sensitive_info"]
+    assert pii_findings
+    assert pii_findings[0].location == "user_message.stage_1"
+    assert "聊天正文包含 PII" in pii_findings[0].description
+    assert ctx.data_classification == "sensitive_personal"
+
+
+# ── 4: PII detection NOT triggered for LLM output ────────────────────
 def test_pii_not_triggered_for_llm_output():
     ctx = ProjectContext()
     ctx.data_classification = "business_internal"

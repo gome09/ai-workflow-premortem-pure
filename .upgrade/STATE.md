@@ -2,7 +2,7 @@
 
 ## Status Summary
 
-Phase 0–4 与 formal-project-uplift Wave A–E 的代码侧工作已完成；Phase 4 剩余项仅为远端治理动作（分支保护、漏洞报告设置、CodeQL required check、GitHub Release），完成前不得宣称已发布。当前应用版本为 `1.7.0`（P1 Business Closure Hardening），ProjectContext schema 保持 `0.10.0`（新增可选 `target_deployment` / `input_versions`，无需 context 迁移），Alembic head 为 `V012`（`workspace_invitations`、`eval_cases.standard_version`、`eval_runs.case_version_digest` / `target_deployment_version`；V011 为真实目标执行元数据；V010 为 `sessions.context_digest`；V009 为 `sessions.projection_state`、`eval_runs.pass_criteria` / `llm_judge_suggestion`）。默认执行路径仍为 `single_step`；`langgraph_interrupt` 是受控 opt-in，生产启用要求加密 PostgreSQL checkpoint、独立 Fernet key、单 worker 与 fail-closed readiness。
+Phase 0–4 与 formal-project-uplift Wave A–E 的代码侧工作已完成；Phase 4 剩余项仅为远端治理动作（分支保护、漏洞报告设置、CodeQL required check、GitHub Release），完成前不得宣称已发布。当前应用版本为 `1.8.0`（Release Gate Integration），ProjectContext schema 保持 `0.10.0`（新增可选 `target_deployment` / `input_versions`，无需 context 迁移），Alembic head 为 `V013`（`service_tokens` + `release_gate_checks`；V012 为 `workspace_invitations`、`eval_cases.standard_version`、`eval_runs.case_version_digest` / `target_deployment_version`；V011 为真实目标执行元数据；V010 为 `sessions.context_digest`；V009 为 `sessions.projection_state`、`eval_runs.pass_criteria` / `llm_judge_suggestion`）。默认执行路径仍为 `single_step`；`langgraph_interrupt` 是受控 opt-in，生产启用要求加密 PostgreSQL checkpoint、独立 Fernet key、单 worker 与 fail-closed readiness。
 
 2026-09-21 的真实 PostgreSQL 验收已覆盖暂停、进程重建、恢复、清理、durable resume/outbox 与回滚；验收时 adapter 为 healthy/persistent/encrypted。当前 8000/8501 均未监听，因此运行状态只作为带日期的验收证据，不作为持续在线声明。
 
@@ -22,6 +22,9 @@ Phase 0–4 与 formal-project-uplift Wave A–E 的代码侧工作已完成；P
 
 ## Recent Completed Work
 
+- 第三阶段发布门禁接入（2026-11-07，版本 `1.8.0`，Alembic `V013`）：新增租户级 `service_tokens`（SHA-256、原始值仅返回一次、默认 90 天、可撤销、scope 固定 `release_gate:read`）与 admin-only `/auth/service-tokens` 创建/列表/撤销；新增只读 `GET /release-gate/{session_id}`，仅当前审批 effective_status=approved 且 readiness 全满足时返回 `decision=allow`，未批准/rejected/stale/invalidated/public_demo/401/403/404/503 一律阻断；门禁绕过 72 小时 `context_cache` 直接读取存储，每次认证检查写入 append-only `release_gate_checks`，审计写入失败返回 503 + `gate_unavailable`（fail-closed）；响应不含会话正文/审批备注；新增 `premortem_release_gate_checks_total{decision,reason_code}`。新增 `core/release_gate_service.py`、`auth/service_tokens.py`、`api/routers/release_gate.py` 与 V013 迁移；新增 `test_release_gate.py`（16 条）与 `test_alembic_v013_release_gate.py`（3 条），扩展契约/metrics/PG-only/V008→V013 迁移断言。离线全量 `1219 passed, 6 skipped`（SQLite + memory + mock + single_step，70.7s）；Ruff、format（403 files）、mypy（205 files）、doc-check（37 份 0 违规）、version-check（1.8.0）通过。
+- 第二阶段可靠性/可观测性加固（2026-11-07，版本保持 `1.7.0`，无 Alembic 迁移）：新增 `core/llm/errors.py` 统一模型故障分类（timeout / rate_limit / auth / connection / server_error / bad_request / provider_error）与脱敏摘要，`LLM_TIMEOUT_SECONDS` / `LLM_MAX_RETRIES` 显式控制 `ChatOpenAI` 超时与 SDK 重试；Stage 1–4、INIT、eval `llm_node`、LLM judge 统一记录 `error_code` 与指标，模型上游故障经 `LLMCallError` 映射为 HTTP 502 固定契约（PII 出站守卫仍 fail-closed 原路径）；`node_stage_running` 与 `langgraph_interrupt_runner` 不再把模型故障静默降级为 200。`core/target_testing/http_json.py` 改流式读取 + 字节硬上限（`max_chars*4+4096`，最低 16 KB），声明或实际超限返回 `response_too_large` 且不解析残缺 JSON，错误文本截断到 500 字符；eval 目标执行新增结构化日志与指标。`core/retention_service.py` 改为“先提交数据库删除、再清理 checkpoint/缓存”，新增 `archived_events_matched` / `errors_count`，checkpoint 清理失败不回滚已删除会话；新增重复执行、purge 失败恢复、checkpoint 失败、SQLite 备份恢复测试。`_JSONFormatter` 支持 `extra` 结构化字段；新增 LLM 失败、结构化输出失败、目标执行、留存清理、审批决策指标；审批拒绝与决策新增脱敏日志。验证：全量 `1195 passed, 6 skipped`（SQLite + memory + mock + single_step，55.1s；6 skip = 3 PG/Redis E2E + 1 PG-only + 2 opt-in live provider 冒烟）；Ruff、`ruff format --check`（397 files）、mypy（202 files）、doc-check、version-check（1.7.0）通过。
+- 第一阶段业务闭环加固（2026-11-07）：聊天正文在 `SessionWorkflowService.send_message` 进入模型前调用 `scan_user_message_pii`，四类 PII 命中即升级 `sensitive_personal` 并对 system prompt、历史与本轮消息强制出站掩码；真实目标 `judge_result=passed` 现要求 `judge_mode=human` + `human_label=passed` 且带非空 `human_comment`/`reviewer_id` 的人工校准与非空 `actual_output`，`release_evidence_snapshot` 纳入实际输出、judge reason 与人工判定依据摘要，批准后篡改关键证据会令 `effective_status=invalidated`；人工校准以 approve/reject 关闭对应 `eval_run` 阻断动作（并兼容部署前生成的 legacy `edit` 动作）；`APP_ENV=production` 启动拒绝 `LLM_MODE=mock`、`STORAGE_BACKEND=sqlite`、`DEMO_AUTO_AUTH=true`、缺失或非法 `DATA_ENCRYPTION_KEY`。补齐租户回填与 `goal` 回填的幂等/计数一致/跨租户隔离测试，未执行真实业务库写入。离线全量 `1153 passed, 4 skipped`（SQLite + memory + mock，34.4s）；Ruff、ruff format --check（392 files）、mypy（199 files）、doc-check（37 份 0 违规）、version-check（1.7.0）通过。
 - LangGraph interrupt 五阶段实现与验收：V006 checkpoint、V007 durable resume outbox、独立加密、tenant-scoped thread、原子 claim/resume、startup reconcile、严格恢复校验和会话 purge 保护。
 - 文档与安全数据面同步：checkpoint 完整上下文副本、密钥生命周期、备份恢复、事故响应和 PII 掩码边界已写入当前规格与合规材料。
 - 生产配置加固：生产关闭 demo auto-auth、Docker secrets 纳入两把加密 key、容器 readiness、配置 fail-fast、依赖兼容约束和 `uv run` 启动入口。
@@ -95,11 +98,11 @@ Phase 4: In progress
 
 ## current_task
 
-Documentation, CI/CD and .upgrade alignment completed and verified; remote governance actions remain
+Release gate integration implemented; full offline regression, PostgreSQL migration verification in CI, and remote governance actions remain
 
 ## last_completed_task
 
-Documentation/CI/.upgrade alignment (2026-11-01): root docs and specs aligned to 1.7.0 / V012 / schema 0.10.0; code commit 3316bb5 (run 41298061928) and docs commit 93b9b71 (run 41298329901) both green across all four CI jobs plus CodeQL; upgrade workspace state/plan/inventory synced on 2026-11-01
+Release Gate Integration (2026-11-07): version 1.8.0 / Alembic V013; tenant-scoped service tokens and admin-only credential management; read-only `GET /release-gate/{session_id}` with allow-only-current-approval semantics; cache bypass; append-only `release_gate_checks`; fail-closed 503 on audit failure; new tests, contract assertions, PG-only lifecycle test, metrics and docs. Full offline baseline recorded in the final task summary.
 
 ## next_action
 
@@ -107,23 +110,23 @@ Verify branch protection, private vulnerability reporting, and CodeQL required c
 
 ## last_update
 
-- Date: 2026-11-01T18:40:00+08:00
-- Updated by: Documentation/CI/.upgrade alignment verification backfill
-- Summary: Remote CI verified on the same commits: code 3316bb5 / run 41298061928 and docs 93b9b71 / run 41298329901, all four jobs success plus CodeQL success. Local: ruff clean, format 392 files, mypy 199 files, doc-check 37/0, version-check 1.7.0, pytest 1131 passed / 4 skipped (76.28s). Dependency audit remains a non-blocking observation with 124 unique advisories / 19 packages recorded as a blocker; remote governance settings and GitHub Release remain unverified.
+- Date: 2026-11-07T12:00:00+08:00
+- Updated by: Phase 3 release gate integration
+- Summary: Version 1.8.0; Alembic V013 adds `service_tokens` and `release_gate_checks`. Read-only `GET /release-gate/{session_id}` allows release only for a currently valid `ProjectApproval`; stale/rejected/invalidated/not-requested/public_demo/credential failures and audit-write failures all block. Gate bypasses the 72h context cache and records every authenticated check. New service-token lifecycle, contract, migration and PG-only tests; full offline baseline and lint/type/doc/version checks recorded in the final task summary. Dependency audit posture and remote governance actions remain unchanged.
 
 ## last_validation
 
-- Status: partial（本地代码/文档检查通过；`make audit` 因外部 advisory 库失败，按用户决策转 CI non-blocking 观察项）
-- Check: `ruff check` + `ruff format --check` + `mypy` + `doc-check` + `version-check` + `pytest`（离线全量）+ `pip-audit`（失败，观察项）+ GitHub Actions runs 41298061928 / 41298329901
-- Environment: local SQLite/memory/mock；Windows PowerShell（GNU make 不可用，执行底层等价命令）；GitHub Actions ubuntu-latest + PG16 + Redis7
-- Scope: doc-ci-upgrade-alignment
-- Subject: git-worktree `3316bb5d335f99793a723d487f98c2d6fa7e4398` then `93b9b71ff032ce9bbd8f42bd80c5379c94d62229`; both commits verified remotely
+- Status: partial（本地代码/文档检查通过；真实 DeepSeek、真实目标 live 冒烟与本地 PostgreSQL V008→V013 迁移需显式环境，本轮未执行；CI `production-safety` 覆盖 PG 迁移；`make audit` 仍为观察项）
+- Check: `ruff check` + `ruff format --check` + `mypy` + `doc-check` + `version-check` + `pytest`（离线全量，含发布门禁决策/凭证/缓存绕过/审计失败恢复测试）
+- Environment: local SQLite/memory/mock/single_step；Windows PowerShell（GNU make 不可用，执行底层等价命令），`UV_CACHE_DIR=.upgrade/tmp/uv-cache`
+- Scope: phase-3-release-gate-integration
+- Subject: git-worktree (uncommitted Phase 3 release gate changes)
 - Subject digest: not_applicable
-- Recorded: 2026-11-01T18:40:00+08:00
+- Recorded: 2026-11-07T12:00:00+08:00
 
 ## unverified_items
 
-Main branch protection, private vulnerability reporting, CodeQL required check, GitHub Release, local Docker smoke (daemon unavailable), and `.upgrade/validation/records.jsonl` append (subject_digest semantics unavailable without the maintainer CLI) remain unverified. The verification backfill commit's own CI result is reported in the final task summary rather than self-referenced in this file.
+Main branch protection, private vulnerability reporting, CodeQL required check, GitHub Release, local Docker smoke (daemon unavailable), local PostgreSQL V008→V013 migration (CI production-safety covers it), and `.upgrade/validation/records.jsonl` append (subject_digest semantics unavailable without the maintainer CLI) remain unverified. The verification backfill commit's own CI result is reported in the final task summary rather than self-referenced in this file.
 
 ## current_blockers
 

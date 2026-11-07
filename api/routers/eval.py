@@ -203,6 +203,7 @@ def calibrate_eval_run(
             human_label=body.human_label,
             human_comment=body.human_comment,
             reviewer_id=ctx.user_id,
+            actor_role=ctx.role,
             disagreement_reason=body.disagreement_reason,
             tenant_id=ctx.tenant_id,
         )

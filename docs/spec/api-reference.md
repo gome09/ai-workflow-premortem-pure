@@ -1,10 +1,10 @@
 # API 接口参考
 
 > 本文档按当前源码静态提取整理。
-> 当前仓库可直接识别的 HTTP 路由总数为 `100`（`api/routers/*.py` 89 条 + `auth/router.py` 8 条 + `/health*` 3 条；`/metrics` 由监控组件在运行时挂载）。
+> 当前仓库可直接识别的 HTTP 路由总数为 `104`（`api/routers/*.py` 90 条 + `auth/router.py` 11 条 + `/health*` 3 条；`/metrics` 由监控组件在运行时挂载）。
 
 > Status: Implemented（HTTP 路由按当前源码静态提取）
-> 最近复核：2026-11-01（路由数与 v1.7.0 新增端点核对）
+> 最近复核：2026-11-07（路由数与 v1.8.0 发布门禁端点核对）
 
 ---
 
@@ -31,6 +31,9 @@
 | POST | `/auth/invitations` | 创建同租户邀请；原始 token 仅返回一次，`admin` only |
 | GET | `/auth/invitations` | 列出本租户邀请（不返回 token），`admin` only |
 | POST | `/auth/invitations/accept` | 接受邀请并创建成员，返回 token 对；公开端点 + 限流 |
+| POST | `/auth/service-tokens` | 创建租户级机器凭证（`admin` only；原始 token 仅返回一次，默认 90 天，`Cache-Control: no-store`） |
+| GET | `/auth/service-tokens` | 列出本租户机器凭证（不返回原始 token 或 hash，`admin` only） |
+| DELETE | `/auth/service-tokens/{token_id}` | 撤销机器凭证（`admin` only；重复撤销幂等） |
 
 ---
 
@@ -49,7 +52,7 @@
 | PUT | `/sessions/{session_id}/risk-profile` | 显式设置六因子（0–3；editor+；若生效等级下降则须 admin；写 `risk_profile_updated` 审计事件） |
 | POST | `/sessions/{session_id}/risk-profile/override` | 人工覆写风险等级（editor+；降级须 admin 且不得低于确定性 floor；写 `risk_tier_overridden` 审计事件，含原等级/请求等级/生效等级/floor/原因/操作者/租户） |
 | DELETE | `/sessions/{session_id}` | 删除会话（admin；审计归档保留，写 `session_purged` 处置事件） |
-| POST | `/chat/{session_id}` | 发送消息并推进一个执行回合；会话处于 `ERROR` / `RECOVERY_REQUIRED` 时返回 409 |
+| POST | `/chat/{session_id}` | 发送消息并推进一个执行回合；会话处于 `ERROR` / `RECOVERY_REQUIRED` 时返回 409；模型上游超时/失败时返回 502 |
 | POST | `/sessions/{session_id}/workflow/recover` | 将 `ERROR` / `RECOVERY_REQUIRED` 会话显式恢复到可推进状态（editor / admin）；`target_state` 必须属于可恢复集合，写 `workflow_recovered` 审计事件 |
 | POST | `/sessions/{session_id}/materials` | 追加用户材料（更新材料输入版本） |
 | PUT | `/sessions/{session_id}/target-deployment` | 声明/更新目标部署 endpoint+version（editor+；实际变化使旧审批与旧运行失效） |
@@ -57,6 +60,8 @@
 | GET | `/sessions/{session_id}/export` | 导出报告（`json` 或 `markdown`） |
 
 阻断语义：`/chat`、阶段推进与动作处理入口会在服务层调用 `core.workflow_state_service.assert_advanceable`。会话处于 `ERROR` / `RECOVERY_REQUIRED`（含存储层发现未知持久化状态后自动改写为 `RECOVERY_REQUIRED` 的情形）时返回 HTTP 409 `WorkflowBlockedError`，不执行任何节点；唯一出口是上述 `/workflow/recover` 端点。目标状态非法返回 400、目标状态合法但当前未阻断返回 409、会话不存在返回 404。
+
+模型失败语义：真实模型调用超时、限流、鉴权、连接或 5xx 失败统一返回 HTTP 502，响应体为 `{"detail": "Model provider call failed...", "error_code": "timeout|rate_limit|auth|connection|server_error|bad_request|provider_error", "retryable": true|false, "session_id": "...", "stage": 0-4}`。响应不包含 provider 原文、提示词、密钥或用户内容；出站 PII 守卫失败仍按 fail-closed 原路径处理，不会伪装成 502。
 
 ---
 
@@ -118,6 +123,23 @@
 
 ---
 
+## 发布门禁（机器调用）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/release-gate/{session_id}` | 部署前只读门禁检查；只接受 `Authorization: Bearer pmgate_...` 服务凭证（scope `release_gate:read`），人类 JWT 不通过 |
+
+契约：
+
+- `decision=allow` 当且仅当当前 `ProjectApproval.effective_status=approved`、`release_readiness.can_approve=true`，且 `evaluation_version_digest` / `evidence_digest` 均为当前计算值。
+- 其他情况返回 HTTP 200 + `decision=block`，`reason_code` 为 `approval_not_requested` / `approval_rejected` / `approval_stale` / `approval_invalidated` / `not_applicable` / `prerequisites_not_met` 之一；`blockers` 携带固定 code / severity / source / required_resolution。
+- HTTP 401 = 凭证缺失、格式错误、已撤销、已过期或不存在；403 = scope 不允许；404 = 会话不存在或跨租户；503 = 门禁计算或审计写入不可用（`decision=block` + `gate_unavailable`）。
+- **只有 HTTP 200 且 `decision=allow` 才允许部署**；其他任何响应都必须由 CI 视为阻断。
+- 响应设置 `Cache-Control: no-store`，不含会话正文、用户材料、审批备注或人工判定依据。每次通过认证的检查写入 `release_gate_checks`；门禁绕过 72 小时上下文缓存，直接读取存储。
+- 服务凭证由 `/auth/service-tokens` 管理；数据库只存 SHA-256，原始 token 只返回一次，默认 90 天有效，可随时撤销。
+
+---
+
 ## Eval
 
 | 方法 | 路径 | 说明 |
@@ -132,7 +154,7 @@
 | GET | `/sessions/{session_id}/human-calibrations` | 查看人工校准记录 |
 | POST | `/sessions/{session_id}/eval-runs/{run_id}/calibrate` | 对 EvalRun 做人工校准；复核人固定取 JWT 身份，执行失败的真实目标运行不可改判为 passed |
 
-`target_http` 是真实目标系统执行：请求体需带 `target_config`（endpoint / timeout_seconds / output_field），endpoint host 必须在 `TARGET_SYSTEM_ALLOWED_HOSTS` 白名单内。响应写入 `EvalRun.execution_kind`（`real_target_execution`）与 `execution_outcome`（success / failed / timeout / error）；模拟执行（manual / dry_run / mock_model_execution）不会计入上线批准证据。
+`target_http` 是真实目标系统执行：请求体需带 `target_config`（endpoint / timeout_seconds / output_field），endpoint host 必须在 `TARGET_SYSTEM_ALLOWED_HOSTS` 白名单内。响应写入 `EvalRun.execution_kind`（`real_target_execution`）与 `execution_outcome`（success / failed / timeout / error）；模拟执行（manual / dry_run / mock_model_execution）不会计入上线批准证据。响应体按流式读取并受字节上限约束（由 `TARGET_SYSTEM_MAX_RESPONSE_CHARS × 4 + 4096` 推导，最低 16 KB）：声明长度或实际读取超过上限时返回 `execution_outcome=error`、`error_code=response_too_large`、`truncated=true`，不解析残缺 JSON；错误文本写入 `EvalRun.error_message` 前截断到 500 字符。
 
 ---
 

@@ -158,8 +158,8 @@ Project risk is derived from six structured factors, each on a 0–3 ordinal sca
 
 - required test set = all Stage 3 EvalCases for `required_high_risk_node_ids`;
 - release batch = one completed `target_http` EvalExperiment covering every required case;
-- valid run = real target execution + `execution_outcome=success` + `judge_result=passed` + current version/case/deployment bindings;
-- `ProjectApproval.evidence_digest` snapshots the batch runs, human calibrations, treatment reviews, high/critical safety findings and blocking actions. Any later negative evidence change invalidates the effective approval while preserving history.
+- valid run = real target execution + `execution_outcome=success` + `judge_result=passed` + `judge_mode=human` + a `human_label=passed` calibration with written `human_comment` and reviewer identity + current version/case/deployment bindings; a bare `judge_result=passed` or empty `actual_output` is not release evidence;
+- `ProjectApproval.evidence_digest` snapshots the batch runs (including actual-output and judge-reason digests), human calibrations (including judgment-basis digests and reviewers), treatment reviews, high/critical safety findings and blocking actions. Any later negative evidence change invalidates the effective approval while preserving history.
 
 ## Workflow State Fail-Closed
 
@@ -218,12 +218,13 @@ Stage rerun, revise, rollback, and sync-review-actions are explicit stage operat
 - `core/session_service.py` is a compatibility facade over the five lifecycle domain services; domain services must not import each other or the facade at module scope.
 - `core/gates/rules/manifest.py` is the authoritative source for gate rule metadata (owner / version / changelog / safety_bottom_line).
 - `gate_evaluation_records` table (alembic V005) is the baseline data source for governance pass-rate trends. Its rows are projections of `sessions` and are deleted with the session on admin delete or retention purge; tenant backfill covers legacy NULL rows.
-- LangGraph checkpoint tables are owned by Alembic V006; the durable resume outbox is owned by V007; V008 adds `sessions.version` (optimistic locking), JSONB generated columns for list/governance queries, tenant indexes and `human_actions.tenant_id`; V009 adds `sessions.projection_state` plus `eval_runs.pass_criteria` / `llm_judge_suggestion`; V010 adds `sessions.context_digest`; V011 adds real-target execution metadata on `eval_runs`; V012 adds `workspace_invitations`, `eval_cases.standard_version` and `eval_runs.case_version_digest` / `target_deployment_version`. Current chain and legacy-database upgrade steps are documented in [storage/README.md](../../storage/README.md).
+- LangGraph checkpoint tables are owned by Alembic V006; the durable resume outbox is owned by V007; V008 adds `sessions.version` (optimistic locking), JSONB generated columns for list/governance queries, tenant indexes and `human_actions.tenant_id`; V009 adds `sessions.projection_state` plus `eval_runs.pass_criteria` / `llm_judge_suggestion`; V010 adds `sessions.context_digest`; V011 adds real-target execution metadata on `eval_runs`; V012 adds `workspace_invitations`, `eval_cases.standard_version` and `eval_runs.case_version_digest` / `target_deployment_version`; V013 adds release-gate `service_tokens` and `release_gate_checks`. Current chain and legacy-database upgrade steps are documented in [storage/README.md](../../storage/README.md).
 - The outbox is reconciled once on startup and then retried periodically by the in-process scheduler in `core/execution_service.py` (`INTERRUPT_RESUME_RETRY_INTERVAL_SECONDS`, default 600s, 0 = startup-only). The scheduler starts only in `langgraph_interrupt` mode and is stopped before the checkpoint runtime and pool close.
 - `core/eval_llm_judge.py` is the authoritative implementation of LLM Judge (suggestion only, never overrides final judgment directly).
 - `core/evaluation_version.py` is the authoritative evaluation-version digest (stage versions + critical content); approvals, risk treatments, and eval runs bind to it.
 - `core/risk_treatment_service.py` owns high-risk treatment requirements and completeness; `core/gates/rules/risk_treatment.py` consumes it for the Stage 4 gate.
 - `core/approval_service.py` owns independent release approval readiness, authorization, and stale state. `SessionState.COMPLETE` is assessment completion, not release approval.
+- `core/release_gate_service.py` is the read-only machine gate authority. `GET /release-gate/{session_id}` accepts only tenant-scoped service tokens (scope `release_gate:read`), reuses approval readiness and `effective_approval_status`, bypasses the 72h context cache, and records every authenticated check in `release_gate_checks`; only HTTP 200 + `decision=allow` permits a deployment.
 - `core/target_testing/` is the real-target HTTP JSON adapter authority. `EvalRun.execution_kind` distinguishes simulation from `real_target_execution`; only current-version real target passes count toward release approval.
 
 

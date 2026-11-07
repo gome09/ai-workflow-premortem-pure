@@ -11,7 +11,7 @@
 
 2026 年上半年，AI agent 删除生产数据库、越权转移资金等事故屡见报端——共同根因不是模型能力不足，而是**可预见的失败模式在部署前从未被系统性测试过**。本项目将软件工程的预验尸（Pre-mortem）方法论应用于 AI 项目立项阶段：四阶段引导式分析（失败模式识别 → 人机协同工作流设计 → 压力测试 → 触发策略），配合风险自适应门禁（LOW/MEDIUM/HIGH/CRITICAL）与强制人工审核，让高风险 AI 项目在完成充分评估之前无法推进。
 
-**版本：** v1.7.0 · **协议：** Apache-2.0 · 源于本科毕业设计，现作为长期维护的开源项目演进
+**版本：** v1.8.0 · **协议：** Apache-2.0 · 源于本科毕业设计，现作为长期维护的开源项目演进
 
 ---
 
@@ -62,11 +62,12 @@
 | 报告导出 | JSON / Markdown ReportArtifact，含 readiness 与 governance 摘要 |
 | 风险处置 | high/critical 失败模式与开放安全发现需责任人、缓解措施和独立复核，并绑定当前评估版本；`public_demo` 豁免 |
 | 上线批准 | 独立 `ProjectApproval`：要求评估完成、处置闭环、证据核验，且同一 `target_http` 批次覆盖全部必测用例的真实目标测试通过；关键证据变化后自动 `invalidated` |
+| 发布门禁 | CI 可在部署前调用只读 `GET /release-gate/{session_id}`；只有当前审批有效且全部前置条件满足时返回 `decision=allow`，未批准/失效/越权一律阻断；凭证按租户签发、可撤销、默认 90 天 |
 | 团队与工作区 | 注册即创建独立工作区（创建者为 admin）；同租户成员经 `workspace_invitations` 邀请加入；`/auth/refresh` 重新读取当前角色 |
 | 审计追踪 | 完整审计事件记录 + Streamlit Review Workbench 的审计历史视图 |
 | 治理总览 | 仅聚合真实业务会话的状态、风险、门禁趋势和积压动作；四个内置场景及其他 `public_demo` 演示数据明确隔离 |
 
-> 能力边界：`SessionState.COMPLETE` 只表示评估完成，不等于上线批准；不提供多工作区切换、邀请邮件投递或跨租户集团视图；真实目标测试在 `TARGET_SYSTEM_ALLOWED_HOSTS` 为空时拒绝所有外部调用（fail-closed）。
+> 能力边界：`SessionState.COMPLETE` 只表示评估完成，不等于上线批准；发布门禁采用 CI 拉取只读端点，不提供 webhook 推送、异步任务或跨租户集团视图；不提供多工作区切换或邀请邮件投递；真实目标测试在 `TARGET_SYSTEM_ALLOWED_HOSTS` 为空时拒绝所有外部调用（fail-closed）。
 
 ---
 

@@ -5,6 +5,7 @@ import logging
 from typing import Any, TypedDict
 
 from core.audit_service import append_audit_event
+from core.llm.errors import LLMCallError
 from core.models import ProjectContext
 from graph.checkpoint_manager import (
     checkpoint_manager,
@@ -144,6 +145,9 @@ def invoke_one_turn_with_interrupts(ctx: ProjectContext) -> ProjectContext:
     sync_interrupt_records(ctx)
     try:
         result = graph.invoke({"context": ctx}, config=_langgraph_config(ctx))
+    except LLMCallError:
+        # 模型上游故障保留分类与脱敏信息，由 API 映射为 502；不包装成 RuntimeError。
+        raise
     except Exception as exc:
         logger.exception("LangGraph interrupt runner failed; refusing fallback stage execution.")
         append_audit_event(

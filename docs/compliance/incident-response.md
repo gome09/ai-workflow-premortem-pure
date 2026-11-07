@@ -60,6 +60,6 @@
 | "审计日志位置" | `audit_events` 表 + `audit_events_archive` 表（删除会话后归档） |
 | "密钥存储位置" | setup 将 `JWT_SECRET` / PostgreSQL / Redis 密码同时写入文件型 secrets 与 `.env`；`DATA_ENCRYPTION_KEY` 与 `CHECKPOINT_ENCRYPTION_KEY` 均仅由 `.env` 传入且不自动生成，两者不得复用，事件排查与轮换必须分别覆盖 |
 | "外部数据流" | evidence/user_materials、直接用户消息与会话历史均可能进入 DeepSeek prompt |
-| "PII 掩码开关" | `PII_MASK_BEFORE_LLM` 仅覆盖 evidence/user_materials 格式化路径，直接消息/历史不覆盖 |
+| "PII 掩码开关" | 聊天正文在进入模型前、补充材料在加入时统一检测；四类 PII 命中升级 `sensitive_personal` 并强制出站掩码；`PII_MASK_BEFORE_LLM` 仅保留未升级内容的开关语义 |
 | "会话删除端点" | `DELETE /sessions/{id}`（admin only，归档审计后级联删除） |
 | "/health 暴露项" | `data_encryption` / `interrupt_adapter`（含 backend、persistent、encrypted）/ `audit_retention_days` / `session_retention_days` |

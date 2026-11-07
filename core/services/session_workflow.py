@@ -16,6 +16,7 @@ from core.evidence_service import evidence_sources_from_user_materials
 from core.execution_service import (
     sync_execution_after_stage_revision,
 )
+from core.llm.errors import LLMCallError
 from core.models import ProjectContext, SessionState, TargetDeployment
 from core.report_service import build_markdown_report, build_report_dict, create_report_artifact
 from core.scenario_context import attach_scenario_to_context
@@ -50,7 +51,7 @@ from core.stage_operation_service import (
 from core.target_testing import sanitize_endpoint
 from core.workflow_state_service import assert_advanceable, state_value
 from core.workflow_state_service import recover_workflow as recover_workflow_operation
-from tools.safety_classifier import add_findings_dedup, scan_user_materials
+from tools.safety_classifier import add_findings_dedup, scan_user_materials, scan_user_message_pii
 
 
 class SessionWorkflowService(SessionAccess):
@@ -316,11 +317,30 @@ class SessionWorkflowService(SessionAccess):
                 ),
             )
 
+        # 聊天正文必须在模型出站前完成 PII 识别与分级升级；否则
+        # business_internal 会话的正文会绕过 sensitive_personal 强制掩码。
+        if user_input:
+            add_findings_dedup(
+                ctx,
+                scan_user_message_pii(
+                    ctx,
+                    stage_id=self._current_stage(ctx),
+                    text=user_input,
+                ),
+            )
+
         # 将用户输入注入 state，供单步 runner 调用当前状态节点。
         ctx.pending_input = user_input
 
         # 驱动执行引擎单步推进。默认 single_step；langgraph_interrupt 为受控 opt-in。
-        updated_ctx: ProjectContext = self._run_turn(ctx)
+        try:
+            updated_ctx: ProjectContext = self._run_turn(ctx)
+        except LLMCallError as exc:
+            # 模型故障已分类并脱敏；保留 last_error 后重新抛出，由 API 映射为 502。
+            ctx.last_error = str(exc)
+            self._store().save(ctx)
+            self._cache_set(ctx)
+            raise
 
         # 持久化
         self._store().save(updated_ctx)

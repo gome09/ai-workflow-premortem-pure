@@ -81,6 +81,7 @@ services:
     environment:
       POSTGRES_HOST: postgres
       REDIS_HOST: redis
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus-multiproc
     depends_on:
       postgres:
         condition: service_healthy
@@ -146,6 +147,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'

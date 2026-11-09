@@ -47,7 +47,16 @@ def test_live_stage1_call_and_parse():
     response = guarded_invoke(
         llm,
         [
-            SystemMessage(content="Identify failure modes as a JSON object."),
+            SystemMessage(
+                content=(
+                    "Return ONLY one JSON object for Stage1Schema with keys "
+                    '"failure_modes" (non-empty array of objects with id, category, '
+                    "description, severity in low|medium|high|critical, evidence_ids, "
+                    "evidence, mitigation_hint, requires_human_review), "
+                    '"direct_conclusion" (non-empty string), and "open_questions" (array). '
+                    "Do not return Markdown fences or prose outside the JSON object."
+                )
+            ),
             HumanMessage(content="Return one failure mode for an internal FAQ assistant."),
         ],
         ctx=ctx,
@@ -56,7 +65,10 @@ def test_live_stage1_call_and_parse():
 
     assert str(response.content).strip()
     parsed = StructuredOutputClient().parse_stage_output(1, str(response.content))
-    assert parsed.raw_text
+    assert parsed.parser_status == "parsed", parsed.validation_errors
+    assert parsed.parsed is not None
+    assert parsed.parsed["failure_modes"]
+    assert parsed.parsed["direct_conclusion"]
 
 
 @pytest.mark.skipif(
@@ -77,5 +89,11 @@ def test_live_target_http_call():
 
     result = adapter.execute("ping", classification="public_demo")
 
-    assert result.outcome in {"success", "failed"}
+    assert result.outcome == "success", (
+        f"target business success required; got {result.outcome} "
+        f"status={result.status_code} error={result.error_code}"
+    )
+    assert result.status_code is not None and 200 <= result.status_code < 300
+    assert result.output.strip()
+    assert result.truncated is False
     assert result.endpoint

@@ -22,6 +22,7 @@ import redis
 
 from core.config import settings
 from core.models import ProjectContext
+from storage.field_security import context_from_cache_payload, context_payload_for_cache
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +36,13 @@ def _serialize(ctx: ProjectContext) -> str:
     from `model_dump_json()`. The optimistic-lock version must survive a cache
     round-trip, otherwise a cache hit would look like version 0 and every save
     would be rejected as stale.
+
+    Sensitive business fields are encrypted before entering Redis so the cache
+    copy never contains plaintext user samples.
     """
     version = int(getattr(ctx, "_storage_version", 0))
     return json.dumps(
-        {"context": ctx.model_dump(mode="json"), "storage_version": version},
+        {"context": context_payload_for_cache(ctx), "storage_version": version},
         default=str,
     )
 
@@ -49,11 +53,13 @@ def _deserialize(raw: str) -> ProjectContext | None:
     except (TypeError, ValueError):
         return None
     if isinstance(payload, dict) and isinstance(payload.get("context"), dict):
-        ctx = ProjectContext.model_validate(payload["context"])
+        ctx = context_from_cache_payload(payload["context"])
         ctx._storage_version = int(payload.get("storage_version") or 0)
         return ctx
     # Legacy payloads written before V008 have no version; treat as version 0.
-    return ProjectContext.model_validate(payload)
+    if isinstance(payload, dict):
+        return context_from_cache_payload(payload)
+    return None
 
 
 class ContextCache:

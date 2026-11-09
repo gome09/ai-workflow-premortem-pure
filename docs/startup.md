@@ -1,6 +1,6 @@
 # Startup Guide
 
-> **Last updated:** 2026-11-01
+> **Last updated:** 2026-11-09
 
 本文只保留当前仓库内可直接验证的启动方式与文件名，是**启动与部署步骤的单一权威来源**。环境模板说明、环境变量清单与仓库边界见 [local_setup.md](local_setup.md)。
 
@@ -100,6 +100,16 @@ powershell -ExecutionPolicy Bypass -File .\scripts\gen_certs.ps1
 ```bash
 curl -k https://localhost/api/health/live
 ```
+
+---
+
+## 长评估批次与指标采集
+
+- `target_http` 真实实验默认后台执行：`POST /sessions/{id}/eval-experiments/{experiment_id}/run` 立即返回 202，前端轮询 `GET /sessions/{id}/eval-experiments/{experiment_id}/status`。逐项结果在每次完成后落库；进程重启后状态查询会把 stale `running` 标记为 `interrupted`，再次运行会跳过已保存结果（`completed` / `failed`）的用例，不重复调用外部模型或目标。
+- 超时参数：`EVAL_EXPERIMENT_TIMEOUT_SECONDS`（默认 1800，批次总 deadline）、`EVAL_EXPERIMENT_HEARTBEAT_STALE_SECONDS`（默认 120）、`EVAL_EXPERIMENT_WORKERS`（默认 2，进程内执行器）。请求体 `timeout_seconds` 可按批次覆盖。
+- 幂等：同一 `idempotency_key` 重试不会重复执行已保存的用例；不同请求键在同一实验 `running` 时返回 409。
+- Docker API 已设置 `PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus-multiproc`，多 worker 的 Counter/Histogram 由 `MultiProcessCollector` 聚合；`premortem_sessions_total` / `premortem_pending_actions` 由 DB-backed collector 每次抓取时读取共享存储，积压清零后自动归零。
+- 告警规则位于 `monitoring/alert_rules.yml`，由 `monitoring/prometheus.yml` 的 `rule_files` 加载；未配置 Alertmanager 时告警只在 Prometheus `/alerts` 可见。
 
 ---
 

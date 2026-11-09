@@ -112,6 +112,9 @@ def release_run_reasons(
         reasons.append("execution_outcome")
     if run.status != "completed":
         reasons.append("status")
+    if run.truncated:
+        # 字节/字符上限截断的响应不是完整输出，不能作为通过证据。
+        reasons.append("output_truncated")
     if run.judge_result != "passed":
         reasons.append("judge_result")
     elif run.run_mode == "target_http":
@@ -156,24 +159,183 @@ def _runs_for_experiment(ctx: ProjectContext, experiment: EvalExperiment) -> lis
     return [run for run in ctx.eval_runs if run.run_id in run_ids]
 
 
+@dataclass(frozen=True)
+class _ExperimentEvaluation:
+    runs: list[EvalRun]
+    relevant: list[EvalRun]
+    missing_eval_ids: list[str]
+    invalid: list[tuple[EvalRun, list[str]]]
+    valid_runs: list[EvalRun]
+    covers_required: bool
+
+    @property
+    def hard_failures(self) -> list[tuple[EvalRun, list[str]]]:
+        return [
+            (run, reasons)
+            for run, reasons in self.invalid
+            if set(reasons).intersection(_HARD_FAILURE_REASONS)
+        ]
+
+
+_HARD_FAILURE_REASONS = frozenset(
+    {
+        "execution_outcome",
+        "status",
+        "judge_result",
+        "output_truncated",
+    }
+)
+
+
+def _release_batch_failed_blocker(experiment: EvalExperiment) -> dict[str, Any]:
+    return _blocker(
+        "release_batch_failed",
+        f"评估批次 {experiment.experiment_id} 已失败；不能用更旧的通过批次掩盖该失败。",
+        source_type="eval_experiment",
+        source_id=experiment.experiment_id,
+        required_resolution="run_eval_experiment",
+    )
+
+
+def _missing_case_blockers(
+    cases_by_id: dict[str, EvalCase],
+    experiment: EvalExperiment,
+    missing_eval_ids: list[str],
+) -> list[dict[str, Any]]:
+    blockers: list[dict[str, Any]] = []
+    for eval_id in missing_eval_ids:
+        case = cases_by_id.get(eval_id)
+        blocker = _blocker(
+            "real_target_test",
+            f"必测用例 {eval_id} 在评估批次 {experiment.experiment_id} 中没有运行记录。",
+            source_type="eval_case",
+            source_id=eval_id,
+            required_resolution="run_eval_experiment",
+        )
+        if case is not None and case.target_node_id:
+            blocker["source_type"] = "eval_node"
+            blocker["source_id"] = case.target_node_id
+        blockers.append(blocker)
+    return blockers
+
+
+def _invalid_run_blockers(
+    invalid: list[tuple[EvalRun, list[str]]],
+) -> list[dict[str, Any]]:
+    return [
+        _blocker(
+            "real_target_test",
+            (
+                f"必测运行 {run.run_id}（用例 {run.eval_id}）不是有效的当前版本"
+                f"真实目标通过证据：{', '.join(reasons) or 'unknown'}。"
+            ),
+            source_type="eval_run",
+            source_id=run.run_id,
+            required_resolution="run_eval_experiment",
+        )
+        for run, reasons in invalid
+    ]
+
+
+def _evaluate_experiment(
+    ctx: ProjectContext,
+    experiment: EvalExperiment,
+    *,
+    required_eval_ids: list[str],
+    cases_by_id: dict[str, EvalCase],
+    evaluation_digest: str,
+) -> _ExperimentEvaluation:
+    runs = _runs_for_experiment(ctx, experiment)
+    required_set = set(required_eval_ids)
+    relevant = [run for run in runs if not required_set or run.eval_id in required_set]
+    declared_eval_ids = set(experiment.eval_ids or []) | {run.eval_id for run in runs}
+    covers_required = required_set.issubset(declared_eval_ids)
+    covered = {run.eval_id for run in relevant}
+    missing = [eval_id for eval_id in required_eval_ids if eval_id not in covered]
+    valid_runs: list[EvalRun] = []
+    invalid: list[tuple[EvalRun, list[str]]] = []
+    for run in relevant:
+        reasons = release_run_reasons(
+            ctx,
+            run,
+            cases_by_id.get(run.eval_id),
+            evaluation_digest=evaluation_digest,
+        )
+        if reasons:
+            invalid.append((run, reasons))
+        else:
+            valid_runs.append(run)
+    return _ExperimentEvaluation(
+        runs=runs,
+        relevant=relevant,
+        missing_eval_ids=missing,
+        invalid=invalid,
+        valid_runs=valid_runs,
+        covers_required=covers_required,
+    )
+
+
+def _newer_hard_failure_blockers(
+    ctx: ProjectContext,
+    *,
+    selected_run_ids: set[str],
+    required_eval_ids: list[str],
+    batch_time: datetime,
+    cases_by_id: dict[str, EvalCase],
+    evaluation_digest: str,
+) -> list[dict[str, Any]]:
+    """Block hard failures that appeared after the selected passing batch.
+
+    A single failing rerun after approval must not be masked by the older
+    complete batch, even when no new EvalExperiment was created.
+    """
+    required_set = set(required_eval_ids)
+    newer: list[tuple[EvalRun, list[str]]] = []
+    for run in ctx.eval_runs:
+        if run.run_id in selected_run_ids:
+            continue
+        if required_set and run.eval_id not in required_set:
+            continue
+        run_time = run.completed_at or run.created_at
+        if run_time <= batch_time:
+            continue
+        reasons = release_run_reasons(
+            ctx,
+            run,
+            cases_by_id.get(run.eval_id),
+            evaluation_digest=evaluation_digest,
+        )
+        if set(reasons).intersection(_HARD_FAILURE_REASONS):
+            newer.append((run, reasons))
+    return _invalid_run_blockers(newer)
+
+
 def select_release_batch(
     ctx: ProjectContext,
     required_cases: list[EvalCase],
     *,
     evaluation_digest: str,
 ) -> tuple[ReleaseBatch | None, list[dict[str, Any]], list[EvalRun]]:
-    """Select one completed target_http experiment covering the required test set."""
+    """Select one current ``target_http`` experiment without falling back past failures.
+
+    The gate must be monotonic with respect to batch execution time: a newer
+    failed/incomplete batch must never be masked by an older passing batch.
+    """
     cases_by_id = _case_by_eval_id(ctx)
     required_eval_ids = sorted({case.eval_id for case in required_cases})
-    experiments = sorted(
-        [
+    indexed_experiments = list(
+        enumerate(
             experiment
             for experiment in ctx.eval_experiments
-            if experiment.status == "completed" and experiment.run_mode == "target_http"
-        ],
-        key=_experiment_sort_key,
+            if experiment.run_mode == "target_http" and experiment.status in {"completed", "failed"}
+        )
+    )
+    # 同一时间戳下后追加的实验更新；列表顺序是确定性的最终 tie-breaker。
+    indexed_experiments.sort(
+        key=lambda item: (_experiment_sort_key(item[1]), item[0]),
         reverse=True,
     )
+    experiments = [experiment for _, experiment in indexed_experiments]
     if not experiments:
         return (
             None,
@@ -188,112 +350,117 @@ def select_release_batch(
             [],
         )
 
-    best_blockers: list[dict[str, Any]] = []
-    best_valid_runs: list[EvalRun] = []
-    for experiment in experiments:
-        runs = _runs_for_experiment(ctx, experiment)
-        relevant = [
-            run for run in runs if not required_eval_ids or run.eval_id in required_eval_ids
-        ]
-        covered = {run.eval_id for run in relevant}
-        missing = [eval_id for eval_id in required_eval_ids if eval_id not in covered]
-        invalid: list[tuple[EvalRun, list[str]]] = []
-        for run in relevant:
-            reasons = release_run_reasons(
+    if not required_eval_ids:
+        for experiment in experiments:
+            evaluation = _evaluate_experiment(
                 ctx,
-                run,
-                cases_by_id.get(run.eval_id),
+                experiment,
+                required_eval_ids=[],
+                cases_by_id=cases_by_id,
                 evaluation_digest=evaluation_digest,
             )
-            valid = not reasons and (not required_eval_ids or run.eval_id in required_eval_ids)
-            if not valid:
-                invalid.append((run, reasons))
-            elif required_eval_ids and run.eval_id in required_eval_ids:
-                best_valid_runs.append(run)
-
-        if not required_eval_ids:
-            if relevant and not invalid and relevant:
-                batch_runs = relevant
+            if experiment.status == "failed":
+                return (
+                    None,
+                    [_release_batch_failed_blocker(experiment)],
+                    [],
+                )
+            if not evaluation.runs:
+                continue
+            if not evaluation.invalid:
+                selected_run_ids = {run.run_id for run in evaluation.valid_runs}
+                newer_blockers = _newer_hard_failure_blockers(
+                    ctx,
+                    selected_run_ids=selected_run_ids,
+                    required_eval_ids=[],
+                    batch_time=_experiment_sort_key(experiment)[0],
+                    cases_by_id=cases_by_id,
+                    evaluation_digest=evaluation_digest,
+                )
+                if newer_blockers:
+                    return None, newer_blockers, []
                 return (
                     ReleaseBatch(
                         experiment_id=experiment.experiment_id,
-                        run_ids=tuple(run.run_id for run in batch_runs),
-                        eval_ids=tuple(sorted({run.eval_id for run in batch_runs})),
+                        run_ids=tuple(run.run_id for run in evaluation.valid_runs),
+                        eval_ids=tuple(sorted({run.eval_id for run in evaluation.valid_runs})),
                     ),
                     [],
-                    list(batch_runs),
+                    list(evaluation.valid_runs),
                 )
-            if relevant and invalid:
-                best_blockers = [
-                    _blocker(
-                        "real_target_test",
-                        (
-                            f"运行 {run.run_id}（用例 {run.eval_id}）不是有效的当前版本"
-                            f"真实目标通过证据：{', '.join(reasons) or 'unknown'}。"
-                        ),
-                        source_type="eval_run",
-                        source_id=run.run_id,
-                        required_resolution="run_eval_experiment",
-                    )
-                    for run, reasons in invalid
-                ]
-            continue
-
-        if not missing and not invalid and relevant:
-            batch_runs = [run for run in relevant if run.eval_id in set(required_eval_ids)]
-            return (
-                ReleaseBatch(
-                    experiment_id=experiment.experiment_id,
-                    run_ids=tuple(run.run_id for run in batch_runs),
-                    eval_ids=tuple(required_eval_ids),
-                ),
-                [],
-                batch_runs,
-            )
-
-        blockers: list[dict[str, Any]] = []
-        for eval_id in missing:
-            case = cases_by_id.get(eval_id)
-            blockers.append(
-                _blocker(
-                    "real_target_test",
-                    f"必测用例 {eval_id} 在评估批次 {experiment.experiment_id} 中没有运行记录。",
-                    source_type="eval_case",
-                    source_id=eval_id,
-                    required_resolution="run_eval_experiment",
-                )
-            )
-            if case is not None and case.target_node_id:
-                blockers[-1]["source_type"] = "eval_node"
-                blockers[-1]["source_id"] = case.target_node_id
-        for run, reasons in invalid:
-            if not required_eval_ids or run.eval_id in required_eval_ids:
-                blockers.append(
-                    _blocker(
-                        "real_target_test",
-                        (
-                            f"必测运行 {run.run_id}（用例 {run.eval_id}）不是有效的当前版本"
-                            f"真实目标通过证据：{', '.join(reasons) or 'unknown'}。"
-                        ),
-                        source_type="eval_run",
-                        source_id=run.run_id,
-                        required_resolution="run_eval_experiment",
-                    )
-                )
-        if blockers and not best_blockers:
-            best_blockers = blockers
-
-    if not required_eval_ids:
-        if not best_blockers:
-            best_blockers = [
+            return None, _invalid_run_blockers(evaluation.invalid), []
+        return (
+            None,
+            [
                 _blocker(
                     "real_target_test",
                     "尚无当前评估版本的通过真实目标测试，不能获得上线批准。",
                     source_type="eval_run",
                     required_resolution="run_eval_experiment",
                 )
-            ]
-        return None, best_blockers, []
+            ],
+            [],
+        )
+
+    best_blockers: list[dict[str, Any]] = []
+    for experiment in experiments:
+        evaluation = _evaluate_experiment(
+            ctx,
+            experiment,
+            required_eval_ids=required_eval_ids,
+            cases_by_id=cases_by_id,
+            evaluation_digest=evaluation_digest,
+        )
+
+        if experiment.status == "failed":
+            if evaluation.covers_required or evaluation.relevant:
+                return (
+                    None,
+                    [_release_batch_failed_blocker(experiment)]
+                    + _missing_case_blockers(cases_by_id, experiment, evaluation.missing_eval_ids)
+                    + _invalid_run_blockers(evaluation.invalid),
+                    [],
+                )
+            continue
+
+        if evaluation.covers_required:
+            if not evaluation.missing_eval_ids and not evaluation.invalid and evaluation.runs:
+                selected_run_ids = {run.run_id for run in evaluation.valid_runs}
+                newer_blockers = _newer_hard_failure_blockers(
+                    ctx,
+                    selected_run_ids=selected_run_ids,
+                    required_eval_ids=required_eval_ids,
+                    batch_time=_experiment_sort_key(experiment)[0],
+                    cases_by_id=cases_by_id,
+                    evaluation_digest=evaluation_digest,
+                )
+                if newer_blockers:
+                    return None, newer_blockers, []
+                return (
+                    ReleaseBatch(
+                        experiment_id=experiment.experiment_id,
+                        run_ids=tuple(run.run_id for run in evaluation.valid_runs),
+                        eval_ids=tuple(required_eval_ids),
+                    ),
+                    [],
+                    list(evaluation.valid_runs),
+                )
+            return (
+                None,
+                _missing_case_blockers(cases_by_id, experiment, evaluation.missing_eval_ids)
+                + _invalid_run_blockers(evaluation.invalid),
+                [],
+            )
+
+        hard_failures = evaluation.hard_failures
+        if hard_failures:
+            return None, _invalid_run_blockers(hard_failures), []
+
+        if not best_blockers and evaluation.relevant:
+            best_blockers = _missing_case_blockers(
+                cases_by_id, experiment, evaluation.missing_eval_ids
+            ) + _invalid_run_blockers(evaluation.invalid)
+
     if not best_blockers:
         best_blockers = [
             _blocker(
@@ -303,7 +470,7 @@ def select_release_batch(
                 required_resolution="run_eval_experiment",
             )
         ]
-    return None, best_blockers, best_valid_runs
+    return None, best_blockers, []
 
 
 def _latest_treatment(ctx: ProjectContext, source_type: str, source_id: str):

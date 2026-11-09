@@ -23,6 +23,7 @@ import logging
 from typing import Any
 
 from core.config import settings
+from core.models import ProjectContext
 from storage.errors import FieldDecryptionError
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,26 @@ ENCRYPTED_COLUMNS: dict[str, tuple[str, ...]] = {
     ),
     "evidence_sources": ("summary", "claims"),
     "report_artifacts": ("content_json", "content_markdown"),
+    "eval_cases": (
+        "input_payload",
+        "expected_behavior",
+        "actual_output",
+        "human_comment",
+    ),
+    "eval_runs": (
+        "input_payload",
+        "expected_behavior",
+        "actual_output",
+        "judge_reason",
+        "error_message",
+        "llm_judge_suggestion",
+    ),
+    "eval_judgments": ("rationale", "payload_json"),
+    "human_calibrations": ("human_comment", "disagreement_reason", "payload_json"),
+    "safety_findings": ("description", "recommended_action", "resolution_note"),
+    "eval_datasets": ("payload_json",),
+    "eval_experiments": ("payload_json",),
+    "redteam_cases": ("payload_json",),
 }
 
 
@@ -249,6 +270,91 @@ def encrypt_fields_for_storage(data: dict[str, Any], classification: str) -> dic
         if isinstance(value, str) and value:
             approval["decision_note"] = _encrypt_value(value)
 
+    # Eval 用例 / 运行 / 判定 / 人工校准：输入样本与实际输出都可能是敏感正文。
+    for case in data.get("eval_cases") or []:
+        if not isinstance(case, dict):
+            continue
+        for field in ("input_payload", "expected_behavior", "actual_output", "human_comment"):
+            value = case.get(field)
+            if isinstance(value, str) and value:
+                case[field] = _encrypt_value(value)
+
+    for run in data.get("eval_runs") or []:
+        if not isinstance(run, dict):
+            continue
+        for field in (
+            "input_payload",
+            "expected_behavior",
+            "actual_output",
+            "judge_reason",
+            "error_message",
+        ):
+            value = run.get(field)
+            if isinstance(value, str) and value:
+                run[field] = _encrypt_value(value)
+        suggestion = run.get("llm_judge_suggestion")
+        if suggestion is not None:
+            run["llm_judge_suggestion"] = _encrypt_structure(
+                suggestion, field="eval_runs.llm_judge_suggestion"
+            )
+
+    for judgment in data.get("eval_judgments") or []:
+        if not isinstance(judgment, dict):
+            continue
+        value = judgment.get("rationale")
+        if isinstance(value, str) and value:
+            judgment["rationale"] = _encrypt_value(value)
+
+    for calibration in data.get("human_calibrations") or []:
+        if not isinstance(calibration, dict):
+            continue
+        for field in ("human_comment", "disagreement_reason"):
+            value = calibration.get(field)
+            if isinstance(value, str) and value:
+                calibration[field] = _encrypt_value(value)
+
+    # 红队用例与安全发现中的自由文本
+    for case in data.get("redteam_cases") or []:
+        if not isinstance(case, dict):
+            continue
+        for field in (
+            "prompt",
+            "malicious_material",
+            "expected_failure_mode",
+            "expected_safe_behavior",
+        ):
+            value = case.get(field)
+            if isinstance(value, str) and value:
+                case[field] = _encrypt_value(value)
+
+    for finding in data.get("safety_findings") or []:
+        if not isinstance(finding, dict):
+            continue
+        for field in ("description", "recommended_action", "resolution_note"):
+            value = finding.get(field)
+            if isinstance(value, str) and value:
+                finding[field] = _encrypt_value(value)
+
+    # 【需核验】项与人工复核备注
+    for item in data.get("flagged_items") or []:
+        if not isinstance(item, dict):
+            continue
+        for field in ("content", "context", "note"):
+            value = item.get(field)
+            if isinstance(value, str) and value:
+                item[field] = _encrypt_value(value)
+
+    review_notes = data.get("review_notes")
+    if isinstance(review_notes, dict):
+        data["review_notes"] = {
+            key: _encrypt_value(value) if isinstance(value, str) and value else value
+            for key, value in review_notes.items()
+        }
+
+    pending_input = data.get("pending_input")
+    if isinstance(pending_input, str) and pending_input:
+        data["pending_input"] = _encrypt_value(pending_input)
+
     # report_artifacts[*].content_markdown / content_json
     for artifact in data.get("report_artifacts") or []:
         if not isinstance(artifact, dict):
@@ -347,6 +453,104 @@ def decrypt_fields_after_load(ctx) -> None:
                 field=f"project_approvals[{approval.approval_id}].decision_note",
             )
 
+    # Eval / 红队 / 安全 / 标记项自由文本
+    for case in ctx.eval_cases:
+        for field in ("input_payload", "expected_behavior", "actual_output", "human_comment"):
+            value = getattr(case, field, None)
+            if value:
+                setattr(
+                    case,
+                    field,
+                    _decrypt_value(value, field=f"eval_cases[{case.eval_id}].{field}"),
+                )
+
+    for run in ctx.eval_runs:
+        for field in (
+            "input_payload",
+            "expected_behavior",
+            "actual_output",
+            "judge_reason",
+            "error_message",
+        ):
+            value = getattr(run, field, None)
+            if value:
+                setattr(
+                    run,
+                    field,
+                    _decrypt_value(value, field=f"eval_runs[{run.run_id}].{field}"),
+                )
+        if run.llm_judge_suggestion is not None:
+            run.llm_judge_suggestion = _decrypt_structure(
+                run.llm_judge_suggestion,
+                field=f"eval_runs[{run.run_id}].llm_judge_suggestion",
+            )
+
+    for judgment in ctx.eval_judgments:
+        if judgment.rationale:
+            judgment.rationale = _decrypt_value(
+                judgment.rationale,
+                field=f"eval_judgments[{judgment.judgment_id}].rationale",
+            )
+
+    for calibration in ctx.human_calibrations:
+        for field in ("human_comment", "disagreement_reason"):
+            value = getattr(calibration, field, None)
+            if value:
+                setattr(
+                    calibration,
+                    field,
+                    _decrypt_value(
+                        value,
+                        field=f"human_calibrations[{calibration.calibration_id}].{field}",
+                    ),
+                )
+
+    for case in ctx.redteam_cases:
+        for field in (
+            "prompt",
+            "malicious_material",
+            "expected_failure_mode",
+            "expected_safe_behavior",
+        ):
+            value = getattr(case, field, None)
+            if value:
+                setattr(
+                    case,
+                    field,
+                    _decrypt_value(value, field=f"redteam_cases[{case.redteam_case_id}].{field}"),
+                )
+
+    for finding in ctx.safety_findings:
+        for field in ("description", "recommended_action", "resolution_note"):
+            value = getattr(finding, field, None)
+            if value:
+                setattr(
+                    finding,
+                    field,
+                    _decrypt_value(value, field=f"safety_findings[{finding.finding_id}].{field}"),
+                )
+
+    for item in ctx.flagged_items:
+        for field in ("content", "context", "note"):
+            value = getattr(item, field, None)
+            if value:
+                setattr(
+                    item,
+                    field,
+                    _decrypt_value(value, field=f"flagged_items[{item.item_id}].{field}"),
+                )
+
+    if ctx.review_notes:
+        ctx.review_notes = {
+            key: _decrypt_value(value, field=f"review_notes.{key}")
+            if isinstance(value, str) and value
+            else value
+            for key, value in ctx.review_notes.items()
+        }
+
+    if ctx.pending_input:
+        ctx.pending_input = _decrypt_value(ctx.pending_input, field="pending_input")
+
     # report_artifacts
     for artifact in ctx.report_artifacts:
         if artifact.content_markdown:
@@ -357,3 +561,16 @@ def decrypt_fields_after_load(ctx) -> None:
             artifact.content_json = _decrypt_structure(
                 artifact.content_json, field=f"report_artifacts[{artifact.report_id}].content_json"
             )
+
+
+def context_payload_for_cache(ctx: ProjectContext) -> dict[str, Any]:
+    """Serialize a context for Redis/in-memory cache with sensitive fields encrypted."""
+    data = ctx.model_dump(mode="json")
+    return encrypt_fields_for_storage(data, ctx.data_classification)
+
+
+def context_from_cache_payload(payload: dict[str, Any]) -> ProjectContext:
+    """Restore a cached context and decrypt sensitive fields fail-closed."""
+    ctx = ProjectContext.model_validate(payload)
+    decrypt_fields_after_load(ctx)
+    return ctx

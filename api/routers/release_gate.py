@@ -60,6 +60,8 @@ def check_release_gate(
     request: Request,
     session_id: str,
     response: Response,
+    target_version: str | None = None,
+    artifact_digest: str | None = None,
     token: ServiceTokenContext = Depends(get_service_token_context),
 ) -> ReleaseGateDecision | JSONResponse:
     response.headers["Cache-Control"] = "no-store"
@@ -68,6 +70,8 @@ def check_release_gate(
             session_id,
             token_id=token.token_id,
             tenant_id=token.tenant_id,
+            requested_target_version=target_version or "",
+            requested_artifact_digest=artifact_digest or "",
         )
     except ReleaseGateNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Session not found") from exc

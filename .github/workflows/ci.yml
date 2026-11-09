@@ -130,7 +130,10 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     env:
-      APP_ENV: production
+      # 该 job 验证 PG/Redis 迁移与业务 E2E，不验证生产 fail-closed；
+      # mock LLM 与 APP_ENV=production 互斥，生产配置拒绝逻辑由
+      # tests/test_production_config_hardening.py 单测覆盖。
+      APP_ENV: development
       LLM_MODE: mock
       STORAGE_BACKEND: postgres
       CHECKPOINT_BACKEND: memory
@@ -142,11 +145,14 @@ jobs:
       REDIS_HOST: localhost
       REDIS_PORT: "6379"
       JWT_SECRET: ci-production-safety-jwt-secret-0123456789
+      # Test-only Fernet key: test_postgres_p1_storage requires encryption at rest.
+      DATA_ENCRYPTION_KEY: B6Is0g7Gl4SjNRxfa2Tj4oRgCo1z0ZzKpTmSeMHQ3Xw=
       RETENTION_ENABLED: "false"
       # 缺少 PG/Redis/加密密钥时，生产安全测试必须失败而不是跳过。
       PRODUCTION_SAFETY_REQUIRED: "1"
       E2E_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ai_workflow
       E2E_REDIS_URL: redis://localhost:6379/0
+      E2E_RESTORE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ai_workflow_restore
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -199,6 +205,11 @@ jobs:
       - name: PostgreSQL + Redis workflow E2E
         run: uv run pytest tests/test_postgres_redis_workflow_e2e.py -q
 
+      - name: PostgreSQL backup/restore drill
+        run: |
+          psql "$E2E_DATABASE_URL" -c "CREATE DATABASE ai_workflow_restore" || true
+          uv run pytest tests/test_postgres_backup_restore.py -q
+
   # 完整生产栈集成（postgres/redis/api/frontend/nginx/prometheus/grafana）。
   # mock LLM + 随机生成 secrets + 自签 TLS，经 nginx HTTPS 反代验证真实存储链路。
   # blocking：移除原观察期 continue-on-error，并追加业务流 E2E。
@@ -213,10 +224,13 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Prepare env file (postgres backend, mock LLM)
+      - name: Prepare env file (postgres backend, mock LLM, integration mode)
         run: |
           cp -f .env.example .env
           sed -i 's/^LLM_MODE=real/LLM_MODE=mock/' .env
+          # 该 job 只验证完整栈集成，不验证生产 fail-closed；mock LLM 与
+          # APP_ENV=production 互斥，显式切到 development。
+          sed -i 's/^APP_ENV=production.*/APP_ENV=development/' .env
 
       - name: Provision secrets and TLS certs
         run: |

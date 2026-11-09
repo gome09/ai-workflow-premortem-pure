@@ -546,6 +546,11 @@ class GovernanceService(SessionAccess):
             "session_id": session_id,
             "approval_summary": build_approval_summary(ctx, readiness=readiness),
             "release_readiness": readiness.model_dump(mode="json"),
+            "target_deployment": (
+                ctx.target_deployment.model_dump(mode="json")
+                if ctx.target_deployment is not None
+                else None
+            ),
         }
 
     def get_release_gate_decision(
@@ -554,6 +559,8 @@ class GovernanceService(SessionAccess):
         *,
         token_id: str = "",
         tenant_id: str = "",
+        requested_target_version: str = "",
+        requested_artifact_digest: str = "",
     ) -> dict:
         """Read-only machine gate; bypasses the 72h context cache on purpose."""
         from core.release_gate_service import (
@@ -575,7 +582,11 @@ class GovernanceService(SessionAccess):
             )
             raise ReleaseGateNotFoundError("Session not found")
 
-        decision = evaluate_release_gate(ctx)
+        decision = evaluate_release_gate(
+            ctx,
+            requested_target_version=requested_target_version,
+            requested_artifact_digest=requested_artifact_digest,
+        )
         check_id = str(uuid.uuid4())
         try:
             self._store().record_release_gate_check(

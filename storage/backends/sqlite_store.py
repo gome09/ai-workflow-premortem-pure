@@ -17,7 +17,7 @@ from core.models import ProjectContext
 from core.workflow_state_service import sanitize_persisted_state
 from storage.access import SystemAccess, resolve_system_access
 from storage.context_digest import compute_context_digest
-from storage.errors import TenantIsolationError
+from storage.errors import StaleContextError, TenantIsolationError
 from storage.field_security import (
     decrypt_fields_after_load,
     decrypt_text_field,
@@ -38,6 +38,7 @@ _DEFAULT_DB_PATH = "data/workflow.db"
 # V009/V010 columns added after the initial DDL; existing SQLite files are
 # upgraded in place by initialize() (CREATE TABLE IF NOT EXISTS does not add columns).
 _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("sessions", "version", "INTEGER NOT NULL DEFAULT 0"),
     ("sessions", "projection_state", "TEXT NOT NULL DEFAULT '{}'"),
     ("sessions", "context_digest", "TEXT"),
     ("eval_cases", "standard_version", "INTEGER NOT NULL DEFAULT 1"),
@@ -59,6 +60,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     projection_state TEXT NOT NULL DEFAULT '{}',
     context_digest   TEXT,
     tenant_id        TEXT,
+    version          INTEGER NOT NULL DEFAULT 0,
     created_at       TEXT NOT NULL,
     updated_at       TEXT NOT NULL
 );
@@ -921,6 +923,7 @@ class SQLiteSessionStore:
             )
 
     def _sync_safety_findings(self, conn: sqlite3.Connection, ctx: ProjectContext) -> None:
+        classification = ctx.data_classification
         for finding in ctx.safety_findings:
             conn.execute(
                 """
@@ -939,15 +942,15 @@ class SQLiteSessionStore:
                     finding.risk_type,
                     finding.severity,
                     finding.location,
-                    finding.description,
-                    finding.recommended_action,
+                    encrypt_text_field(finding.description, classification),
+                    encrypt_text_field(finding.recommended_action, classification),
                     int(finding.requires_human_review),
                     finding.status,
                     json.dumps(getattr(finding, "taxonomy_refs", []), default=str),
                     json.dumps(getattr(finding, "control_refs", []), default=str),
                     getattr(finding, "mitigation_status", "open"),
                     getattr(finding, "residual_risk", "unknown"),
-                    finding.resolution_note,
+                    encrypt_text_field(finding.resolution_note, classification),
                     _dt(finding.resolved_at),
                     _dt(finding.created_at),
                 ),
@@ -975,6 +978,7 @@ class SQLiteSessionStore:
             )
 
     def _sync_eval_cases(self, conn: sqlite3.Connection, ctx: ProjectContext) -> None:
+        classification = ctx.data_classification
         for case in ctx.eval_cases:
             conn.execute(
                 """
@@ -998,13 +1002,13 @@ class SQLiteSessionStore:
                     getattr(case, "source_trace_id", None),
                     getattr(case, "source_ref_id", None),
                     json.dumps(getattr(case, "metadata", {}), default=str),
-                    case.input_payload,
-                    case.expected_behavior,
+                    encrypt_text_field(case.input_payload, classification),
+                    encrypt_text_field(case.expected_behavior, classification),
                     json.dumps(case.pass_criteria, default=str),
                     case.standard_version,
-                    case.actual_output,
+                    encrypt_text_field(case.actual_output, classification),
                     case.human_score,
-                    case.human_comment,
+                    encrypt_text_field(case.human_comment, classification),
                     int(case.passed) if case.passed is not None else None,
                     _dt(case.created_at),
                     _dt(case.scored_at),
@@ -1012,6 +1016,7 @@ class SQLiteSessionStore:
             )
 
     def _sync_eval_runs(self, conn: sqlite3.Connection, ctx: ProjectContext) -> None:
+        classification = ctx.data_classification
         for run in ctx.eval_runs:
             conn.execute(
                 """
@@ -1045,19 +1050,19 @@ class SQLiteSessionStore:
                     run.target_endpoint,
                     run.target_deployment_version,
                     run.case_version_digest,
-                    run.input_payload,
-                    run.expected_behavior,
-                    run.actual_output,
+                    encrypt_text_field(run.input_payload, classification),
+                    encrypt_text_field(run.expected_behavior, classification),
+                    encrypt_text_field(run.actual_output, classification),
                     run.judge_result,
-                    run.judge_reason,
+                    encrypt_text_field(run.judge_reason, classification),
                     run.judge_mode,
                     json.dumps(run.violated_criteria, default=str),
                     json.dumps(run.pass_criteria, default=str),
-                    json.dumps(run.llm_judge_suggestion, default=str)
+                    encrypt_json_field(run.llm_judge_suggestion, classification)
                     if run.llm_judge_suggestion is not None
                     else None,
                     run.status,
-                    run.error_message,
+                    encrypt_text_field(run.error_message, classification),
                     run.trace_id,
                     run.latency_ms,
                     run.estimated_cost,
@@ -1067,6 +1072,7 @@ class SQLiteSessionStore:
             )
 
     def _sync_eval_judgments(self, conn: sqlite3.Connection, ctx: ProjectContext) -> None:
+        classification = ctx.data_classification
         for judgment in getattr(ctx, "eval_judgments", []) or []:
             conn.execute(
                 """
@@ -1086,15 +1092,16 @@ class SQLiteSessionStore:
                     judgment.judge_model,
                     judgment.score,
                     judgment.label,
-                    judgment.rationale,
+                    encrypt_text_field(judgment.rationale, classification),
                     judgment.uncertainty,
                     json.dumps(judgment.cited_rules, default=str),
-                    json.dumps(judgment.model_dump(mode="json"), default=str),
+                    encrypt_json_field(judgment.model_dump(mode="json"), classification),
                     _dt(judgment.created_at),
                 ),
             )
 
     def _sync_human_calibrations(self, conn: sqlite3.Connection, ctx: ProjectContext) -> None:
+        classification = ctx.data_classification
         for calibration in getattr(ctx, "human_calibrations", []) or []:
             conn.execute(
                 """
@@ -1112,17 +1119,18 @@ class SQLiteSessionStore:
                     calibration.eval_id,
                     calibration.experiment_id,
                     calibration.human_label,
-                    calibration.human_comment,
+                    encrypt_text_field(calibration.human_comment, classification),
                     calibration.judge_label,
                     int(calibration.agreement) if calibration.agreement is not None else None,
-                    calibration.disagreement_reason,
+                    encrypt_text_field(calibration.disagreement_reason, classification),
                     calibration.reviewer_id,
-                    json.dumps(calibration.model_dump(mode="json"), default=str),
+                    encrypt_json_field(calibration.model_dump(mode="json"), classification),
                     _dt(calibration.created_at),
                 ),
             )
 
     def _sync_eval_datasets(self, conn: sqlite3.Connection, ctx: ProjectContext) -> None:
+        classification = ctx.data_classification
         for dataset in getattr(ctx, "eval_datasets", []) or []:
             conn.execute(
                 """
@@ -1141,13 +1149,14 @@ class SQLiteSessionStore:
                     dataset.stage,
                     dataset.scenario_type,
                     json.dumps(dataset.case_ids, default=str),
-                    json.dumps(dataset.model_dump(mode="json"), default=str),
+                    encrypt_json_field(dataset.model_dump(mode="json"), classification),
                     _dt(dataset.created_at),
                     _dt(dataset.updated_at),
                 ),
             )
 
     def _sync_eval_experiments(self, conn: sqlite3.Connection, ctx: ProjectContext) -> None:
+        classification = ctx.data_classification
         for experiment in getattr(ctx, "eval_experiments", []) or []:
             conn.execute(
                 """
@@ -1172,7 +1181,7 @@ class SQLiteSessionStore:
                     json.dumps(experiment.run_ids, default=str),
                     json.dumps(experiment.aggregate_metrics.model_dump(mode="json"), default=str),
                     json.dumps(experiment.comparison_summary, default=str),
-                    json.dumps(experiment.model_dump(mode="json"), default=str),
+                    encrypt_json_field(experiment.model_dump(mode="json"), classification),
                     _dt(experiment.created_at),
                     _dt(experiment.started_at),
                     _dt(experiment.completed_at),
@@ -1180,6 +1189,7 @@ class SQLiteSessionStore:
             )
 
     def _sync_redteam_cases(self, conn: sqlite3.Connection, ctx: ProjectContext) -> None:
+        classification = ctx.data_classification
         for case in getattr(ctx, "redteam_cases", []) or []:
             conn.execute(
                 """
@@ -1204,7 +1214,7 @@ class SQLiteSessionStore:
                     case.linked_eval_case_id,
                     json.dumps(getattr(case, "taxonomy_refs", []), default=str),
                     json.dumps(getattr(case, "control_refs", []), default=str),
-                    json.dumps(case.model_dump(mode="json"), default=str),
+                    encrypt_json_field(case.model_dump(mode="json"), classification),
                     _dt(case.created_at),
                     _dt(case.approved_at),
                     _dt(case.updated_at),
@@ -1264,42 +1274,25 @@ class SQLiteSessionStore:
         state_json = json.dumps(current_state, default=str)
         digest = compute_context_digest(data)
         context_json = self._build_context_json_for_storage(ctx, data)
+        expected_version = int(getattr(ctx, "_storage_version", 0))
         with self._lock:
             with self._get_conn() as conn:
                 row = conn.execute(
-                    "SELECT projection_state, context_digest FROM sessions WHERE session_id=?",
+                    "SELECT version, tenant_id, projection_state, context_digest "
+                    "FROM sessions WHERE session_id=?",
                     (ctx.session_id,),
                 ).fetchone()
                 previous_state = (
                     json.loads(row["projection_state"]) if row and row["projection_state"] else {}
                 )
                 plans = plan_sync(previous_state, current_state, data)
-                if row and (row["context_digest"] or "") == digest:
-                    # 内容未变化：只推进状态与时间，不重写整份 context_json。
-                    conn.execute(
-                        """
-                        UPDATE sessions
-                        SET current_state    = ?,
-                            projection_state = ?,
-                            updated_at       = ?
-                        WHERE session_id = ?
-                        """,
-                        (str(data.get("current_state") or "init"), state_json, now, ctx.session_id),
-                    )
-                else:
+                if row is None:
                     conn.execute(
                         """
                         INSERT INTO sessions
                             (session_id, tenant_id, current_state, context_json,
-                             projection_state, context_digest, created_at, updated_at)
-                        VALUES (?,?,?,?,?,?,?,?)
-                        ON CONFLICT(session_id) DO UPDATE SET
-                            tenant_id        = excluded.tenant_id,
-                            current_state    = excluded.current_state,
-                            context_json     = excluded.context_json,
-                            projection_state = excluded.projection_state,
-                            context_digest   = excluded.context_digest,
-                            updated_at       = excluded.updated_at
+                             projection_state, context_digest, version, created_at, updated_at)
+                        VALUES (?,?,?,?,?,?,0,?,?)
                         """,
                         (
                             ctx.session_id,
@@ -1312,6 +1305,58 @@ class SQLiteSessionStore:
                             now,
                         ),
                     )
+                    new_version = 0
+                else:
+                    existing_tenant = row["tenant_id"] or ""
+                    if existing_tenant != (ctx.tenant_id or ""):
+                        raise TenantIsolationError(ctx.session_id, "save")
+                    current_version = int(row["version"] or 0)
+                    if current_version != expected_version:
+                        raise StaleContextError(ctx.session_id, expected_version, current_version)
+                    if (row["context_digest"] or "") == digest:
+                        # 内容未变化：只推进状态、版本与时间，不重写整份 context_json。
+                        cursor = conn.execute(
+                            """
+                            UPDATE sessions
+                            SET current_state    = ?,
+                                projection_state = ?,
+                                updated_at       = ?,
+                                version          = version + 1
+                            WHERE session_id = ? AND version = ?
+                            """,
+                            (
+                                str(data.get("current_state") or "init"),
+                                state_json,
+                                now,
+                                ctx.session_id,
+                                expected_version,
+                            ),
+                        )
+                    else:
+                        cursor = conn.execute(
+                            """
+                            UPDATE sessions
+                            SET current_state    = ?,
+                                context_json     = ?,
+                                projection_state = ?,
+                                context_digest   = ?,
+                                updated_at       = ?,
+                                version          = version + 1
+                            WHERE session_id = ? AND version = ?
+                            """,
+                            (
+                                str(data.get("current_state") or "init"),
+                                context_json,
+                                state_json,
+                                digest,
+                                now,
+                                ctx.session_id,
+                                expected_version,
+                            ),
+                        )
+                    if cursor.rowcount != 1:
+                        raise StaleContextError(ctx.session_id, expected_version, current_version)
+                    new_version = current_version + 1
                 if not plans["human_actions"].skip:
                     self._sync_human_actions(conn, ctx)
                 plan = plans["action_resolution_logs"]
@@ -1348,6 +1393,7 @@ class SQLiteSessionStore:
                 # outbox 行量很小，每次同步以保持 pending → completed 状态推进。
                 self._sync_interrupt_resume_outbox(conn, ctx)
                 conn.commit()
+        ctx._storage_version = new_version
 
     def _sync_interrupt_resume_outbox(self, conn: sqlite3.Connection, ctx: ProjectContext) -> None:
         for record in getattr(ctx, "interrupt_records", []) or []:
@@ -1397,13 +1443,13 @@ class SQLiteSessionStore:
             with self._get_conn() as conn:
                 if tenant_id:
                     row = conn.execute(
-                        "SELECT context_json, tenant_id, updated_at FROM sessions "
+                        "SELECT context_json, tenant_id, version, updated_at FROM sessions "
                         "WHERE session_id=? AND tenant_id=?",
                         (session_id, tenant_id),
                     ).fetchone()
                 else:
                     row = conn.execute(
-                        "SELECT context_json, tenant_id, updated_at FROM sessions "
+                        "SELECT context_json, tenant_id, version, updated_at FROM sessions "
                         "WHERE session_id=?",
                         (session_id,),
                     ).fetchone()
@@ -1414,6 +1460,7 @@ class SQLiteSessionStore:
             decrypt_fields_after_load(ctx)
             if row["tenant_id"]:
                 ctx.tenant_id = row["tenant_id"]
+            ctx._storage_version = int(row["version"] or 0)
             if row["updated_at"]:
                 ctx.updated_at = datetime.fromisoformat(row["updated_at"])
         return ctx

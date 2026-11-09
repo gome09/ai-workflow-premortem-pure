@@ -344,6 +344,34 @@ class BusinessFlowE2E:
             f"status={status} events={sorted(event_types)[:10]}",
         )
 
+        # 报告唯一性：每次生成只新增一个 artifact，context/API 计数一致。
+        status, _ = self.json_body("POST", f"/sessions/{session_id}/reports", json_body={})
+        self.check("first report created", status == 200, f"status={status}")
+        status, _ = self.json_body("POST", f"/sessions/{session_id}/reports", json_body={})
+        self.check("second report created", status == 200, f"status={status}")
+
+        status, artifacts = self.json_body("GET", f"/sessions/{session_id}/reports")
+        report_ids = (
+            [str(item.get("report_id")) for item in artifacts if isinstance(item, dict)]
+            if isinstance(artifacts, list)
+            else []
+        )
+        self.check(
+            "each report generation adds one unique id",
+            status == 200 and len(report_ids) >= 2 and len(report_ids) == len(set(report_ids)),
+            f"status={status} count={len(report_ids)} unique={len(set(report_ids))}",
+        )
+
+        status, approval_body = self.json_body("GET", f"/sessions/{session_id}/approval-status")
+        artifact_count = (
+            ((approval_body or {}).get("approval_summary") or {}).get("report_generation") or {}
+        ).get("artifact_count")
+        self.check(
+            "context/projection report counts match",
+            status == 200 and artifact_count == len(report_ids),
+            f"status={status} context_count={artifact_count} api_count={len(report_ids)}",
+        )
+
         return self.summarize()
 
     def summarize(self) -> int:

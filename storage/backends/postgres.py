@@ -839,6 +839,7 @@ class PostgresSessionStore:
         )
 
     def _sync_safety_findings(self, conn: DictConnection, ctx: ProjectContext) -> None:
+        classification = ctx.data_classification
         rows = [
             (
                 finding.finding_id,
@@ -847,15 +848,15 @@ class PostgresSessionStore:
                 finding.risk_type,
                 finding.severity,
                 finding.location,
-                finding.description,
-                finding.recommended_action,
+                encrypt_text_field(finding.description, classification),
+                encrypt_text_field(finding.recommended_action, classification),
                 finding.requires_human_review,
                 finding.status,
                 json.dumps(getattr(finding, "taxonomy_refs", []), default=str),
                 json.dumps(getattr(finding, "control_refs", []), default=str),
                 getattr(finding, "mitigation_status", "open"),
                 getattr(finding, "residual_risk", "unknown"),
-                finding.resolution_note,
+                encrypt_text_field(finding.resolution_note, classification),
                 finding.resolved_at,
                 finding.created_at,
             )
@@ -938,6 +939,7 @@ class PostgresSessionStore:
         )
 
     def _sync_eval_cases(self, conn: DictConnection, ctx: ProjectContext) -> None:
+        classification = ctx.data_classification
         rows = [
             (
                 case.eval_id,
@@ -950,13 +952,13 @@ class PostgresSessionStore:
                 getattr(case, "source_trace_id", None),
                 getattr(case, "source_ref_id", None),
                 json.dumps(getattr(case, "metadata", {}), default=str),
-                case.input_payload,
-                case.expected_behavior,
+                encrypt_text_field(case.input_payload, classification),
+                encrypt_text_field(case.expected_behavior, classification),
                 json.dumps(case.pass_criteria, default=str),
                 case.standard_version,
-                case.actual_output,
+                encrypt_text_field(case.actual_output, classification),
                 case.human_score,
-                case.human_comment,
+                encrypt_text_field(case.human_comment, classification),
                 case.passed,
                 case.created_at,
                 case.scored_at,
@@ -994,6 +996,7 @@ class PostgresSessionStore:
         )
 
     def _sync_eval_runs(self, conn: DictConnection, ctx: ProjectContext) -> None:
+        classification = ctx.data_classification
         rows = [
             (
                 run.run_id,
@@ -1012,19 +1015,19 @@ class PostgresSessionStore:
                 run.target_endpoint,
                 run.target_deployment_version,
                 run.case_version_digest,
-                run.input_payload,
-                run.expected_behavior,
-                run.actual_output,
+                encrypt_text_field(run.input_payload, classification),
+                encrypt_text_field(run.expected_behavior, classification),
+                encrypt_text_field(run.actual_output, classification),
                 run.judge_result,
-                run.judge_reason,
+                encrypt_text_field(run.judge_reason, classification),
                 run.judge_mode,
                 json.dumps(run.violated_criteria, default=str),
                 json.dumps(run.pass_criteria, default=str),
-                json.dumps(run.llm_judge_suggestion, default=str)
+                encrypt_json_field(run.llm_judge_suggestion, classification)
                 if run.llm_judge_suggestion is not None
                 else None,
                 run.status,
-                run.error_message,
+                encrypt_text_field(run.error_message, classification),
                 run.trace_id,
                 run.latency_ms,
                 run.estimated_cost,
@@ -1078,6 +1081,7 @@ class PostgresSessionStore:
         )
 
     def _sync_eval_judgments(self, conn: DictConnection, ctx: ProjectContext) -> None:
+        classification = ctx.data_classification
         rows = [
             (
                 judgment.judgment_id,
@@ -1089,10 +1093,10 @@ class PostgresSessionStore:
                 judgment.judge_model,
                 judgment.score,
                 judgment.label,
-                judgment.rationale,
+                encrypt_text_field(judgment.rationale, classification),
                 judgment.uncertainty,
                 json.dumps(judgment.cited_rules, default=str),
-                json.dumps(judgment.model_dump(mode="json"), default=str),
+                encrypt_json_field(judgment.model_dump(mode="json"), classification),
                 judgment.created_at,
             )
             for judgment in getattr(ctx, "eval_judgments", []) or []
@@ -1118,6 +1122,7 @@ class PostgresSessionStore:
         )
 
     def _sync_human_calibrations(self, conn: DictConnection, ctx: ProjectContext) -> None:
+        classification = ctx.data_classification
         rows = [
             (
                 calibration.calibration_id,
@@ -1126,12 +1131,12 @@ class PostgresSessionStore:
                 calibration.eval_id,
                 calibration.experiment_id,
                 calibration.human_label,
-                calibration.human_comment,
+                encrypt_text_field(calibration.human_comment, classification),
                 calibration.judge_label,
                 calibration.agreement,
-                calibration.disagreement_reason,
+                encrypt_text_field(calibration.disagreement_reason, classification),
                 calibration.reviewer_id,
-                json.dumps(calibration.model_dump(mode="json"), default=str),
+                encrypt_json_field(calibration.model_dump(mode="json"), classification),
                 calibration.created_at,
             )
             for calibration in getattr(ctx, "human_calibrations", []) or []
@@ -1160,6 +1165,7 @@ class PostgresSessionStore:
         )
 
     def _sync_eval_datasets(self, conn: DictConnection, ctx: ProjectContext) -> None:
+        classification = ctx.data_classification
         rows = [
             (
                 dataset.dataset_id,
@@ -1170,7 +1176,7 @@ class PostgresSessionStore:
                 dataset.stage,
                 dataset.scenario_type,
                 json.dumps(dataset.case_ids, default=str),
-                json.dumps(dataset.model_dump(mode="json"), default=str),
+                encrypt_json_field(dataset.model_dump(mode="json"), classification),
                 dataset.created_at,
                 dataset.updated_at,
             )
@@ -1200,6 +1206,7 @@ class PostgresSessionStore:
         )
 
     def _sync_eval_experiments(self, conn: DictConnection, ctx: ProjectContext) -> None:
+        classification = ctx.data_classification
         rows = [
             (
                 experiment.experiment_id,
@@ -1215,7 +1222,7 @@ class PostgresSessionStore:
                 json.dumps(experiment.run_ids, default=str),
                 json.dumps(experiment.aggregate_metrics.model_dump(mode="json"), default=str),
                 json.dumps(experiment.comparison_summary, default=str),
-                json.dumps(experiment.model_dump(mode="json"), default=str),
+                encrypt_json_field(experiment.model_dump(mode="json"), classification),
                 experiment.created_at,
                 experiment.started_at,
                 experiment.completed_at,
@@ -1252,6 +1259,7 @@ class PostgresSessionStore:
         )
 
     def _sync_redteam_cases(self, conn: DictConnection, ctx: ProjectContext) -> None:
+        classification = ctx.data_classification
         rows = [
             (
                 case.redteam_case_id,
@@ -1266,7 +1274,7 @@ class PostgresSessionStore:
                 case.linked_eval_case_id,
                 json.dumps(getattr(case, "taxonomy_refs", []), default=str),
                 json.dumps(getattr(case, "control_refs", []), default=str),
-                json.dumps(case.model_dump(mode="json"), default=str),
+                encrypt_json_field(case.model_dump(mode="json"), classification),
                 case.created_at,
                 case.approved_at,
                 case.updated_at,

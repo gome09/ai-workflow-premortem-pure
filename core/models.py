@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, PrivateAttr, computed_field
+from pydantic import BaseModel, Field, PrivateAttr, computed_field, field_validator
 
 from core.ids import new_id
 from core.risk.models import RiskFactorScores, RiskOverrideRecord
@@ -548,6 +548,10 @@ class EvalRun(BaseModel):
         "real_target_execution",
     ] = "manual_simulation"
     execution_outcome: Literal["success", "failed", "timeout", "error"] | None = None
+    # 真实目标响应被字节/字符上限截断时置位；截断结果不能作为完整通过证据。
+    truncated: bool = False
+    # 批次重试/断点续跑的幂等键；仅保存在 context_json，不新增投影列。
+    idempotency_key: str = ""
     evaluation_version_digest: str = ""
     target_endpoint: str = ""
     target_deployment_version: str = ""
@@ -661,6 +665,8 @@ class ProjectApproval(BaseModel):
     decided_role: str = ""
     decision_note: str = ""
     evidence_digest: str = ""
+    # 批准时绑定的目标部署版本；旧审批为空，门禁回退到当前上下文声明。
+    target_deployment_version: str = ""
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -754,7 +760,9 @@ class EvalExperiment(BaseModel):
     dataset_id: str
     name: str
     description: str = ""
-    status: Literal["created", "running", "completed", "failed", "cancelled"] = "created"
+    status: Literal["created", "running", "completed", "failed", "cancelled", "interrupted"] = (
+        "created"
+    )
     provider: str | None = None
     model: str | None = None
     run_mode: Literal["manual", "dry_run", "llm_node", "target_http"] = "manual"
@@ -764,6 +772,13 @@ class EvalExperiment(BaseModel):
     run_config_hash: str | None = None
     eval_ids: list[str] = Field(default_factory=list)
     run_ids: list[str] = Field(default_factory=list)
+    # 长批次执行状态：同一 run_request_key 的重试不重复启动；
+    # 心跳用于进程重启后把 stale running 标记为 interrupted。
+    run_request_key: str = ""
+    execution_attempt: int = 0
+    last_heartbeat_at: datetime | None = None
+    last_error_code: str = ""
+    timeout_seconds: int | None = None
     baseline_experiment_id: str | None = None
     aggregate_metrics: EvalAggregateMetrics = Field(default_factory=EvalAggregateMetrics)
     comparison_summary: dict[str, Any] = Field(default_factory=dict)
@@ -966,6 +981,15 @@ class ProjectContext(BaseModel):
 
     # ── 错误信息 ────────────────────────────────────
     last_error: str | None = None
+
+    @field_validator("report_artifacts")
+    @classmethod
+    def _dedupe_report_artifacts(cls, value: list[ReportArtifact]) -> list[ReportArtifact]:
+        """按 report_id 去重，修复历史浅复制导致的双重追加。"""
+        by_id: dict[str, ReportArtifact] = {}
+        for artifact in value:
+            by_id[artifact.report_id] = artifact
+        return list(by_id.values())
 
     def get_stage_history(self, stage: int) -> list[Message]:
         return self.conversation_history.get(f"stage_{stage}", [])

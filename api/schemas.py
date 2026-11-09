@@ -216,6 +216,9 @@ class CreateEvalExperimentRequest(BaseModel):
 
 class RunEvalExperimentRequest(BaseModel):
     dry_run_only: bool = True
+    background: bool | None = None
+    idempotency_key: str = Field(default="", max_length=200)
+    timeout_seconds: int | None = Field(default=None, ge=1, le=86400)
 
 
 class CompareEvalExperimentRequest(BaseModel):

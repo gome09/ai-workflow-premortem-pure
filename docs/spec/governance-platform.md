@@ -107,6 +107,9 @@ CRITICAL 档 `require_expert_review=True` 时，Stage 3 就绪评估自动创建
 
 - **拉取模型**：CI 主动调用，系统不主动推送 webhook。只有 HTTP 200 且 `decision=allow` 才允许部署；其他响应（包括 401/403/404/503 与 200 + `decision=block`）都必须阻断。
 - **判定来源**：`core/release_gate_service.py` 复用 `build_release_readiness` 与 `effective_approval_status`，以当前 `evaluation_version_digest` 与 `evidence_digest` 为准；不复制审批规则、不调用门禁引擎、不调用 LLM。
+- **批次单调性**：发布批次选择按完成时间只取最新完整 `target_http` 批次；更新批次失败、失败实验或必测用例缺失直接阻断，不再回退到更旧的通过批次。截断响应（`EvalRun.truncated=true`）与不完整证据不得作为通过证据。
+- **材料重评**：追加用户材料会递增输入版本，使所有已有阶段输出 stale 并将工作流重置到阶段一；重评完成且新批次真实测试通过前不能再次批准。
+- **发布版本绑定**：门禁支持 `target_version` / `artifact_digest` Query；`target_version` 与批准时绑定的目标版本不一致、或 `artifact_digest` 与当前证据摘要不一致时返回 `block`。
 - **机器凭证**：`service_tokens` 为租户级、可撤销、默认 90 天、scope 固定 `release_gate:read`；原始 token 只返回一次，数据库只存 SHA-256。人类 JWT 不能调用门禁。
 - **缓存边界**：门禁绕过 72 小时 `context_cache`，直接 `session_store.load()`，避免失效审批在缓存过期前仍被放行。
 - **审计**：每次通过认证的检查写入 `release_gate_checks`；写入失败返回 503 + `gate_unavailable`，不返回 `allow`。响应不含会话正文或审批备注。
@@ -126,7 +129,7 @@ CRITICAL 档 `require_expert_review=True` 时，Stage 3 就绪评估自动创建
 | `GET /governance/actions-backlog` | 待处理人工动作明细（跨会话），按 risk_level 与等待时长排序 |
 
 - 存储层：两后端各增聚合查询方法（`GROUP BY` state / risk_tier 等），全部强制 `WHERE tenant_id = ?`。
-- 数据口径：治理总览、门禁趋势、积压动作以及对应启动时业务 Gauge 只统计真实业务会话（`business_internal` / `sensitive_personal`）；`public_demo` 与带 `selected_scenario_id` 的四个内置场景会话防御性双重排除。总览响应的 `excluded_demo_sessions` 显示隔离数量，前端固定展示该口径；真实业务会话为零时展示空数据提示，接口异常则单独展示 HTTP/连接失败。
+- 数据口径：治理总览、门禁趋势、积压动作以及对应业务 Gauge 只统计真实业务会话（`business_internal` / `sensitive_personal`）；`public_demo` 与带 `selected_scenario_id` 的四个内置场景会话防御性双重排除。总览响应的 `excluded_demo_sessions` 显示隔离数量，前端固定展示该口径；真实业务会话为零时展示空数据提示，接口异常则单独展示 HTTP/连接失败。Prometheus 业务 Gauge 由 DB-backed collector 在 scrape 时读取同一口径，不再依赖启动时进程内存快照。
 - 性能：租户内会话量级（内部工具，百级）直接实时聚合即可，不建物化视图。
 
 ### 4.2 前端治理页
@@ -140,9 +143,10 @@ Streamlit 新增"治理总览"页：指标卡片（项目数/积压动作/安全
 ### 4.3 业务指标接入 Prometheus/Grafana
 
 - 在现有 instrumentator 之上注册自定义指标（`api/metrics.py`）：
-  - `premortem_sessions_total{tenant,state}`（Gauge；启动时经 `governance_metrics_all_tenants()` 跨租户真实聚合刷新——2026-09-01 修复：此前用空租户刷新恒为零值 scaffold。仍无周期性调度，仅在启动时刷新）
+  - `premortem_sessions_total{tenant,state}`（Gauge；由 `GovernanceMetricsCollector` 在每次 scrape 读取 `governance_metrics_all_tenants()`，已知 state 无数据时输出 0，`tenant="all"` 表示跨租户聚合；多 worker 读取同一数据库，结果一致）
+  - `premortem_pending_actions{risk_level}`（Gauge；语义为"待处理人工动作数按 risk_level"，同样由 DB-backed collector 提供，积压清零后归零）
+  - `/metrics` 在 `PROMETHEUS_MULTIPROC_DIR` 启用时使用 `MultiProcessCollector` 聚合多 worker 的 Counter/Histogram；未启用时使用默认 REGISTRY + collector。
   - `premortem_gate_evaluations_total{result}` / `premortem_gate_blocked_total{rule_id}`（Counter，评估路径打点）
-  - `premortem_pending_actions{risk_level}`（Gauge；语义为"待处理人工动作数按 risk_level"——2026-09-01 修复：此前被错喂会话风险档位分布且恒为零值，现取跨租户真实 pending 动作计数。仍无周期性调度）
   - `premortem_llm_calls_total` / `premortem_llm_tokens_total`（Counter，与阶段 2 LLM10 计数共用数据源）
   - `premortem_llm_failures_total{stage,error_code}` / `premortem_structured_output_failures_total{stage,status}`（Counter，模型故障与结构化输出失败）
   - `premortem_target_executions_total{outcome}`（Counter，真实目标执行 success / failed / timeout / error）

@@ -5,11 +5,13 @@ import json
 
 import streamlit as st
 from models.api_client import (
+    calibrate_eval_run,
     request_release_approval,
     resolve_action,
     resolve_flag,
     resolve_safety_finding,
     review_risk_treatment,
+    set_target_deployment,
     upsert_risk_treatment,
     verify_evidence,
 )
@@ -200,4 +202,42 @@ def handle_request_release_approval(decision: str, note: str) -> None:
         st.error("上线批准未通过：请查看 release readiness 阻断项后重试。")
         return
     st.success("上线批准决定已记录。")
+    st.rerun()
+
+
+def handle_set_target_deployment(endpoint: str, version: str) -> None:
+    if not endpoint.strip() or not version.strip():
+        st.error("目标 endpoint 与版本均为必填。")
+        return
+    result = set_target_deployment(
+        st.session_state.session_id,
+        endpoint.strip(),
+        version.strip(),
+    )
+    if result is None:
+        return
+    st.warning("目标部署已更新：旧审批与旧测试证据将失效，必须重新评估和测试。")
+    st.rerun()
+
+
+def handle_calibrate_eval_run(
+    run_id: str,
+    human_label: str,
+    human_comment: str,
+    disagreement_reason: str = "",
+) -> None:
+    if human_label == "passed" and not human_comment.strip():
+        st.error("判定为 passed 时必须填写人工判定依据。")
+        return
+    result = calibrate_eval_run(
+        st.session_state.session_id,
+        run_id,
+        human_label,
+        human_comment.strip(),
+        disagreement_reason.strip(),
+    )
+    if result is None:
+        return
+    st.success("EvalRun 人工校准已记录。")
+    refresh_actions()
     st.rerun()

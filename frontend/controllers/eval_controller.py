@@ -1,6 +1,8 @@
 # frontend/controllers/eval_controller.py
 from __future__ import annotations
 
+import time
+
 import streamlit as st
 from models.api_client import (
     approve_redteam_case,
@@ -8,6 +10,7 @@ from models.api_client import (
     create_eval_experiment,
     create_redteam_dataset,
     generate_redteam_cases,
+    get_eval_experiment_status,
     invalidate_session_cache,
     reject_redteam_case,
     run_eval_cases,
@@ -90,16 +93,39 @@ def create_experiment(
         st.rerun()
 
 
-def run_experiment(experiment_id: str) -> None:
-    result = run_eval_experiment(
-        st.session_state.session_id,
-        experiment_id,
-        dry_run_only=True,
-    )
-    if result:
-        refresh_actions()
-        st.success("实验已运行或已记录。")
-        st.rerun()
+def run_experiment(experiment_id: str, dry_run_only: bool = True) -> None:
+    request_key = f"ui:{experiment_id}:{int(time.time())}" if not dry_run_only else ""
+    with st.spinner("正在运行实验..."):
+        result = run_eval_experiment(
+            st.session_state.session_id,
+            experiment_id,
+            dry_run_only=dry_run_only,
+            background=not dry_run_only,
+            idempotency_key=request_key,
+        )
+        if not result:
+            return
+        if result.get("accepted"):
+            status: dict = {}
+            for _ in range(900):
+                status = get_eval_experiment_status(st.session_state.session_id, experiment_id)
+                if status.get("status") in {
+                    "completed",
+                    "failed",
+                    "interrupted",
+                    "cancelled",
+                }:
+                    break
+                time.sleep(2)
+            st.info(
+                f"实验状态：{status.get('status') or 'unknown'} · "
+                f"进度 {status.get('completed_cases', 0)}/{status.get('total_cases', 0)}"
+            )
+            if status.get("resumable"):
+                st.warning("实验可恢复：再次运行会跳过已完成用例。")
+    refresh_actions()
+    st.success("实验已运行或已记录。")
+    st.rerun()
 
 
 def generate_redteam() -> None:

@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import time
 
 from core.models import ProjectContext
+from storage.field_security import context_from_cache_payload, context_payload_for_cache
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +34,8 @@ class MemoryCache:
     def set(self, ctx: ProjectContext) -> None:
         try:
             key = self._key(ctx.session_id, ctx.tenant_id or "")
-            value = ctx.model_dump_json()
+            # 缓存副本与数据库保持一致的字段加密边界。
+            value = json.dumps(context_payload_for_cache(ctx), default=str)
             version = int(getattr(ctx, "_storage_version", 0))
             with self._lock:
                 self._store[key] = (value, version, time.monotonic())
@@ -51,7 +54,7 @@ class MemoryCache:
                 with self._lock:
                     self._store.pop(key, None)
                 return None
-            ctx = ProjectContext.model_validate_json(value)
+            ctx = context_from_cache_payload(json.loads(value))
             ctx._storage_version = version
             return ctx
         except Exception as e:  # noqa: BLE001

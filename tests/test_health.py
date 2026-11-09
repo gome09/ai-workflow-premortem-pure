@@ -48,3 +48,34 @@ def test_health_ready_returns_checks():
     assert resp.status_code in (200, 503)
     data = resp.json()
     assert "checks" in data
+
+
+def test_health_ready_reports_data_encryption():
+    from core.config import settings
+
+    if settings.storage_backend != "sqlite":
+        pytest.skip("readiness test requires sqlite store")
+
+    from api.main import app
+
+    client = TestClient(app, raise_server_exceptions=False)
+    resp = client.get("/health/ready")
+    assert resp.status_code == 200
+    assert resp.json()["checks"]["data_encryption"] in {"enabled", "disabled"}
+
+
+def test_health_ready_fails_when_production_encryption_disabled(monkeypatch):
+    from core.config import settings
+
+    if settings.storage_backend != "sqlite":
+        pytest.skip("readiness test requires sqlite store")
+
+    import api.main as main_module
+
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(main_module, "is_encryption_enabled", lambda: False)
+
+    client = TestClient(main_module.app, raise_server_exceptions=False)
+    resp = client.get("/health/ready")
+    assert resp.status_code == 503
+    assert resp.json()["checks"]["data_encryption"] == "disabled"

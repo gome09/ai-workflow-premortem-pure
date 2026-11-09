@@ -31,6 +31,7 @@ from auth.permissions import Role, require_roles
 from core.models import ProjectContext
 from core.risk.assessment import RiskOverridePermissionError
 from core.session_service import DataClassificationDowngradeError, session_service
+from core.workflow_state_service import WorkflowBlockedError
 from scenarios import get_scenario, list_scenarios
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -317,6 +318,9 @@ def add_materials(
     """向会话追加人工补充资料。"""
     try:
         return session_service.add_materials(session_id, body.materials, tenant_id=ctx.tenant_id)
+    except WorkflowBlockedError:
+        # 阻断态必须冒泡到全局 handler（409 + 恢复入口），不能降级成 404。
+        raise
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 

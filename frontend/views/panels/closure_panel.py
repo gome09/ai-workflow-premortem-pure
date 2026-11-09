@@ -9,6 +9,7 @@ import streamlit as st
 from controllers.governance_controller import (
     handle_request_release_approval,
     handle_review_treatment,
+    handle_set_target_deployment,
     handle_upsert_treatment,
 )
 from labels import (
@@ -38,6 +39,8 @@ def render_closure_panel() -> None:
         _render_evidence_lifecycle(session_id)
         st.divider()
         _render_risk_treatments(session_id)
+        st.divider()
+        _render_target_deployment(session_id)
         st.divider()
         _render_release_approval(session_id)
 
@@ -145,6 +148,34 @@ def _render_risk_treatments(session_id: str) -> None:
                         handle_review_treatment(treatment_id, "reject", review_note)
 
 
+def _render_target_deployment(session_id: str) -> None:
+    st.markdown("#### 目标部署声明")
+    status_payload = get_approval_status(session_id)
+    deployment = status_payload.get("target_deployment") or {}
+    if deployment:
+        st.caption(
+            f"当前声明：`{deployment.get('endpoint')}` · 版本=`{deployment.get('version')}` · "
+            f"更新人={deployment.get('updated_by') or '-'}"
+        )
+    else:
+        st.caption("尚未声明目标部署；真实目标测试与上线批准需要 endpoint + version。")
+    endpoint = st.text_input(
+        "目标 endpoint",
+        value=deployment.get("endpoint") or "",
+        key="target_deployment_endpoint",
+        placeholder="https://target.example/api/eval",
+    )
+    version = st.text_input(
+        "目标版本",
+        value=deployment.get("version") or "",
+        key="target_deployment_version",
+        placeholder="2026.11.1",
+    )
+    st.caption("变更目标部署会递增输入版本，旧审批与旧测试批次将不再作为放行证据。")
+    if st.button("保存目标部署", key="save_target_deployment", use_container_width=True):
+        handle_set_target_deployment(endpoint, version)
+
+
 def _render_release_approval(session_id: str) -> None:
     st.markdown("#### 上线批准")
     status_payload = get_approval_status(session_id)
@@ -163,6 +194,11 @@ def _render_release_approval(session_id: str) -> None:
         "上线批准："
         f"{approval_status_zh(release_approval.get('status'))} · "
         f"批准人={release_approval.get('decided_by') or '-'}"
+    )
+    st.caption(
+        f"批准绑定目标版本：{release_approval.get('target_deployment_version') or '-'} · "
+        f"评估摘要={str(release_approval.get('evaluation_version_digest') or '-')[:12]}… · "
+        f"证据摘要={str(release_approval.get('evidence_digest') or '-')[:12]}…"
     )
     if release_approval.get("release_batch_id"):
         st.caption(f"放行评估批次：{release_approval.get('release_batch_id')}")

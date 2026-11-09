@@ -120,7 +120,10 @@ def add_materials(materials: list[str]) -> bool:
     with st.spinner("上传中..."):
         ok = add_materials_to_session(st.session_state.session_id, materials)
     if ok:
-        st.success(f"✅ 已添加 {len(materials)} 份资料。")
+        st.warning("✅ 资料已追加。阶段分析已过期，工作流将从阶段一开始重新评估。")
+        refresh_flags()
+        refresh_actions()
+        st.rerun()
     else:
         st.error("上传失败，请重试。")
     return ok

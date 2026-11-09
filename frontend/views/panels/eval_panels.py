@@ -16,6 +16,7 @@ from controllers.eval_controller import (
     save_score,
     sync_redteam_case,
 )
+from controllers.governance_controller import handle_calibrate_eval_run
 from labels import execution_kind_zh, execution_outcome_zh, status_zh
 from models.api_client import (
     get_redteam_coverage,
@@ -23,6 +24,7 @@ from models.api_client import (
     list_eval_datasets,
     list_eval_experiments,
     list_eval_runs,
+    list_human_calibrations,
     list_redteam_cases,
 )
 
@@ -105,6 +107,59 @@ def render_redteam_section() -> None:
                     use_container_width=True,
                 ):
                     sync_redteam_case(case_id)
+
+
+def _render_eval_calibration(eval_runs: list[dict]) -> None:
+    with st.expander("🧑‍⚖️ EvalRun 人工校准", expanded=False):
+        target_runs = [run for run in eval_runs if run.get("run_mode") == "target_http"]
+        if not target_runs:
+            st.caption("暂无 target_http 运行；真实目标测试完成后可在此做人工校准。")
+            return
+        calibrations = list_human_calibrations(st.session_state.session_id)
+        latest_by_run: dict[str, dict] = {}
+        for calibration in calibrations:
+            latest_by_run[calibration.get("eval_run_id") or ""] = calibration
+
+        st.caption("passed 必须填写人工判定依据；失败的真实目标运行不可改判为 passed。")
+        for run in target_runs[-20:]:
+            run_id = run.get("run_id") or ""
+            st.markdown(
+                f"**`{run_id}`** · 用例={run.get('eval_id')} · "
+                f"状态={status_zh(run.get('status'))} · "
+                f"执行={execution_outcome_zh(run.get('execution_outcome'))} · "
+                f"判定={run.get('judge_result') or '-'}"
+            )
+            actual_output = run.get("actual_output") or ""
+            if actual_output:
+                st.caption("实际输出：" + actual_output[:300])
+            calibration = latest_by_run.get(run_id)
+            if calibration:
+                st.caption(
+                    f"最近校准：{calibration.get('human_label')} · "
+                    f"复核人={calibration.get('reviewer_id') or '-'} · "
+                    f"依据={(calibration.get('human_comment') or '-')[:160]}"
+                )
+            label = st.selectbox(
+                "人工结论",
+                ["passed", "failed", "needs_review"],
+                key=f"cal_label_{run_id}",
+            )
+            comment = st.text_area(
+                "人工判定依据",
+                key=f"cal_comment_{run_id}",
+                height=80,
+            )
+            disagreement = st.text_input(
+                "与自动评审的分歧原因（可选）",
+                key=f"cal_disagreement_{run_id}",
+            )
+            if st.button(
+                "保存人工校准",
+                key=f"cal_save_{run_id}",
+                use_container_width=True,
+            ):
+                handle_calibrate_eval_run(run_id, label, comment, disagreement)
+            st.divider()
 
 
 def render_eval_panel() -> None:
@@ -208,17 +263,32 @@ def render_eval_panel() -> None:
                             f"与自动评审分歧率={disagreement_rate:.2f}"
                         )
                     if experiment.get("status") in {"created", "failed"}:
+                        real_run = False
+                        if experiment.get("run_mode") == "target_http":
+                            real_run = st.checkbox(
+                                "真实执行（会调用目标系统）",
+                                key=f"run_experiment_real_{experiment.get('experiment_id')}",
+                                help=(
+                                    "默认 dry-run 不调用外部目标；勾选后按 run_config.target_config "
+                                    "执行真实 target_http 请求，host 必须在 TARGET_SYSTEM_ALLOWED_HOSTS 内。"
+                                ),
+                            )
                         if st.button(
                             f"▶️ 运行 {experiment.get('experiment_id')}",
                             key=f"run_experiment_{experiment.get('experiment_id')}",
                             use_container_width=True,
                         ):
-                            run_experiment(experiment.get("experiment_id"))
+                            run_experiment(
+                                experiment.get("experiment_id"),
+                                dry_run_only=not real_run,
+                            )
                     if comparison:
                         if comparison.get("regression_detected"):
                             st.warning(f"对比检测到回归：{comparison.get('regression_reasons')}")
                         else:
                             st.success("对比结果：未检测到回归。")
+
+        _render_eval_calibration(eval_runs)
 
         run_mode = st.selectbox(
             "评测用例运行模式",

@@ -1,0 +1,60 @@
+groups:
+  - name: premortem-critical
+    rules:
+      - alert: PremortemLLMFailures
+        expr: increase(premortem_llm_failures_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM provider calls are failing"
+          description: "premortem_llm_failures_total increased in the last 5 minutes."
+
+      - alert: PremortemStructuredOutputFailures
+        expr: increase(premortem_structured_output_failures_total[10m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Structured model output is not parsing"
+          description: "Structured output parse failures detected; live smoke acceptance is not met."
+
+      - alert: PremortemReleaseGateUnavailable
+        expr: increase(premortem_release_gate_checks_total{decision="block",reason_code="gate_unavailable"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Release gate is unavailable"
+          description: "A release gate check failed closed because gate calculation or audit write failed."
+
+      - alert: PremortemRetentionErrors
+        expr: increase(premortem_retention_errors_total[1h]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Retention cleanup errors"
+          description: "Retention sweeps are reporting purge or checkpoint cleanup errors."
+
+      - alert: PremortemTargetExecutionFailures
+        expr: |
+          sum(rate(premortem_target_executions_total{outcome=~"failed|timeout|error"}[5m]))
+          /
+          clamp_min(sum(rate(premortem_target_executions_total[5m])), 0.001)
+          > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Real target executions are failing"
+          description: "More than 20% of target_http executions ended in failed/timeout/error over 5 minutes."
+
+      - alert: PremortemMetricsCollectorErrors
+        expr: increase(premortem_metrics_collect_errors_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Governance metrics collector is failing"
+          description: "The DB-backed governance metrics collector could not read storage."

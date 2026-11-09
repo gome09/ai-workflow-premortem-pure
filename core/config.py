@@ -1,4 +1,8 @@
 # core/config.py
+import os
+import stat
+from collections.abc import Sequence
+from pathlib import Path
 from typing import Literal
 
 from pydantic import model_validator
@@ -6,13 +10,48 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from core.execution_mode import WorkflowExecutionMode
 
+_SECRETS_DIR = os.getenv("SECRETS_DIR", "/run/secrets")
+_SECRETS_DIR_SETTING = _SECRETS_DIR if os.path.isdir(_SECRETS_DIR) else None
+
+_REQUIRED_PRODUCTION_SECRETS = (
+    "jwt_secret",
+    "postgres_password",
+    "data_encryption_key",
+)
+
+
+def _is_placeholder_secret(value: str) -> bool:
+    normalized = (value or "").strip().upper()
+    return not normalized or normalized.startswith("CHANGE_ME")
+
+
+def validate_secret_file_permissions(
+    secrets_dir: str | Path,
+    required_names: Sequence[str] = _REQUIRED_PRODUCTION_SECRETS,
+) -> None:
+    """Fail-closed validation for an explicitly configured secret directory.
+
+    Docker's default ``/run/secrets`` is managed by Docker and mounted 0444, so
+    permission-bit checks are only applied when the operator explicitly sets
+    ``SECRETS_DIR`` for a non-Docker deployment.
+    """
+    base = Path(secrets_dir)
+    for name in required_names:
+        path = base / name
+        if not path.is_file():
+            raise ValueError(f"Required secret file is missing: {path}")
+        if not os.access(path, os.R_OK):
+            raise ValueError(f"Required secret file is not readable: {path}")
+        if os.name == "posix" and (path.stat().st_mode & (stat.S_IRGRP | stat.S_IROTH)):
+            raise ValueError(f"Secret file permissions are too open (expected 600): {path}")
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
-        secrets_dir="/run/secrets",
+        secrets_dir=_SECRETS_DIR_SETTING,
         # `.env` 由 compose、`make demo-*` 与 CI 多服务共享，除后端字段外还包含
         # 前端专用键（DEMO_USER_*）与容器键（SQLITE_PATH）。未知键必须忽略，
         # 否则 `cp .env.demo .env` 会在导入时触发 extra_forbidden。
@@ -149,6 +188,11 @@ class Settings(BaseSettings):
     target_system_timeout_seconds: float = 10.0
     target_system_max_response_chars: int = 4000
 
+    # 长评估批次：进程内有界执行器 + 持久化状态/心跳/总超时。
+    eval_experiment_timeout_seconds: int = 1800
+    eval_experiment_heartbeat_stale_seconds: int = 120
+    eval_experiment_workers: int = 2
+
     # T3.6 LLM Judge（spec governance-platform §5）：LLM 仅建议判分，不终裁。
     # eval_llm_judge=on 时对规则层 needs_review 的 run 生成结构化建议
     eval_llm_judge: bool = False
@@ -214,6 +258,12 @@ class Settings(BaseSettings):
             raise ValueError("TARGET_SYSTEM_TIMEOUT_SECONDS must be > 0")
         if self.target_system_max_response_chars < 1:
             raise ValueError("TARGET_SYSTEM_MAX_RESPONSE_CHARS must be >= 1")
+        if self.eval_experiment_timeout_seconds < 1:
+            raise ValueError("EVAL_EXPERIMENT_TIMEOUT_SECONDS must be >= 1")
+        if self.eval_experiment_heartbeat_stale_seconds < 1:
+            raise ValueError("EVAL_EXPERIMENT_HEARTBEAT_STALE_SECONDS must be >= 1")
+        if not 1 <= self.eval_experiment_workers <= 8:
+            raise ValueError("EVAL_EXPERIMENT_WORKERS must be between 1 and 8")
 
         if self.app_env.lower() == "production":
             # 生产启动 fail-closed：拒绝演示/开发配置与缺失的字段加密 key。
@@ -223,8 +273,33 @@ class Settings(BaseSettings):
                 raise ValueError("STORAGE_BACKEND must be postgres in production")
             if self.demo_auto_auth:
                 raise ValueError("DEMO_AUTO_AUTH must be false in production")
+            if _is_placeholder_secret(self.jwt_secret):
+                raise ValueError("JWT_SECRET must not be a CHANGE_ME placeholder in production")
+            if _is_placeholder_secret(self.postgres_password):
+                raise ValueError(
+                    "POSTGRES_PASSWORD must not be a CHANGE_ME placeholder in production"
+                )
+            if _is_placeholder_secret(self.deepseek_api_key):
+                raise ValueError(
+                    "DEEPSEEK_API_KEY must not be a CHANGE_ME placeholder in production"
+                )
+            if _is_placeholder_secret(self.tavily_api_key):
+                raise ValueError("TAVILY_API_KEY must not be a CHANGE_ME placeholder in production")
             if not self.data_encryption_key:
                 raise ValueError("DATA_ENCRYPTION_KEY must be set in production")
+            if _is_placeholder_secret(self.data_encryption_key):
+                raise ValueError(
+                    "DATA_ENCRYPTION_KEY must not be a CHANGE_ME placeholder in production"
+                )
+            if self.checkpoint_encryption_key and _is_placeholder_secret(
+                self.checkpoint_encryption_key
+            ):
+                raise ValueError(
+                    "CHECKPOINT_ENCRYPTION_KEY must not be a CHANGE_ME placeholder in production"
+                )
+            explicit_secrets_dir = os.getenv("SECRETS_DIR", "").strip()
+            if explicit_secrets_dir:
+                validate_secret_file_permissions(explicit_secrets_dir)
             from cryptography.fernet import Fernet
 
             try:

@@ -8,7 +8,7 @@ import redis as redis_lib
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -36,6 +36,7 @@ from auth.jwt import verify_token
 from auth.router import router as auth_router
 from core.audit_service import append_audit_event
 from core.config import settings
+from core.eval_execution import shutdown_eval_executor
 from core.execution_mode import WorkflowExecutionMode
 from core.execution_service import (
     interrupt_resume_scheduler_status,
@@ -142,9 +143,7 @@ async def lifespan(app: FastAPI):
     reconcile_pending_interrupt_resumes()
     start_interrupt_resume_scheduler()
     start_retention_scheduler()
-    _instrumentator.expose(app, endpoint="/metrics", include_in_schema=False)
-    # T3.5 启动时刷新业务 Gauge 指标（prometheus_client 默认 REGISTRY 已通过
-    # instrumentator 的 /metrics 端点一并暴露）
+    # T3.5 启动时刷新兼容 Gauge；/metrics 实际由 DB-backed collector 提供。
     try:
         from api.metrics import refresh_gauge_metrics
 
@@ -155,6 +154,7 @@ async def lifespan(app: FastAPI):
     yield
     await stop_interrupt_resume_scheduler()
     await stop_retention_scheduler()
+    shutdown_eval_executor()
     close_interrupt_runtime()
     session_store.close()
     logger.info("App shutting down.")
@@ -167,8 +167,19 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Prometheus metrics — instrument before middleware, expose in lifespan
+# Prometheus metrics — instrument before middleware, expose custom DB-backed route.
 _instrumentator.instrument(app)
+
+
+@app.get("/metrics", include_in_schema=False)
+def metrics_endpoint() -> Response:
+    """Prometheus metrics; governance gauges are read from the shared DB."""
+    from prometheus_client import CONTENT_TYPE_LATEST
+
+    from api.metrics import render_metrics
+
+    return Response(content=render_metrics(), media_type=CONTENT_TYPE_LATEST)
+
 
 # Rate limiting: decorator-only pattern (not global middleware).
 # Each protected route uses @limiter.limit(...) explicitly.
@@ -349,6 +360,11 @@ def health_ready() -> JSONResponse:
         == WorkflowExecutionMode.LANGGRAPH_INTERRUPT
         and adapter["status"] != "healthy"
     ):
+        overall_ok = False
+
+    encryption_enabled = is_encryption_enabled()
+    checks["data_encryption"] = "enabled" if encryption_enabled else "disabled"
+    if settings.app_env == "production" and not encryption_enabled:
         overall_ok = False
 
     status_code = 200 if overall_ok else 503

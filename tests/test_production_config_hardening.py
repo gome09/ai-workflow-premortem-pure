@@ -112,3 +112,39 @@ def test_production_rejects_development_config(field: str, value, message: str):
 def test_example_encryption_secrets_are_placeholders_only():
     for name in ("data_encryption_key", "checkpoint_encryption_key"):
         assert (ROOT / "secrets.example" / name).read_text(encoding="utf-8").strip() == "CHANGE_ME"
+
+
+def test_production_rejects_change_me_placeholders():
+    from core.config import validate_secret_file_permissions
+
+    with pytest.raises(ValidationError, match="JWT_SECRET"):
+        _production_settings(jwt_secret="CHANGE_ME_run_openssl_rand_hex_32")  # noqa: S106
+    with pytest.raises(ValidationError, match="DEEPSEEK_API_KEY"):
+        _production_settings(deepseek_api_key="CHANGE_ME")
+    with pytest.raises(ValidationError, match="TAVILY_API_KEY"):
+        _production_settings(tavily_api_key="CHANGE_ME")
+    with pytest.raises(ValidationError, match="POSTGRES_PASSWORD"):
+        _production_settings(postgres_password="CHANGE_ME")  # noqa: S106
+    assert validate_secret_file_permissions is not None
+
+
+@pytest.mark.skipif(__import__("os").name != "posix", reason="POSIX permission bits only")
+def test_secret_file_permissions_reject_group_or_other_read(tmp_path):
+    from core.config import validate_secret_file_permissions
+
+    names = ("jwt_secret", "postgres_password", "data_encryption_key")
+    for name in names:
+        path = tmp_path / name
+        path.write_text("secret", encoding="utf-8")
+        path.chmod(0o644)
+
+    with pytest.raises(ValueError, match="too open"):
+        validate_secret_file_permissions(tmp_path, names)
+
+    for name in names:
+        (tmp_path / name).chmod(0o600)
+    validate_secret_file_permissions(tmp_path, names)
+
+    (tmp_path / "data_encryption_key").unlink()
+    with pytest.raises(ValueError, match="missing"):
+        validate_secret_file_permissions(tmp_path, names)

@@ -48,6 +48,7 @@ from core.stage_operation_service import (
 from core.stage_operation_service import (
     sync_stage_review_actions as sync_stage_review_actions_operation,
 )
+from core.stage_revision_service import invalidate_stages_for_input_change
 from core.target_testing import sanitize_endpoint
 from core.workflow_state_service import assert_advanceable, state_value
 from core.workflow_state_service import recover_workflow as recover_workflow_operation
@@ -316,6 +317,9 @@ class SessionWorkflowService(SessionAccess):
                     start_index=new_material_start,
                 ),
             )
+            # 材料是阶段一及全部下游分析的输入；旧阶段输出必须过期，
+            # 否则重跑目标测试即可绕过重新评估再次获得上线批准。
+            invalidate_stages_for_input_change(ctx, reason="user_materials_changed")
 
         # 聊天正文必须在模型出站前完成 PII 识别与分级升级；否则
         # business_internal 会话的正文会绕过 sensitive_personal 强制掩码。
@@ -368,6 +372,8 @@ class SessionWorkflowService(SessionAccess):
         ctx = self.get_session(session_id, tenant_id)
         if not ctx:
             raise ValueError(f"Session not found: {session_id}")
+        # 阻断态只能通过显式恢复离开；材料追加不得绕过恢复流程。
+        assert_advanceable(ctx)
         if materials:
             bump_input_version(ctx, INPUT_VERSION_KEY_MATERIALS)
         new_material_start = len(ctx.user_materials)
@@ -386,6 +392,8 @@ class SessionWorkflowService(SessionAccess):
                 start_index=new_material_start,
             ),
         )
+        if materials:
+            invalidate_stages_for_input_change(ctx, reason="user_materials_changed")
         self._store().save(ctx)
         self._cache_set(ctx)
         return self._with_stage_advancement(
@@ -489,8 +497,9 @@ class SessionWorkflowService(SessionAccess):
         # with large sessions (936+ traces, 100MB+ audit events).
         report_ctx = self._build_lightweight_context(ctx)
         artifact = create_report_artifact(report_ctx)
-        # Transfer artifact and audit events from lightweight copy to original
-        ctx.report_artifacts.append(artifact)
+        # 幂等追加：同一 report_id 不得因浅复制/重复调用在上下文中出现两次。
+        if not any(item.report_id == artifact.report_id for item in ctx.report_artifacts):
+            ctx.report_artifacts.append(artifact)
         # Transfer any new audit events added by create_report_artifact
         for event in report_ctx.audit_events:
             if not any(e.event_id == event.event_id for e in ctx.audit_events):

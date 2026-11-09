@@ -31,6 +31,8 @@ ReleaseGateReasonCode = Literal[
     "approval_stale",
     "approval_invalidated",
     "prerequisites_not_met",
+    "release_target_version_mismatch",
+    "release_artifact_digest_mismatch",
     "gate_unavailable",
 ]
 
@@ -49,6 +51,8 @@ _DEFAULT_BLOCKER_MESSAGES: dict[ReleaseGateReasonCode, str] = {
     "approval_stale": "评估内容已变化，原上线批准已过期。",
     "approval_invalidated": "发布证据或前置条件已变化，原上线批准已失效。",
     "prerequisites_not_met": "上线前置条件不再满足。",
+    "release_target_version_mismatch": "审批绑定的目标版本与本次待发布版本不一致。",
+    "release_artifact_digest_mismatch": "本次待发布构件摘要与当前批准证据摘要不一致。",
     "gate_unavailable": "发布门禁当前不可用。",
 }
 
@@ -75,6 +79,9 @@ class ReleaseGateDecision(BaseModel):
     evidence_digest: str = ""
     release_batch_id: str = ""
     required_test_eval_ids: list[str] = Field(default_factory=list)
+    requested_target_version: str = ""
+    approved_target_version: str = ""
+    requested_artifact_digest: str = ""
     blockers: list[ReleaseBlocker] = Field(default_factory=list)
     checked_at: datetime
     check_id: str = ""
@@ -105,7 +112,12 @@ def _not_applicable_blocker(session_id: str) -> ReleaseBlocker:
     )
 
 
-def evaluate_release_gate(ctx: ProjectContext) -> ReleaseGateDecision:
+def evaluate_release_gate(
+    ctx: ProjectContext,
+    *,
+    requested_target_version: str = "",
+    requested_artifact_digest: str = "",
+) -> ReleaseGateDecision:
     """Compute one live release decision without mutating the project context."""
     readiness = build_release_readiness(ctx)
     if not readiness.applicable:
@@ -116,6 +128,8 @@ def evaluate_release_gate(ctx: ProjectContext) -> ReleaseGateDecision:
             approval_status="not_requested",
             applicable=False,
             session_id=ctx.session_id,
+            requested_target_version=requested_target_version,
+            requested_artifact_digest=requested_artifact_digest,
             blockers=[_not_applicable_blocker(ctx.session_id)],
             checked_at=datetime.now(UTC),
         )
@@ -138,8 +152,29 @@ def evaluate_release_gate(ctx: ProjectContext) -> ReleaseGateDecision:
     if status == "approved" and not readiness.can_approve:
         reason_code = "prerequisites_not_met"
 
+    approved_target_version = (
+        latest.target_deployment_version
+        if latest is not None and latest.target_deployment_version
+        else (ctx.target_deployment.version if ctx.target_deployment is not None else "")
+    )
+    requested_version = (requested_target_version or "").strip()
+    requested_digest = (requested_artifact_digest or "").strip()
+    version_mismatch = bool(requested_version and requested_version != approved_target_version)
+    digest_mismatch = bool(requested_digest and requested_digest != evidence_digest)
+
+    if version_mismatch:
+        reason_code = "release_target_version_mismatch"
+        reason = f"批准版本 {approved_target_version or '-'}，本次请求发布版本 {requested_version}"
+    elif digest_mismatch:
+        reason_code = "release_artifact_digest_mismatch"
+        reason = "本次请求发布的构件摘要与当前批准证据摘要不一致"
+
     blockers = list(readiness.blockers)
-    if reason_code != "approved" and not blockers:
+    if version_mismatch or digest_mismatch:
+        blockers = [
+            _status_blocker(reason_code, reason, latest.approval_id if latest else "")
+        ] + blockers
+    elif reason_code != "approved" and not blockers:
         blockers = [
             _status_blocker(
                 reason_code,
@@ -149,7 +184,12 @@ def evaluate_release_gate(ctx: ProjectContext) -> ReleaseGateDecision:
         ]
 
     decision: Literal["allow", "block"] = (
-        "allow" if reason_code == "approved" and readiness.can_approve else "block"
+        "allow"
+        if reason_code == "approved"
+        and readiness.can_approve
+        and not version_mismatch
+        and not digest_mismatch
+        else "block"
     )
     return ReleaseGateDecision(
         decision=decision,
@@ -163,6 +203,9 @@ def evaluate_release_gate(ctx: ProjectContext) -> ReleaseGateDecision:
         evidence_digest=evidence_digest,
         release_batch_id=readiness.release_batch_id,
         required_test_eval_ids=list(readiness.required_test_eval_ids),
+        requested_target_version=requested_version,
+        approved_target_version=approved_target_version,
+        requested_artifact_digest=requested_digest,
         blockers=blockers,
         checked_at=datetime.now(UTC),
     )

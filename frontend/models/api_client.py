@@ -134,6 +134,38 @@ def api_patch(path: str, body: dict) -> dict | None:
         return None
 
 
+def api_put(path: str, body: dict) -> dict | None:
+    try:
+        r = _http_session.put(f"{API_BASE}{path}", json=body, headers=_auth_headers(), timeout=30)
+        if r.status_code == 401 and _refresh_access_token():
+            r = _http_session.put(
+                f"{API_BASE}{path}", json=body, headers=_auth_headers(), timeout=30
+            )
+        r.raise_for_status()
+        return r.json()
+    except requests.exceptions.Timeout:
+        st.error("⏱️ 请求超时。")
+        return None
+    except requests.exceptions.ConnectionError:
+        st.error(f"🔌 无法连接到后端服务，请确认 API 已启动（当前 API_BASE：{API_BASE}）。")
+        return None
+    except requests.exceptions.HTTPError as e:
+        detail = ""
+        try:
+            payload = e.response.json()
+            detail = payload.get("detail", "") if isinstance(payload, dict) else ""
+        except Exception:
+            detail = ""
+        st.error(f"❌ 请求失败（HTTP {e.response.status_code}）。")
+        if detail:
+            with st.expander("🔧 技术详情", expanded=False):
+                st.caption(str(detail))
+        return None
+    except Exception:
+        st.error("❌ 发生未知错误，请稍后重试或联系管理员。")
+        return None
+
+
 def api_delete(path: str) -> dict | None:
     try:
         r = _http_session.delete(f"{API_BASE}{path}", headers=_auth_headers(), timeout=30)
@@ -583,13 +615,30 @@ def create_eval_experiment(
 
 
 def run_eval_experiment(
-    session_id: str, experiment_id: str, dry_run_only: bool = True
+    session_id: str,
+    experiment_id: str,
+    dry_run_only: bool = True,
+    background: bool | None = None,
+    idempotency_key: str = "",
+    timeout_seconds: int | None = None,
 ) -> dict | None:
+    body: dict = {
+        "dry_run_only": dry_run_only,
+        "background": background,
+        "idempotency_key": idempotency_key,
+    }
+    if timeout_seconds is not None:
+        body["timeout_seconds"] = timeout_seconds
     result = api_post(
         f"/sessions/{session_id}/eval-experiments/{experiment_id}/run",
-        {"dry_run_only": dry_run_only},
+        body,
     )
     return apply_stage_operation_result(result)
+
+
+def get_eval_experiment_status(session_id: str, experiment_id: str) -> dict:
+    result = api_get(f"/sessions/{session_id}/eval-experiments/{experiment_id}/status")
+    return result if isinstance(result, dict) else {}
 
 
 def create_report_artifact(session_id: str) -> dict | None:
@@ -668,6 +717,62 @@ def request_release_approval(session_id: str, decision: str, note: str = "") -> 
     result = api_post(
         f"/sessions/{session_id}/approvals/release",
         {"decision": decision, "note": note},
+    )
+    return result if isinstance(result, dict) else None
+
+
+def set_target_deployment(session_id: str, endpoint: str, version: str) -> dict | None:
+    result = api_put(
+        f"/sessions/{session_id}/target-deployment",
+        {"endpoint": endpoint, "version": version},
+    )
+    if result is not None:
+        invalidate_session_cache(session_id)
+    return result if isinstance(result, dict) else None
+
+
+def list_human_calibrations(session_id: str, eval_run_id: str | None = None) -> list[dict]:
+    path = f"/sessions/{session_id}/human-calibrations"
+    if eval_run_id:
+        path += f"?eval_run_id={eval_run_id}"
+    result = api_get(path)
+    return result if isinstance(result, list) else []
+
+
+def calibrate_eval_run(
+    session_id: str,
+    run_id: str,
+    human_label: str,
+    human_comment: str = "",
+    disagreement_reason: str = "",
+) -> dict | None:
+    result = api_post(
+        f"/sessions/{session_id}/eval-runs/{run_id}/calibrate",
+        {
+            "human_label": human_label,
+            "human_comment": human_comment,
+            "disagreement_reason": disagreement_reason,
+        },
+    )
+    if result is not None:
+        invalidate_session_cache(session_id)
+    return result if isinstance(result, dict) else None
+
+
+def create_invitation(email: str, role: str = "viewer") -> dict | None:
+    result = api_post("/auth/invitations", {"email": email, "role": role})
+    return result if isinstance(result, dict) else None
+
+
+def list_invitations() -> list[dict]:
+    result = api_get("/auth/invitations")
+    return result if isinstance(result, list) else []
+
+
+def accept_invitation(token: str, password: str) -> dict | None:
+    result = api_post(
+        "/auth/invitations/accept",
+        {"token": token, "password": password},
     )
     return result if isinstance(result, dict) else None
 

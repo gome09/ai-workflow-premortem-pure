@@ -11,11 +11,13 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SECRETS_DIR="$ROOT_DIR/secrets"
 ENV_FILE="$ROOT_DIR/.env"
 mkdir -p "$SECRETS_DIR"
+chmod 700 "$SECRETS_DIR"
 
 gen() {
   local name="$1"
   local path="$SECRETS_DIR/$name"
   if [ -f "$path" ] && ! grep -q '^CHANGE_ME' "$path"; then
+    chmod 600 "$path"
     echo "[keep] $name already set"
   else
     # tr -d '\r\n'：Windows (Git Bash) 下 openssl 输出 CRLF，残留 \r 会让
@@ -31,6 +33,7 @@ gen_fernet() {
   local name="$1"
   local path="$SECRETS_DIR/$name"
   if [ -f "$path" ] && ! grep -q '^CHANGE_ME' "$path"; then
+    chmod 600 "$path"
     echo "[keep] $name already set"
   else
     openssl rand -base64 32 | tr '+/' '-_' | tr -d '\r\n' > "$path"
@@ -48,6 +51,8 @@ seed_placeholder() {
     cp "$ROOT_DIR/secrets.example/$name" "$path"
     chmod 600 "$path"
     echo "[seed] $name (placeholder — fill in a real value for LLM_MODE=real)"
+  else
+    chmod 600 "$path"
   fi
 }
 
@@ -92,6 +97,11 @@ sync_env POSTGRES_PASSWORD postgres_password
 sync_env REDIS_PASSWORD redis_password
 comment_env_placeholder DEEPSEEK_API_KEY
 comment_env_placeholder TAVILY_API_KEY
+
+# .env 可能包含同步后的 JWT / PostgreSQL / Redis 密码，必须与 secrets/ 同级收紧。
+if [ -f "$ENV_FILE" ]; then
+  chmod 600 "$ENV_FILE"
+fi
 
 echo ""
 echo "Remaining manual steps (only needed when LLM_MODE=real):"

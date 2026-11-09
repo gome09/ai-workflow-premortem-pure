@@ -13,10 +13,26 @@
 from __future__ import annotations
 
 import logging
+import os
 
-from prometheus_client import Counter, Gauge, Histogram
+from prometheus_client import (
+    REGISTRY,
+    CollectorRegistry,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+    multiprocess,
+)
+from prometheus_client.metrics_core import GaugeMetricFamily
+from prometheus_client.registry import Collector
+
+from core.models import SessionState
 
 logger = logging.getLogger(__name__)
+
+_SESSION_STATES = tuple(state.value for state in SessionState)
+_RISK_LEVELS = ("low", "medium", "high", "critical", "unknown")
 
 # ─────────────────────────────────────────────────────────
 # 数据库操作耗时（Histogram，存储层打点）
@@ -44,6 +60,7 @@ premortem_sessions_total = Gauge(
     "premortem_sessions_total",
     "Total sessions by tenant and state",
     ["tenant", "state"],
+    registry=None,
 )
 
 # ─────────────────────────────────────────────────────────
@@ -68,6 +85,12 @@ premortem_pending_actions = Gauge(
     "premortem_pending_actions",
     "Pending human actions by risk level",
     ["risk_level"],
+    registry=None,
+)
+
+premortem_metrics_collect_errors_total = Counter(
+    "premortem_metrics_collect_errors_total",
+    "Governance metrics collector failures",
 )
 
 # ─────────────────────────────────────────────────────────
@@ -224,25 +247,84 @@ def record_release_gate_check(decision: str, reason_code: str) -> None:
         logger.debug("record_release_gate_check failed; non-fatal", exc_info=True)
 
 
-def refresh_gauge_metrics(tenant_name: str = "default") -> None:
-    """按需刷新 Gauge 指标（会话状态分布、待处理人工动作分布）。
+def _governance_metrics_data() -> dict:
+    from storage.session_store import session_store
 
-    2026-09-01 修复（STATE.md Blockers 登记项）：
-    - 语义修正：`premortem_pending_actions` 此前被喂了会话风险档位分布
-      （`risk_tier_distribution`），语义错配；现改为真实的 pending 动作
-      按 risk_level 计数（`governance_metrics_all_tenants`）。
-    - 数据修正：此前调用 `governance_overview(tenant_id="")` 恒返回零值
-      模板；Prometheus Gauge 是进程级全局指标且刷新点（lifespan 启动）
-      无请求上下文，现改为跨租户真实聚合。
-    失败不影响主路径。
+    return session_store.governance_metrics_all_tenants()
+
+
+class GovernanceMetricsCollector(Collector):
+    """DB-backed collector: every scrape sees shared truth, not worker memory."""
+
+    def collect(self):
+        try:
+            metrics_data = _governance_metrics_data()
+        except Exception:  # noqa: BLE001 - scrape must not fail
+            premortem_metrics_collect_errors_total.inc()
+            logger.exception("governance metrics collector failed")
+            return
+
+        state_distribution = {
+            key: float(value or 0)
+            for key, value in (metrics_data.get("state_distribution") or {}).items()
+        }
+        known_states = list(dict.fromkeys([*_SESSION_STATES, *sorted(state_distribution.keys())]))
+        sessions = GaugeMetricFamily(
+            "premortem_sessions_total",
+            "Total sessions by tenant and state",
+            labels=["tenant", "state"],
+        )
+        for state in known_states:
+            sessions.add_metric(["all", state], state_distribution.get(state, 0.0))
+        yield sessions
+
+        pending_distribution = {
+            key: float(value or 0)
+            for key, value in (metrics_data.get("pending_actions_by_risk") or {}).items()
+        }
+        known_risks = list(dict.fromkeys([*_RISK_LEVELS, *sorted(pending_distribution.keys())]))
+        pending = GaugeMetricFamily(
+            "premortem_pending_actions",
+            "Pending human actions by risk level",
+            labels=["risk_level"],
+        )
+        for risk in known_risks:
+            pending.add_metric([risk], pending_distribution.get(risk, 0.0))
+        yield pending
+
+
+def register_governance_collector(registry: CollectorRegistry = REGISTRY) -> None:
+    for collector in registry._collector_to_names:  # noqa: SLF001 - public client API
+        if isinstance(collector, GovernanceMetricsCollector):
+            return
+    registry.register(GovernanceMetricsCollector())
+
+
+def render_metrics() -> bytes:
+    """Render /metrics; multiprocess mode aggregates counters across workers."""
+    if os.getenv("PROMETHEUS_MULTIPROC_DIR"):
+        registry = CollectorRegistry()
+        multiprocess.MultiProcessCollector(registry)
+        register_governance_collector(registry)
+        return generate_latest(registry)
+    register_governance_collector(REGISTRY)
+    return generate_latest(REGISTRY)
+
+
+def refresh_gauge_metrics(tenant_name: str = "default") -> None:
+    """刷新兼容 Gauge（/metrics 实际由 GovernanceMetricsCollector 提供）。
+
+    已知标签全量写入，积压清空后归零；collector 则保证多 worker 读取同一 DB。
     """
     try:
-        from storage.session_store import session_store
-
-        metrics_data = session_store.governance_metrics_all_tenants()
-        for state, cnt in metrics_data.get("state_distribution", {}).items():
+        metrics_data = _governance_metrics_data()
+        states = {state: 0 for state in _SESSION_STATES}
+        states.update(metrics_data.get("state_distribution", {}) or {})
+        risks = {risk: 0 for risk in _RISK_LEVELS}
+        risks.update(metrics_data.get("pending_actions_by_risk", {}) or {})
+        for state, cnt in states.items():
             premortem_sessions_total.labels(tenant=tenant_name, state=state).set(cnt)
-        for risk, cnt in metrics_data.get("pending_actions_by_risk", {}).items():
+        for risk, cnt in risks.items():
             premortem_pending_actions.labels(risk_level=risk).set(cnt)
     except Exception:
         logger.debug("refresh_gauge_metrics failed; non-fatal", exc_info=True)

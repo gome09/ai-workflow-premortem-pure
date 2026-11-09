@@ -12,9 +12,11 @@ from controllers.session_controller import (
 )
 from labels import adapter_status_zh, exec_mode_zh
 from models.api_client import (
+    create_invitation,
     get_builtin_scenario,
     get_health,
     list_builtin_scenarios,
+    list_invitations,
     list_sessions,
 )
 from models.mappings import MODEL_LABELS, STAGE_PROGRESS, STATE_LABELS
@@ -50,6 +52,7 @@ def render_sidebar() -> None:
 
         if st.session_state.get("active_page", "workbench") == "workbench":
             _render_session_management()
+            _render_team_invitations()
             st.divider()
 
             if st.session_state.session_id:
@@ -125,6 +128,45 @@ def _render_session_management() -> None:
         create_blank_session()
 
     _render_session_list()
+
+
+def _render_team_invitations() -> None:
+    """Admin-only same-tenant invitation management."""
+    if st.session_state.get("user_role") != "admin":
+        return
+    with st.expander("👥 团队与邀请", expanded=False):
+        st.caption("邀请只能加入当前工作区；原始邀请码只显示一次。")
+        email = st.text_input("受邀邮箱", key="invite_email")
+        role = st.selectbox(
+            "角色",
+            ["viewer", "editor", "admin"],
+            index=1,
+            key="invite_role",
+        )
+        if st.button("创建邀请", key="create_invitation", use_container_width=True):
+            if not email.strip():
+                st.error("请输入受邀邮箱。")
+            else:
+                invitation = create_invitation(email.strip(), role)
+                if invitation:
+                    st.session_state.created_invitation_token = invitation.get("token", "")
+                    st.success("邀请已创建。")
+                    st.rerun()
+
+        token = st.session_state.pop("created_invitation_token", "")
+        if token:
+            st.warning("请立即复制邀请码；关闭后无法再次查看。")
+            st.code(token)
+
+        invitations = list_invitations()
+        if invitations:
+            for item in invitations[:10]:
+                st.caption(
+                    f"- {item.get('email')} · {item.get('role')} · "
+                    f"{item.get('status')} · 过期={item.get('expires_at')}"
+                )
+        else:
+            st.caption("暂无邀请记录。")
 
 
 _SESSION_PAGE_SIZE = 20

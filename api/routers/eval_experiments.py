@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 
 from api.schemas import (
     CompareEvalExperimentRequest,
@@ -84,22 +85,47 @@ def get_eval_experiment(
 @router.post(
     "/{session_id}/eval-experiments/{experiment_id}/run",
     dependencies=[require_roles(Role.editor, Role.admin)],
+    response_model=None,
 )
 def run_eval_experiment(
     session_id: str,
     experiment_id: str,
     body: RunEvalExperimentRequest,
     ctx: TenantContext = Depends(get_current_tenant),
-) -> dict:
+) -> dict | JSONResponse:
     try:
-        return session_service.run_eval_experiment(
+        payload = session_service.run_eval_experiment(
             session_id,
             experiment_id=experiment_id,
             dry_run_only=body.dry_run_only,
+            background=body.background,
+            idempotency_key=body.idempotency_key,
+            timeout_seconds=body.timeout_seconds,
             tenant_id=ctx.tenant_id,
         )
+        if isinstance(payload, dict) and payload.get("accepted") is True:
+            return JSONResponse(status_code=202, content=payload)
+        return payload
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        status_code = 409 if "already running" in str(e) else 400
+        raise HTTPException(status_code=status_code, detail=str(e))
+
+
+@router.get(
+    "/{session_id}/eval-experiments/{experiment_id}/status",
+    dependencies=[require_roles(Role.viewer, Role.editor, Role.admin)],
+)
+def get_eval_experiment_status(
+    session_id: str,
+    experiment_id: str,
+    ctx: TenantContext = Depends(get_current_tenant),
+) -> dict:
+    try:
+        return session_service.get_eval_experiment_status(
+            session_id, experiment_id, tenant_id=ctx.tenant_id
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.get(

@@ -115,7 +115,7 @@
 | GET | `/sessions/{session_id}/risk-treatments` | 查看风险处置记录、要求项与覆盖摘要（viewer+） |
 | POST | `/sessions/{session_id}/risk-treatments` | 创建/更新高风险项处置（editor+） |
 | POST | `/sessions/{session_id}/risk-treatments/{treatment_id}/review` | 独立复核处置（editor+，复核人不得是最后更新人） |
-| GET | `/sessions/{session_id}/approval-status` | 查看报告生成/评估完成/上线批准三段状态、release readiness、必测集合与 release batch |
+| GET | `/sessions/{session_id}/approval-status` | 查看报告生成/评估完成/上线批准三段状态、release readiness、当前目标部署声明、必测集合与 release batch |
 | GET | `/sessions/{session_id}/approvals` | 查看 append-only 上线批准历史（含 `effective_status`：approved / stale / invalidated / rejected） |
 | POST | `/sessions/{session_id}/approvals/release` | 申请上线批准（仅 admin 且非创建者；前置条件不满足返回 409 blockers） |
 
@@ -127,11 +127,12 @@
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/release-gate/{session_id}` | 部署前只读门禁检查；只接受 `Authorization: Bearer pmgate_...` 服务凭证（scope `release_gate:read`），人类 JWT 不通过 |
+| GET | `/release-gate/{session_id}` | 部署前只读门禁检查；只接受 `Authorization: Bearer pmgate_...` 服务凭证（scope `release_gate:read`），人类 JWT 不通过。可选 Query：`target_version`（本次待发布版本）、`artifact_digest`（本次待发布证据摘要，等于当前 `evidence_digest`） |
 
 契约：
 
 - `decision=allow` 当且仅当当前 `ProjectApproval.effective_status=approved`、`release_readiness.can_approve=true`，且 `evaluation_version_digest` / `evidence_digest` 均为当前计算值。
+- 若请求传入 `target_version`，它必须等于批准时绑定的目标部署版本；否则返回 `decision=block` + `reason_code=release_target_version_mismatch`。若传入 `artifact_digest`，它必须等于当前 `evidence_digest`；否则返回 `release_artifact_digest_mismatch`。生产流水线应至少传入 `target_version`。
 - 其他情况返回 HTTP 200 + `decision=block`，`reason_code` 为 `approval_not_requested` / `approval_rejected` / `approval_stale` / `approval_invalidated` / `not_applicable` / `prerequisites_not_met` 之一；`blockers` 携带固定 code / severity / source / required_resolution。
 - HTTP 401 = 凭证缺失、格式错误、已撤销、已过期或不存在；403 = scope 不允许；404 = 会话不存在或跨租户；503 = 门禁计算或审计写入不可用（`decision=block` + `gate_unavailable`）。
 - **只有 HTTP 200 且 `decision=allow` 才允许部署**；其他任何响应都必须由 CI 视为阻断。
@@ -179,7 +180,8 @@
 | GET | `/sessions/{session_id}/eval-experiments` | 列出实验 |
 | POST | `/sessions/{session_id}/eval-experiments` | 创建实验 |
 | GET | `/sessions/{session_id}/eval-experiments/{experiment_id}` | 查看单个实验 |
-| POST | `/sessions/{session_id}/eval-experiments/{experiment_id}/run` | 运行实验 |
+| POST | `/sessions/{session_id}/eval-experiments/{experiment_id}/run` | 运行实验；`background=true` 或 target_http 真实执行时返回 202 + `status=running`，支持 `idempotency_key` / `timeout_seconds` |
+| GET | `/sessions/{session_id}/eval-experiments/{experiment_id}/status` | 查看后台执行状态、完成/失败用例数、心跳、错误码与是否可恢复 |
 | GET | `/sessions/{session_id}/eval-experiments/{experiment_id}/metrics` | 查看实验指标 |
 | GET | `/sessions/{session_id}/eval-experiments/{experiment_id}/comparison` | 查看实验对比摘要 |
 | POST | `/sessions/{session_id}/eval-experiments/{experiment_id}/comparison` | 生成实验对比 |

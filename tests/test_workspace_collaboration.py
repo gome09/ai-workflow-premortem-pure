@@ -55,6 +55,7 @@ def api_client_and_store(tmp_path):
         patch("core.session_service.session_store", store),
         patch("core.session_service.context_cache", cache),
         patch("auth.service.session_store", store),
+        patch("auth.service_tokens.session_store", store),
     ):
         from api.main import app
 
@@ -418,3 +419,123 @@ def test_case_standard_materials_and_target_version_api(api_client_and_store, mo
     assert new_run["pass_criteria"] == ["citation present", "no invented clause"]
     assert new_run["target_deployment_version"] == "v2"
     assert new_run["case_version_digest"]
+
+
+def test_two_user_workbench_release_flow(api_client_and_store):
+    """两名用户通过工作台 API 完成邀请 → 测试校准 → 独立审批 → 门禁 → 材料重评。"""
+    client, store, cache = api_client_and_store
+
+    author = client.post(
+        "/auth/register",
+        json={
+            "email": "workbench-author@example.com",
+            "password": "author-pass",
+            "workspace_name": "Workbench Team",
+        },
+    )
+    assert author.status_code == 200
+    author_body = author.json()
+    author_headers = _headers(author_body["access_token"])
+
+    invitation = client.post(
+        "/auth/invitations",
+        json={"email": "workbench-reviewer@example.com", "role": "admin"},
+        headers=author_headers,
+    )
+    assert invitation.status_code == 200
+    reviewer = client.post(
+        "/auth/invitations/accept",
+        json={"token": invitation.json()["token"], "password": "reviewer-pass"},
+    )
+    assert reviewer.status_code == 200
+    reviewer_body = reviewer.json()
+    reviewer_headers = _headers(reviewer_body["access_token"])
+    assert reviewer_body["tenant_id"] == author_body["tenant_id"]
+
+    created = client.post("/sessions/", json={}, headers=author_headers)
+    assert created.status_code == 200
+    session_id = created.json()["session_id"]
+
+    deployment = client.put(
+        f"/sessions/{session_id}/target-deployment",
+        json={"endpoint": _TARGET_ENDPOINT, "version": _TARGET_VERSION},
+        headers=author_headers,
+    )
+    assert deployment.status_code == 200
+
+    _ctx, run = _complete_context(
+        store,
+        cache,
+        session_id=session_id,
+        tenant_id=author_body["tenant_id"],
+        author_id=author_body["user_id"],
+        reviewer_id=reviewer_body["user_id"],
+    )
+
+    service_token = client.post(
+        "/auth/service-tokens",
+        json={"name": "workbench-ci", "expires_in_days": 1},
+        headers=author_headers,
+    )
+    assert service_token.status_code == 200
+    gate_headers = {"Authorization": f"Bearer {service_token.json()['token']}"}
+
+    self_approval = client.post(
+        f"/sessions/{session_id}/approvals/release",
+        json={"decision": "approve", "note": "self"},
+        headers=author_headers,
+    )
+    assert self_approval.status_code == 403
+
+    calibration = client.post(
+        f"/sessions/{session_id}/eval-runs/{run.run_id}/calibrate",
+        json={
+            "human_label": "passed",
+            "human_comment": "人工核对实际输出，包含 pass_criteria 要求的 citation。",
+        },
+        headers=reviewer_headers,
+    )
+    assert calibration.status_code == 200
+    assert calibration.json()["reviewer_id"] == reviewer_body["user_id"]
+
+    approved = client.post(
+        f"/sessions/{session_id}/approvals/release",
+        json={"decision": "approve", "note": "independent workbench approval"},
+        headers=reviewer_headers,
+    )
+    assert approved.status_code == 200
+    assert approved.json()["approval_summary"]["is_release_approved"] is True
+
+    gate_allow = client.get(
+        f"/release-gate/{session_id}?target_version={_TARGET_VERSION}",
+        headers=gate_headers,
+    )
+    assert gate_allow.status_code == 200
+    assert gate_allow.json()["decision"] == "allow"
+
+    gate_block = client.get(
+        f"/release-gate/{session_id}?target_version=2099.01.01",
+        headers=gate_headers,
+    )
+    assert gate_block.status_code == 200
+    assert gate_block.json()["decision"] == "block"
+    assert gate_block.json()["reason_code"] == "release_target_version_mismatch"
+
+    materials = client.post(
+        f"/sessions/{session_id}/materials",
+        json={"materials": ["新增需求材料：需要支持多轮追问"]},
+        headers=author_headers,
+    )
+    assert materials.status_code == 200
+    assert materials.json()["stage_advancement_decision"]["current_state"] == "s1_running"
+
+    status = client.get(f"/sessions/{session_id}/approval-status", headers=author_headers)
+    assert status.status_code == 200
+    assert status.json()["approval_summary"]["is_release_approved"] is False
+
+    reapproval = client.post(
+        f"/sessions/{session_id}/approvals/release",
+        json={"decision": "approve", "note": "too early"},
+        headers=reviewer_headers,
+    )
+    assert reapproval.status_code == 409

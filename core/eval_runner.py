@@ -136,11 +136,23 @@ def run_eval_case(
     experiment_id: str | None = None,
     run_index: int | None = None,
     target_config: TargetSystemConfig | None = None,
+    idempotency_key: str = "",
 ) -> EvalRun:
     if run_mode not in VALID_RUN_MODES:
         raise ValueError(f"Unsupported eval run_mode: {run_mode}")
     if run_mode == "target_http" and target_config is None:
         raise ValueError("target_config is required for target_http eval runs")
+
+    # 幂等重入：同一批次/同一次外部调用已完成并保存时直接返回原运行，
+    # 不重复请求模型或真实目标。
+    if idempotency_key:
+        for existing in ctx.eval_runs:
+            if (
+                existing.idempotency_key == idempotency_key
+                and existing.eval_id == eval_id
+                and existing.status != "running"
+            ):
+                return existing
 
     target_endpoint = ""
     if target_config is not None:
@@ -175,6 +187,7 @@ def run_eval_case(
         stage_output_version=current_stage_output_version(ctx, 3),
         run_mode=run_mode,  # type: ignore[arg-type]
         execution_kind=_execution_kind(run_mode),  # type: ignore[arg-type]
+        idempotency_key=idempotency_key,
         evaluation_version_digest=current_evaluation_digest(ctx),
         target_endpoint=target_endpoint,
         target_deployment_version=target_deployment_version,
@@ -195,6 +208,7 @@ def run_eval_case(
             "eval_id": case.eval_id,
             "run_mode": run_mode,
             "execution_kind": run.execution_kind,
+            "idempotency_key": run.idempotency_key,
             "evaluation_version_digest": run.evaluation_version_digest,
             "case_version_digest": run.case_version_digest,
             "target_endpoint": run.target_endpoint,
@@ -260,8 +274,20 @@ def run_eval_case(
             run.execution_outcome = target_response.outcome
             run.latency_ms = target_response.latency_ms
             run.target_endpoint = target_response.endpoint or target_endpoint
-            if target_response.outcome == "success":
+            run.truncated = bool(target_response.truncated)
+            if target_response.outcome == "success" and not run.truncated:
                 run.actual_output = target_response.output
+            elif target_response.outcome == "success":
+                # 截断响应不是完整通过证据：保留截断文本用于审计，但按执行失败处理，
+                # 不能进入 judged/passed 路径，也不能被人工校准为 passed。
+                run.actual_output = target_response.output
+                run.execution_outcome = "error"
+                run.error_message = (
+                    "response_truncated: target output exceeded the configured response limit; "
+                    "incomplete evidence cannot be used for release"
+                )
+                run.status = "failed"
+                run.completed_at = datetime.utcnow()
             else:
                 run.actual_output = ""
                 run.error_message = (
@@ -282,6 +308,7 @@ def run_eval_case(
                     "status_code": target_response.status_code,
                     "latency_ms": target_response.latency_ms,
                     "error_code": target_response.error_code,
+                    "truncated": run.truncated,
                     "endpoint": target_response.endpoint or target_endpoint,
                 },
             )
@@ -352,6 +379,7 @@ def run_eval_case(
             "run_mode": run_mode,
             "execution_kind": run.execution_kind,
             "execution_outcome": run.execution_outcome,
+            "truncated": run.truncated,
             "evaluation_version_digest": run.evaluation_version_digest,
             "case_version_digest": run.case_version_digest,
             "target_endpoint": run.target_endpoint,
@@ -376,6 +404,7 @@ def run_eval_cases(
     dataset_id: str | None = None,
     experiment_id: str | None = None,
     target_config: TargetSystemConfig | None = None,
+    idempotency_key: str = "",
 ) -> list[EvalRun]:
     selected = list(eval_ids) if eval_ids else [case.eval_id for case in ctx.eval_cases]
     if not selected:
@@ -389,6 +418,7 @@ def run_eval_cases(
             experiment_id=experiment_id,
             run_index=index,
             target_config=target_config,
+            idempotency_key=(f"{idempotency_key}:{eval_id}" if idempotency_key else ""),
         )
         for index, eval_id in enumerate(selected)
     ]

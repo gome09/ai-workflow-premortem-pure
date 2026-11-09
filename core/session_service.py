@@ -417,11 +417,30 @@ class SessionService:
         )
 
     def run_eval_experiment(
-        self, session_id: str, *, experiment_id: str, dry_run_only: bool = True, tenant_id: str = ""
+        self,
+        session_id: str,
+        *,
+        experiment_id: str,
+        dry_run_only: bool = True,
+        background: bool | None = None,
+        idempotency_key: str = "",
+        timeout_seconds: int | None = None,
+        tenant_id: str = "",
     ) -> dict:
         return self._evaluation.run_eval_experiment(
-            session_id, experiment_id=experiment_id, dry_run_only=dry_run_only, tenant_id=tenant_id
+            session_id,
+            experiment_id=experiment_id,
+            dry_run_only=dry_run_only,
+            background=background,
+            idempotency_key=idempotency_key,
+            timeout_seconds=timeout_seconds,
+            tenant_id=tenant_id,
         )
+
+    def get_eval_experiment_status(
+        self, session_id: str, experiment_id: str, tenant_id: str = ""
+    ) -> dict:
+        return self._evaluation.get_eval_experiment_status(session_id, experiment_id, tenant_id)
 
     def get_eval_experiment_metrics(
         self, session_id: str, experiment_id: str, tenant_id: str = ""
@@ -771,11 +790,15 @@ class SessionService:
         *,
         token_id: str = "",
         tenant_id: str = "",
+        requested_target_version: str = "",
+        requested_artifact_digest: str = "",
     ) -> dict:
         return self._governance.get_release_gate_decision(
             session_id,
             token_id=token_id,
             tenant_id=tenant_id,
+            requested_target_version=requested_target_version,
+            requested_artifact_digest=requested_artifact_digest,
         )
 
     def list_project_approvals(self, session_id: str, tenant_id: str = "") -> list[dict]:

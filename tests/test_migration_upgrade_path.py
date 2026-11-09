@@ -160,6 +160,45 @@ def test_v008_to_head_adds_projection_and_digest_columns(migrated_database):
     assert _table_exists("release_gate_checks")
 
 
+def test_downgrade_preserves_business_row_and_reload(migrated_database):
+    config = migrated_database
+    head = _head()
+    command.upgrade(config, head)
+
+    from core.models import ProjectContext
+    from storage.backends.postgres import PostgresSessionStore
+
+    store = PostgresSessionStore()
+    ctx = ProjectContext(
+        tenant_id="migration-tenant",
+        research_target="migration restore target",
+        goal="migration restore goal",
+    )
+    store.save(ctx)
+
+    command.downgrade(config, "V008")
+    with psycopg.connect(_DATABASE_URL) as conn:
+        row = conn.execute(
+            "SELECT session_id, context_json FROM sessions WHERE session_id=%s",
+            (ctx.session_id,),
+        ).fetchone()
+    assert row is not None
+    assert row[0] == ctx.session_id
+    assert row[1] and "migration restore target" in row[1]
+
+    command.upgrade(config, head)
+    restored_store = PostgresSessionStore()
+    restored = restored_store.load(ctx.session_id, "migration-tenant")
+    assert restored is not None
+    assert restored.research_target == "migration restore target"
+    restored.session_name = "after-restore"
+    restored_store.save(restored)
+
+    final = restored_store.load(ctx.session_id, "migration-tenant")
+    assert final is not None
+    assert final.session_name == "after-restore"
+
+
 def test_downgrade_to_v008_then_reupgrade_restores_head(migrated_database):
     config = migrated_database
     head = _head()

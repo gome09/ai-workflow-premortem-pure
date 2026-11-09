@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import requests
 import streamlit as st
+from models.api_client import accept_invitation
 from models.auth import _login_demo_user, _register_demo_user, _role_from_token
 from models.config import API_BASE, DEMO_AUTO_AUTH
 
@@ -52,6 +53,21 @@ def ensure_auth() -> None:
                     except ValueError:
                         detail = "认证失败"
                 st.error(detail)
+
+        with st.expander("使用邀请码加入工作区", expanded=False):
+            invite_token = st.text_input("邀请码", key="invitation_token_input")
+            invite_password = st.text_input(
+                "设置密码",
+                type="password",
+                key="invitation_password_input",
+            )
+            if st.button("接受邀请并登录", key="accept_invitation_button"):
+                if not invite_token.strip() or not invite_password:
+                    st.error("邀请码与密码均为必填。")
+                else:
+                    invitation_result = accept_invitation(invite_token.strip(), invite_password)
+                    if invitation_result and invitation_result.get("access_token"):
+                        tokens = invitation_result
     if tokens and tokens.get("access_token"):
         st.session_state.access_token = tokens["access_token"]
         st.session_state.refresh_token = tokens.get("refresh_token")

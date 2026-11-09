@@ -12,6 +12,7 @@ from core.evaluation_version import (
 )
 from core.models import (
     EvalCase,
+    EvalExperiment,
     EvalRun,
     FailureMode,
     LLMTrace,
@@ -220,6 +221,17 @@ def test_current_digest_eval_run_is_counted():
         human_comment="人工核对输出满足 pass_criteria。",
         reviewer_id="reviewer-b",
         actor_role="editor",
+    )
+    ctx.eval_experiments.append(
+        EvalExperiment(
+            session_id=ctx.session_id,
+            dataset_id="ds-test",
+            name="release batch",
+            status="completed",
+            run_mode="target_http",
+            eval_ids=[case.eval_id],
+            run_ids=[run.run_id],
+        )
     )
 
     readiness = build_release_readiness(ctx)

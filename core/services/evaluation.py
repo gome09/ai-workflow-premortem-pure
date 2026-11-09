@@ -3,6 +3,10 @@
 
 from __future__ import annotations
 
+import logging
+from datetime import datetime
+
+from core.config import settings
 from core.eval_dataset_service import (
     add_cases_to_dataset,
     create_dataset,
@@ -12,7 +16,13 @@ from core.eval_dataset_service import (
     remove_cases_from_dataset,
     set_dataset_baseline,
 )
+from core.eval_execution import (
+    in_flight_request_key,
+    is_eval_experiment_running,
+    submit_eval_experiment,
+)
 from core.eval_experiment_service import (
+    EvalExperimentTimeoutError,
     compare_experiment_with_baseline,
     create_experiment,
     get_experiment,
@@ -67,6 +77,9 @@ from core.trace_backfill_service import (
     convert_trace_to_eval_case,
     create_dataset_from_failed_traces,
 )
+from storage.errors import StaleContextError
+
+logger = logging.getLogger(__name__)
 
 
 class EvaluationService(SessionAccess):
@@ -472,18 +485,234 @@ class EvaluationService(SessionAccess):
             },
         )
 
+    def _save_eval_progress(self, ctx) -> None:
+        self._store().save(ctx)
+        self._cache_set(ctx)
+
+    def _reconcile_stale_experiment(self, ctx, experiment) -> bool:
+        """Mark a running experiment interrupted when its heartbeat is stale."""
+        if experiment.status != "running":
+            return False
+        if is_eval_experiment_running(f"{ctx.session_id}:{experiment.experiment_id}"):
+            # This process still owns the job; a long single case must not be
+            # mistaken for a crashed worker by a concurrent status query.
+            return False
+        heartbeat = experiment.last_heartbeat_at or experiment.started_at
+        if heartbeat is None:
+            return False
+        if (datetime.utcnow() - heartbeat).total_seconds() < int(
+            settings.eval_experiment_heartbeat_stale_seconds
+        ):
+            return False
+        experiment.status = "interrupted"
+        experiment.last_error_code = "heartbeat_stale"
+        experiment.completed_at = datetime.utcnow()
+        self._save_eval_progress(ctx)
+        return True
+
+    def get_eval_experiment_status(
+        self, session_id: str, experiment_id: str, tenant_id: str = ""
+    ) -> dict:
+        ctx = self.get_session(session_id, tenant_id)
+        if not ctx:
+            raise ValueError(f"Session not found: {session_id}")
+        experiment = get_experiment(ctx, experiment_id)
+        reconciled = self._reconcile_stale_experiment(ctx, experiment)
+        runs = [
+            run
+            for run in ctx.eval_runs
+            if run.experiment_id == experiment.experiment_id
+            and run.run_id in set(experiment.run_ids or [])
+        ]
+        completed = [run for run in runs if run.status == "completed"]
+        failed = [run for run in runs if run.status == "failed"]
+        total = len(experiment.eval_ids)
+        resumable = experiment.status in {"failed", "interrupted", "cancelled"} and (
+            len(completed) + len(failed) < total
+        )
+        return {
+            "experiment_id": experiment.experiment_id,
+            "session_id": session_id,
+            "status": experiment.status,
+            "run_mode": experiment.run_mode,
+            "total_cases": total,
+            "completed_cases": len(completed),
+            "failed_cases": len(failed),
+            "run_ids": list(experiment.run_ids),
+            "started_at": experiment.started_at.isoformat() if experiment.started_at else "",
+            "completed_at": experiment.completed_at.isoformat() if experiment.completed_at else "",
+            "last_heartbeat_at": experiment.last_heartbeat_at.isoformat()
+            if experiment.last_heartbeat_at
+            else "",
+            "last_error_code": experiment.last_error_code,
+            "execution_attempt": experiment.execution_attempt,
+            "run_request_key": experiment.run_request_key,
+            "resumable": resumable,
+            "reconciled_stale_heartbeat": reconciled,
+        }
+
+    def _execute_eval_experiment_job(
+        self,
+        session_id: str,
+        tenant_id: str,
+        experiment_id: str,
+        *,
+        dry_run_only: bool,
+        request_key: str,
+        timeout_seconds: int | None,
+    ) -> None:
+        """Background job body: per-item persistence + failure classification."""
+        ctx = self.get_session(session_id, tenant_id)
+        if not ctx:
+            logger.warning(
+                "eval_experiment_background_session_missing",
+                extra={
+                    "event": "eval_experiment_background_session_missing",
+                    "session_id": session_id,
+                    "experiment_id": experiment_id,
+                },
+            )
+            return
+        try:
+            run_experiment(
+                ctx,
+                experiment_id=experiment_id,
+                dry_run_only=dry_run_only,
+                request_key=request_key,
+                timeout_seconds=timeout_seconds,
+                progress_callback=lambda: self._save_eval_progress(ctx),
+            )
+            self._save_eval_progress(ctx)
+            self._log_event(
+                ctx,
+                session_id=session_id,
+                event_type="eval_experiment_run",
+                stage=3,
+                payload={"experiment_id": experiment_id, "background": True},
+            )
+        except StaleContextError:
+            logger.warning(
+                "eval_experiment_background_stale",
+                extra={
+                    "event": "eval_experiment_background_stale",
+                    "session_id": session_id,
+                    "experiment_id": experiment_id,
+                },
+            )
+            try:
+                fresh = self.get_session(session_id, tenant_id)
+                if fresh is not None:
+                    experiment = get_experiment(fresh, experiment_id)
+                    experiment.status = "interrupted"
+                    experiment.last_error_code = "stale_context"
+                    experiment.completed_at = datetime.utcnow()
+                    self._save_eval_progress(fresh)
+            except Exception:  # noqa: BLE001 - best effort state repair
+                logger.exception(
+                    "eval_experiment_background_stale_persist_failed",
+                    extra={"session_id": session_id, "experiment_id": experiment_id},
+                )
+        except EvalExperimentTimeoutError:
+            logger.warning(
+                "eval_experiment_timeout",
+                extra={
+                    "event": "eval_experiment_timeout",
+                    "session_id": session_id,
+                    "experiment_id": experiment_id,
+                },
+            )
+        except Exception:  # noqa: BLE001 - background failures are reflected in status
+            logger.exception(
+                "eval_experiment_background_failed",
+                extra={"session_id": session_id, "experiment_id": experiment_id},
+            )
+
     def run_eval_experiment(
         self,
         session_id: str,
         *,
         experiment_id: str,
         dry_run_only: bool = True,
+        background: bool | None = None,
+        idempotency_key: str = "",
+        timeout_seconds: int | None = None,
         tenant_id: str = "",
     ) -> dict:
         ctx = self.get_session(session_id, tenant_id)
         if not ctx:
             raise ValueError(f"Session not found: {session_id}")
-        experiment = run_experiment(ctx, experiment_id=experiment_id, dry_run_only=dry_run_only)
+        experiment = get_experiment(ctx, experiment_id)
+        self._reconcile_stale_experiment(ctx, experiment)
+        if background is None:
+            background = experiment.run_mode == "target_http" and not dry_run_only
+
+        if background:
+            if experiment.status == "running":
+                raise ValueError("EvalExperiment is already running")
+            if experiment.status == "completed":
+                if not idempotency_key or experiment.run_request_key == idempotency_key:
+                    status = self.get_eval_experiment_status(session_id, experiment_id, tenant_id)
+                    return self._with_stage_advancement(
+                        ctx,
+                        operation="eval_experiment_run",
+                        result={
+                            "accepted": False,
+                            "experiment_id": experiment_id,
+                            "status_payload": status,
+                        },
+                        source="eval_experiment_run",
+                        stage=3,
+                        reason="eval_experiment_already_completed",
+                        metadata={"experiment_id": experiment_id, "background": True},
+                    )
+                raise ValueError("EvalExperiment is already completed; create a new experiment.")
+            if (
+                idempotency_key
+                and experiment.run_request_key
+                and experiment.run_request_key != idempotency_key
+            ):
+                raise ValueError("EvalExperiment request key does not match the persisted run")
+            exec_key = f"{session_id}:{experiment_id}"
+            inflight_key = in_flight_request_key(exec_key)
+            if inflight_key is not None and not (
+                not idempotency_key or idempotency_key == inflight_key
+            ):
+                # 另一个请求键已在执行（含 worker 尚未把状态写回的窗口）→ 明确冲突。
+                raise ValueError("EvalExperiment is already running")
+            submit_eval_experiment(
+                exec_key,
+                lambda: self._execute_eval_experiment_job(
+                    session_id,
+                    tenant_id,
+                    experiment_id,
+                    dry_run_only=dry_run_only,
+                    request_key=idempotency_key,
+                    timeout_seconds=timeout_seconds,
+                ),
+                request_key=idempotency_key,
+            )
+            return self._with_stage_advancement(
+                ctx,
+                operation="eval_experiment_queued",
+                result={
+                    "accepted": True,
+                    "experiment_id": experiment_id,
+                    "experiment_status": experiment.status,
+                },
+                source="eval_experiment_run",
+                stage=3,
+                reason="eval_experiment_queued",
+                metadata={"experiment_id": experiment_id, "background": True},
+            )
+
+        experiment = run_experiment(
+            ctx,
+            experiment_id=experiment_id,
+            dry_run_only=dry_run_only,
+            request_key=idempotency_key,
+            timeout_seconds=timeout_seconds,
+            progress_callback=lambda: self._save_eval_progress(ctx),
+        )
         self._store().save(ctx)
         self._cache_set(ctx)
         self._log_event(

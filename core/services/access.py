@@ -212,6 +212,9 @@ class SessionAccess:
             update={
                 "llm_traces": lightweight_traces,
                 "audit_events": lightweight_audit,
+                # model_copy 是浅复制，必须替换可变列表，否则报告生成向 report_ctx
+                # 追加 artifact 会同时改写原 ctx，导致服务层再次追加时出现重复 ID。
+                "report_artifacts": list(ctx.report_artifacts),
             }
         )
 

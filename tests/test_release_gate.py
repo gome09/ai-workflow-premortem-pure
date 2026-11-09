@@ -603,3 +603,91 @@ def test_gate_bypasses_context_cache(gate_env) -> None:
     body = response.json()
     assert body["decision"] == "block"
     assert body["reason_code"] == "approval_invalidated"
+
+
+def test_gate_rejects_different_release_target_version() -> None:
+    ctx = _approvable_context(tenant_id="tenant-a")
+    _approve(ctx)
+
+    blocked = evaluate_release_gate(ctx, requested_target_version="2026.11.2")
+    assert blocked.decision == "block"
+    assert blocked.reason_code == "release_target_version_mismatch"
+    assert blocked.approved_target_version == _TARGET_VERSION
+    assert blocked.requested_target_version == "2026.11.2"
+
+    allowed = evaluate_release_gate(ctx, requested_target_version=_TARGET_VERSION)
+    assert allowed.decision == "allow"
+
+
+def test_gate_rejects_artifact_digest_mismatch() -> None:
+    ctx = _approvable_context(tenant_id="tenant-a")
+    _approve(ctx)
+
+    decision = evaluate_release_gate(ctx, requested_artifact_digest="not-the-approved-digest")
+    assert decision.decision == "block"
+    assert decision.reason_code == "release_artifact_digest_mismatch"
+
+    matching = evaluate_release_gate(ctx, requested_artifact_digest=decision.evidence_digest)
+    assert matching.decision == "allow"
+
+
+def test_newer_failed_batch_blocks_after_approval() -> None:
+    ctx = _approvable_context(tenant_id="tenant-a")
+    _approve(ctx)
+    case = ctx.eval_cases[0]
+    failed_run = EvalRun(
+        session_id=ctx.session_id,
+        eval_id=case.eval_id,
+        target_node_id="N-1",
+        run_mode="target_http",
+        execution_kind="real_target_execution",
+        execution_outcome="failed",
+        evaluation_version_digest=current_evaluation_digest(ctx),
+        target_endpoint=ctx.target_deployment.endpoint,
+        target_deployment_version=ctx.target_deployment.version,
+        case_version_digest=eval_case_digest(case),
+        input_payload=case.input_payload,
+        expected_behavior=case.expected_behavior,
+        pass_criteria=list(case.pass_criteria),
+        judge_result="failed",
+        status="completed",
+    )
+    ctx.eval_runs.append(failed_run)
+    ctx.eval_experiments.append(
+        EvalExperiment(
+            session_id=ctx.session_id,
+            dataset_id="ds-test",
+            name="newer failed batch",
+            status="completed",
+            run_mode="target_http",
+            eval_ids=[case.eval_id],
+            run_ids=[failed_run.run_id],
+            completed_at=datetime.utcnow() + timedelta(seconds=1),
+        )
+    )
+
+    decision = evaluate_release_gate(ctx)
+    assert decision.decision == "block"
+    assert decision.approval_status == "invalidated"
+
+
+def test_api_gate_rejects_different_target_version(gate_env) -> None:
+    client, store, _cache, _db_path = gate_env
+    tenant_id = _tenant(store, "gate-version-workspace")
+    ctx = _save_approved_session(store, tenant_id)
+    created = _create_token(client, tenant_id)
+
+    blocked = client.get(
+        f"/release-gate/{ctx.session_id}?target_version=2099.01.01",
+        headers=_service_headers(created["token"]),
+    )
+    assert blocked.status_code == 200
+    assert blocked.json()["decision"] == "block"
+    assert blocked.json()["reason_code"] == "release_target_version_mismatch"
+
+    allowed = client.get(
+        f"/release-gate/{ctx.session_id}?target_version={_TARGET_VERSION}",
+        headers=_service_headers(created["token"]),
+    )
+    assert allowed.status_code == 200
+    assert allowed.json()["decision"] == "allow"

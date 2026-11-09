@@ -39,7 +39,7 @@ def _render_chat_workspace() -> None:
     with st.expander("📎 补充参考资料（可选）", expanded=False):
         st.caption(
             "粘贴文档、研究报告、使用经验等，AI 将在下一轮分析中参考这些内容。"
-            "资料添加后立即生效，无需重新发送消息。"
+            "资料添加后立即生效；材料变化会使已有阶段分析过期，并从阶段一开始重新评估。"
         )
 
         material_text = st.text_area(

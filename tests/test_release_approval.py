@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -852,3 +853,139 @@ def test_api_reports_do_not_grant_approval(api_client_and_store):
     summary = status_response.json()["approval_summary"]
     assert summary["release_approval"]["status"] == "not_requested"
     assert summary["is_release_approved"] is False
+
+
+def test_newer_failed_batch_blocks_older_approved_success():
+    """旧成功批次已批准后，新批次失败必须使批准失效并阻断。"""
+    ctx = _ctx()
+    _approve(ctx)
+    case = ctx.eval_cases[0]
+
+    failed_run = EvalRun(
+        session_id=ctx.session_id,
+        eval_id=case.eval_id,
+        target_node_id="N-1",
+        run_mode="target_http",
+        execution_kind="real_target_execution",
+        execution_outcome="failed",
+        evaluation_version_digest=current_evaluation_digest(ctx),
+        target_endpoint=ctx.target_deployment.endpoint,
+        target_deployment_version=ctx.target_deployment.version,
+        case_version_digest=eval_case_digest(case),
+        input_payload=case.input_payload,
+        expected_behavior=case.expected_behavior,
+        pass_criteria=list(case.pass_criteria),
+        judge_result="failed",
+        status="completed",
+    )
+    ctx.eval_runs.append(failed_run)
+    ctx.eval_experiments.append(
+        EvalExperiment(
+            session_id=ctx.session_id,
+            dataset_id="ds-test",
+            name="new failed batch",
+            status="completed",
+            run_mode="target_http",
+            eval_ids=[case.eval_id],
+            run_ids=[failed_run.run_id],
+            completed_at=datetime.utcnow() + timedelta(seconds=1),
+        )
+    )
+
+    readiness = build_release_readiness(ctx)
+    assert readiness.can_approve is False
+    assert any(blocker.code == "real_target_test" for blocker in readiness.blockers)
+    assert build_approval_summary(ctx)["release_approval"]["status"] == "invalidated"
+
+    with pytest.raises(ReleaseApprovalPrerequisiteError):
+        request_release_approval(
+            ctx,
+            decision="approve",
+            note="retry",
+            actor_id=_REVIEWER,
+            actor_role="admin",
+        )
+
+
+def test_truncated_target_output_cannot_be_release_evidence(monkeypatch):
+    ctx = _ctx()
+    ctx.eval_runs.clear()
+    ctx.eval_experiments.clear()
+    ctx.human_calibrations.clear()
+    case = ctx.eval_cases[0]
+
+    class FakeAdapter:
+        def __init__(self, config):
+            self.config = config
+
+        def execute(self, *args, **kwargs):
+            return TargetTestResponse(
+                outcome="success",
+                output="partial output",
+                status_code=200,
+                truncated=True,
+            )
+
+    monkeypatch.setattr(eval_runner, "HttpJsonTargetAdapter", FakeAdapter)
+
+    run = run_eval_case(
+        ctx,
+        eval_id=case.eval_id,
+        run_mode="target_http",
+        target_config=TargetSystemConfig(endpoint=ctx.target_deployment.endpoint),
+    )
+    assert run.status == "failed"
+    assert run.execution_outcome == "error"
+    assert run.truncated is True
+
+    with pytest.raises(ValueError, match="failed real-target execution"):
+        calibrate_eval_run(
+            ctx,
+            eval_run_id=run.run_id,
+            human_label="passed",
+            human_comment="truncated output should never pass",
+            reviewer_id="reviewer-b",
+            actor_role="editor",
+        )
+
+    ctx.eval_experiments.append(
+        EvalExperiment(
+            session_id=ctx.session_id,
+            dataset_id="ds-test",
+            name="truncated batch",
+            status="completed",
+            run_mode="target_http",
+            eval_ids=[case.eval_id],
+            run_ids=[run.run_id],
+        )
+    )
+    assert build_release_readiness(ctx).can_approve is False
+
+
+def test_newer_failed_run_without_new_experiment_blocks_older_approved_batch():
+    """批准后单条重跑失败也必须阻断，不能被旧批次掩盖。"""
+    ctx = _ctx()
+    _approve(ctx)
+    case = ctx.eval_cases[0]
+    failed_run = EvalRun(
+        session_id=ctx.session_id,
+        eval_id=case.eval_id,
+        target_node_id="N-1",
+        run_mode="target_http",
+        execution_kind="real_target_execution",
+        execution_outcome="failed",
+        evaluation_version_digest=current_evaluation_digest(ctx),
+        target_endpoint=ctx.target_deployment.endpoint,
+        target_deployment_version=ctx.target_deployment.version,
+        case_version_digest=eval_case_digest(case),
+        input_payload=case.input_payload,
+        expected_behavior=case.expected_behavior,
+        pass_criteria=list(case.pass_criteria),
+        judge_result="failed",
+        status="completed",
+    )
+    ctx.eval_runs.append(failed_run)
+
+    readiness = build_release_readiness(ctx)
+    assert readiness.can_approve is False
+    assert any(blocker.code == "real_target_test" for blocker in readiness.blockers)

@@ -107,6 +107,56 @@ def _downstream_has_state(ctx: ProjectContext, stage: int) -> bool:
     return has_output or has_dependencies or has_parser_error or has_actions
 
 
+def _mark_stage_stale(
+    ctx: ProjectContext,
+    *,
+    stage: int,
+    reason: str,
+    superseded_by: str | None = None,
+    extra_metadata: dict[str, Any] | None = None,
+    audit_event_type: str = "downstream_stage_marked_stale",
+    audit_metadata: dict[str, Any] | None = None,
+) -> str:
+    """Mark one stage output stale, supersede its actions, and record an audit event."""
+    key = stage_key(stage)
+    now = datetime.utcnow().isoformat()
+    metadata = {
+        "stale": True,
+        "reason": reason,
+        "created_at": now,
+        "stage_output_exists": getattr(ctx, f"stage_{stage}_output", None) is not None,
+        "dependency_versions": dict(ctx.stage_dependency_versions.get(key, {})),
+        "current_upstream_versions": {
+            stage_key(upstream): current_stage_output_version(ctx, upstream)
+            for upstream in range(1, stage)
+        },
+        "superseded_by": superseded_by,
+        **(extra_metadata or {}),
+    }
+    ctx.stage_staleness[key] = metadata
+    ctx.parser_errors.pop(key, None)
+
+    # Import lazily to avoid circular import with core.oversight_service.
+    from core.oversight_service import supersede_actions_for_stage
+
+    supersede_actions_for_stage(
+        ctx,
+        stage=stage,
+        reason=f"Stage marked stale: {reason}",
+        superseded_by=superseded_by,
+    )
+    append_audit_event(
+        ctx,
+        actor="system",
+        event_type=audit_event_type,
+        target_type="stage",
+        target_id=key,
+        after=metadata,
+        metadata={"stage_id": stage, **(audit_metadata or {})},
+    )
+    return key
+
+
 def invalidate_downstream_stages(
     ctx: ProjectContext,
     *,
@@ -125,48 +175,67 @@ def invalidate_downstream_stages(
         raise ValueError(f"changed_stage must be 1..4, got {changed_stage}")
 
     stale_keys: list[str] = []
-    now = datetime.utcnow().isoformat()
     for downstream in range(changed_stage + 1, 5):
         if not _downstream_has_state(ctx, downstream):
             continue
-
-        key = stage_key(downstream)
-        metadata = {
-            "stale": True,
-            "because_stage": changed_stage,
-            "because_stage_key": stage_key(changed_stage),
-            "reason": reason,
-            "created_at": now,
-            "stage_output_exists": getattr(ctx, f"stage_{downstream}_output", None) is not None,
-            "dependency_versions": dict(ctx.stage_dependency_versions.get(key, {})),
-            "current_upstream_versions": {
-                stage_key(upstream): current_stage_output_version(ctx, upstream)
-                for upstream in range(1, downstream)
-            },
-            "superseded_by": superseded_by,
-        }
-        ctx.stage_staleness[key] = metadata
-        ctx.parser_errors.pop(key, None)
-
-        # Import lazily to avoid circular import with core.oversight_service.
-        from core.oversight_service import supersede_actions_for_stage
-
-        supersede_actions_for_stage(
-            ctx,
-            stage=downstream,
-            reason=f"Downstream stage marked stale: {reason}",
-            superseded_by=superseded_by,
+        stale_keys.append(
+            _mark_stage_stale(
+                ctx,
+                stage=downstream,
+                reason=reason,
+                superseded_by=superseded_by,
+                extra_metadata={
+                    "because_stage": changed_stage,
+                    "because_stage_key": stage_key(changed_stage),
+                },
+                audit_metadata={
+                    "changed_stage": changed_stage,
+                    "downstream_stage": downstream,
+                },
+            )
         )
+    return stale_keys
+
+
+def invalidate_stages_for_input_change(
+    ctx: ProjectContext,
+    *,
+    reason: str,
+    superseded_by: str | None = None,
+) -> list[str]:
+    """Invalidate every existing stage analysis after a non-stage input change.
+
+    User materials and similar inputs feed Stage 1, so every existing stage
+    output becomes stale. The workflow returns to ``S1_RUNNING`` and must be
+    re-evaluated from the beginning before a new release approval can be granted.
+    """
+    stale_keys: list[str] = []
+    for stage in range(1, 5):
+        if not _downstream_has_state(ctx, stage):
+            continue
+        stale_keys.append(
+            _mark_stage_stale(
+                ctx,
+                stage=stage,
+                reason=reason,
+                superseded_by=superseded_by,
+                extra_metadata={"because_input": True},
+                audit_event_type="input_change_marked_stage_stale",
+                audit_metadata={"changed_input": "materials", "reason": reason},
+            )
+        )
+
+    if stale_keys:
+        ctx.current_state = SessionState.S1_RUNNING
         append_audit_event(
             ctx,
             actor="system",
-            event_type="downstream_stage_marked_stale",
-            target_type="stage",
-            target_id=key,
-            after=metadata,
-            metadata={"changed_stage": changed_stage, "downstream_stage": downstream},
+            event_type="input_change_invalidated_stages",
+            target_type="workflow",
+            target_id=ctx.session_id,
+            after={"current_state": ctx.current_state.value, "stale_stage_keys": stale_keys},
+            metadata={"reason": reason, "stale_stage_keys": stale_keys},
         )
-        stale_keys.append(key)
     return stale_keys
 
 

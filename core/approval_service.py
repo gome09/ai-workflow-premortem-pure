@@ -31,7 +31,6 @@ from core.models import (
 from core.release_evidence import (
     build_release_evidence,
     release_evidence_digest,
-    release_run_reasons,
 )
 from core.risk_treatment_service import (
     is_business_session,
@@ -178,20 +177,6 @@ def _evidence_blockers(ctx: ProjectContext) -> list[ReleaseBlocker]:
     return blockers
 
 
-def _valid_real_target_runs(ctx: ProjectContext, digest: str) -> list[Any]:
-    cases = {case.eval_id: case for case in ctx.eval_cases}
-    return [
-        run
-        for run in ctx.eval_runs
-        if not release_run_reasons(
-            ctx,
-            run,
-            cases.get(run.eval_id),
-            evaluation_digest=digest,
-        )
-    ]
-
-
 def _to_blocker(item: dict[str, Any]) -> ReleaseBlocker:
     severity = str(item.get("severity") or "high")
     if severity not in {"low", "medium", "high", "critical"}:
@@ -322,7 +307,9 @@ def build_release_readiness(ctx: ProjectContext) -> ReleaseReadiness:
     evidence = build_release_evidence(ctx, evaluation_digest=digest)
     blockers.extend(_to_blocker(item) for item in evidence.blockers)
     required_eval_ids = [case.eval_id for case in evidence.required_cases]
-    valid_runs = _valid_real_target_runs(ctx, digest)
+    # 只把当前被选中的发布批次运行映射为“已通过真实测试节点”；
+    # 历史成功运行不得掩盖更新批次的失败。
+    valid_runs = evidence.valid_runs
     passed_nodes = sorted(
         {run.target_node_id for run in valid_runs if run.target_node_id is not None}
     )
@@ -518,6 +505,9 @@ def request_release_approval(
     readiness = build_release_readiness(ctx)
     digest = current_evaluation_digest(ctx)
     evidence_digest = _evidence_digest_for(ctx, readiness, digest)
+    target_deployment_version = (
+        ctx.target_deployment.version if ctx.target_deployment is not None else ""
+    )
 
     if decision == "reject":
         approval = ProjectApproval(
@@ -531,6 +521,7 @@ def request_release_approval(
             decided_role=actor_role,
             decision_note=note,
             evidence_digest=evidence_digest,
+            target_deployment_version=target_deployment_version,
         )
         ctx.project_approvals.append(approval)
         append_audit_event(
@@ -586,6 +577,7 @@ def request_release_approval(
         decided_role=actor_role,
         decision_note=note,
         evidence_digest=evidence_digest,
+        target_deployment_version=target_deployment_version,
     )
     ctx.project_approvals.append(approval)
     superseded = [
@@ -667,6 +659,11 @@ def build_approval_summary(
             "decision_note": latest.decision_note if latest else "",
             "evaluation_version_digest": latest.evaluation_version_digest if latest else "",
             "evidence_digest": latest.evidence_digest if latest else "",
+            "target_deployment_version": (
+                latest.target_deployment_version
+                if latest and latest.target_deployment_version
+                else (ctx.target_deployment.version if ctx.target_deployment else "")
+            ),
             "release_batch_id": (
                 str(latest.prerequisites.get("release_batch_id") or "")
                 if latest

@@ -236,3 +236,144 @@ def test_projection_human_actions_encrypted_at_rest(store):
     assert rows is not None
     assert rows[0]["title"] == "动作标题-机密-007"
     assert rows[0]["description"] == "动作描述-机密-008"
+
+
+def test_eval_safety_redteam_and_cache_copies_are_encrypted(store):
+    """上下文、投影表与缓存副本均不得出现敏感样本文本明文。"""
+    from core.models import (
+        EvalCase,
+        EvalJudgment,
+        EvalRun,
+        HumanCalibration,
+        RedTeamCase,
+        SafetyFinding,
+    )
+    from storage.backends.memory_cache import MemoryCache
+    from storage.cache import _deserialize, _serialize
+
+    ctx = ProjectContext(tenant_id=TENANT, session_name="enc-eval")
+    ctx.data_classification = "business_internal"
+    case = EvalCase(
+        session_id=ctx.session_id,
+        stage_id=3,
+        target_node_id="N-1",
+        input_payload="样本-明文-eval-001",
+        expected_behavior="预期-明文-eval-002",
+        pass_criteria=["citation"],
+        actual_output="实际-明文-eval-003",
+        human_comment="人工-明文-eval-004",
+    )
+    ctx.eval_cases.append(case)
+    run = EvalRun(
+        session_id=ctx.session_id,
+        eval_id=case.eval_id,
+        target_node_id="N-1",
+        run_mode="target_http",
+        execution_kind="real_target_execution",
+        execution_outcome="success",
+        input_payload="运行输入-明文-005",
+        expected_behavior="运行预期-明文-006",
+        actual_output="运行输出-明文-007",
+        judge_reason="评审理由-明文-008",
+        error_message="错误-明文-009",
+        status="completed",
+    )
+    ctx.eval_runs.append(run)
+    ctx.human_calibrations.append(
+        HumanCalibration(
+            session_id=ctx.session_id,
+            eval_run_id=run.run_id,
+            human_label="passed",
+            human_comment="校准依据-明文-010",
+            disagreement_reason="分歧-明文-011",
+        )
+    )
+    ctx.eval_judgments.append(
+        EvalJudgment(
+            session_id=ctx.session_id,
+            eval_run_id=run.run_id,
+            rationale="判定理由-明文-012",
+        )
+    )
+    ctx.redteam_cases.append(
+        RedTeamCase(
+            session_id=ctx.session_id,
+            prompt="红队提示-明文-013",
+            malicious_material="恶意材料-明文-014",
+            expected_failure_mode="预期失败-明文-015",
+            expected_safe_behavior="安全行为-明文-016",
+        )
+    )
+    ctx.safety_findings.append(
+        SafetyFinding(
+            session_id=ctx.session_id,
+            risk_type="unsupported_claim",
+            severity="high",
+            location="stage_3",
+            description="安全描述-明文-017",
+            recommended_action="建议动作-明文-018",
+        )
+    )
+
+    store.save(ctx)
+    raw = _raw_context_json(store, ctx.session_id)
+    for marker in (
+        "样本-明文-eval-001",
+        "预期-明文-eval-002",
+        "实际-明文-eval-003",
+        "运行输入-明文-005",
+        "评审理由-明文-008",
+        "校准依据-明文-010",
+        "判定理由-明文-012",
+        "红队提示-明文-013",
+        "安全描述-明文-017",
+    ):
+        assert marker not in raw, marker
+
+    with store._get_conn() as conn:  # noqa: SLF001
+        case_row = conn.execute(
+            "SELECT input_payload, expected_behavior, actual_output FROM eval_cases "
+            "WHERE session_id=?",
+            (ctx.session_id,),
+        ).fetchone()
+        run_row = conn.execute(
+            "SELECT input_payload, actual_output, judge_reason FROM eval_runs WHERE session_id=?",
+            (ctx.session_id,),
+        ).fetchone()
+        finding_row = conn.execute(
+            "SELECT description, recommended_action FROM safety_findings WHERE session_id=?",
+            (ctx.session_id,),
+        ).fetchone()
+    assert case_row["input_payload"].startswith("enc:v1:")
+    assert case_row["expected_behavior"].startswith("enc:v1:")
+    assert case_row["actual_output"].startswith("enc:v1:")
+    assert run_row["input_payload"].startswith("enc:v1:")
+    assert run_row["actual_output"].startswith("enc:v1:")
+    assert run_row["judge_reason"].startswith("enc:v1:")
+    assert finding_row["description"].startswith("enc:v1:")
+    assert finding_row["recommended_action"].startswith("enc:v1:")
+
+    cases = store.list_projection("eval_cases", ctx.session_id, TENANT)
+    assert cases is not None
+    assert cases[0]["input_payload"] == "样本-明文-eval-001"
+    findings = store.list_projection("safety_findings", ctx.session_id, TENANT)
+    assert findings is not None
+    assert findings[0]["description"] == "安全描述-明文-017"
+
+    cache = MemoryCache(ttl_seconds=3600)
+    cache.set(ctx)
+    cached_raw = next(iter(cache._store.values()))[0]  # noqa: SLF001
+    assert "样本-明文-eval-001" not in cached_raw
+    assert "安全描述-明文-017" not in cached_raw
+    restored_cache = cache.get(ctx.session_id, TENANT)
+    assert restored_cache is not None
+    assert restored_cache.eval_cases[0].input_payload == "样本-明文-eval-001"
+    assert restored_cache.safety_findings[0].description == "安全描述-明文-017"
+
+    serialized = _serialize(ctx)
+    assert "样本-明文-eval-001" not in serialized
+    assert "校准依据-明文-010" not in serialized
+    restored = _deserialize(serialized)
+    assert restored is not None
+    assert restored.eval_runs[0].actual_output == "运行输出-明文-007"
+    assert restored.human_calibrations[0].human_comment == "校准依据-明文-010"

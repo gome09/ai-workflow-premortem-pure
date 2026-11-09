@@ -267,3 +267,35 @@ def test_target_http_requires_config():
     ctx, case = _ctx_with_eval_case()
     with pytest.raises(ValueError, match="target_config is required"):
         run_eval_case(ctx, eval_id=case.eval_id, run_mode="target_http")
+
+
+def test_truncated_success_output_is_recorded_as_failed(monkeypatch):
+    """截断输出不是完整通过证据：即使在 HTTP 200 成功路径也必须按失败处理。"""
+    ctx, case = _ctx_with_eval_case()
+
+    class FakeAdapter:
+        def __init__(self, config):
+            self.config = config
+
+        def execute(self, *args, **kwargs):
+            return TargetTestResponse(
+                outcome="success",
+                output="partial output",
+                status_code=200,
+                truncated=True,
+            )
+
+    monkeypatch.setattr(eval_runner, "HttpJsonTargetAdapter", FakeAdapter)
+
+    run = run_eval_case(
+        ctx,
+        eval_id=case.eval_id,
+        run_mode="target_http",
+        target_config=_config(),
+    )
+
+    assert run.truncated is True
+    assert run.execution_outcome == "error"
+    assert run.status == "failed"
+    assert "response_truncated" in run.error_message
+    assert run.judge_result is None

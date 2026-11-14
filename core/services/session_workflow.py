@@ -69,7 +69,7 @@ class SessionWorkflowService(SessionAccess):
         ctx = attach_scenario_to_context(ctx, scenario_id)
         # T1.1: 数据分类分级——场景会话 public_demo，用户会话 business_internal
         ctx.data_classification = "public_demo" if ctx.selected_scenario_id else "business_internal"
-        self._store().save(ctx)
+        self._store().create(ctx)
         self._cache_set(ctx)
         logger.info(f"Session created: {ctx.session_id}")
         return ctx
@@ -208,12 +208,15 @@ class SessionWorkflowService(SessionAccess):
         delete_session_checkpoints(ctx, persistent=isinstance(self._store(), PostgresSessionStore))
 
         # Archive evidence and delete the business session atomically.
-        archived_count = self._store().purge_session(
+        outcome = self._store().purge_session(
             session_id,
             tenant_id,
             purged_by,
             summary,
         )
+        if not outcome.deleted:
+            raise ValueError(f"Session not found during purge: {session_id}")
+        archived_count = outcome.archived_events
         summary["archived_audit_events"] = archived_count
 
         # Invalidate cache

@@ -53,7 +53,7 @@ def _insert_gate_eval(store, session_id: str, tenant_id: str) -> None:
 
 def _create_session(store, tenant_id: str = "tenant-a") -> ProjectContext:
     ctx = ProjectContext(tenant_id=tenant_id, session_name="retention-test")
-    store.save(ctx)
+    store.create(ctx)
     return ctx
 
 
@@ -216,11 +216,11 @@ def test_purge_failure_is_recorded_and_retried_next_sweep(store, monkeypatch):
     original = store.purge_session
     calls = {"count": 0}
 
-    def flaky_purge(session_id, tenant_id, purged_by, summary):
+    def flaky_purge(session_id, tenant_id, purged_by, summary, **kwargs):
         calls["count"] += 1
         if calls["count"] == 1:
             raise RuntimeError("simulated purge failure")
-        return original(session_id, tenant_id, purged_by, summary)
+        return original(session_id, tenant_id, purged_by, summary, **kwargs)
 
     monkeypatch.setattr(store, "purge_session", flaky_purge)
     monkeypatch.setattr(settings, "session_retention_days", 30)

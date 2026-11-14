@@ -19,7 +19,7 @@ def _store(tmp_path) -> SQLiteSessionStore:
 def test_stale_second_save_is_rejected(tmp_path):
     store = _store(tmp_path)
     ctx = ProjectContext(tenant_id="tenant-a")
-    store.save(ctx)
+    store.create(ctx)
     session_id = ctx.session_id
 
     first = store.load(session_id, "tenant-a")
@@ -46,7 +46,7 @@ def test_stale_second_save_is_rejected(tmp_path):
 def test_cross_tenant_overwrite_is_rejected(tmp_path):
     store = _store(tmp_path)
     ctx = ProjectContext(tenant_id="tenant-a")
-    store.save(ctx)
+    store.create(ctx)
 
     intruder = ProjectContext(session_id=ctx.session_id, tenant_id="tenant-b")
     intruder._storage_version = 0
@@ -57,7 +57,7 @@ def test_cross_tenant_overwrite_is_rejected(tmp_path):
 def test_new_session_starts_at_version_zero_and_increments(tmp_path):
     store = _store(tmp_path)
     ctx = ProjectContext(tenant_id="tenant-a")
-    store.save(ctx)
+    store.create(ctx)
     assert ctx._storage_version == 0
 
     ctx.session_name = "changed"

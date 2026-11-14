@@ -339,11 +339,16 @@ def gate_env(tmp_path):
 
 
 def _tenant(store: SQLiteSessionStore, name: str) -> str:
-    return str(store.create_tenant(name)["tenant_id"])
+    tenant_id = str(store.create_tenant(name)["tenant_id"])
+    from tests.auth_seed import seed_sqlite_user
+
+    seed_sqlite_user(store, user_id=f"admin-user-{tenant_id}", tenant_id=tenant_id, role="admin")
+    seed_sqlite_user(store, user_id=f"editor-user-{tenant_id}", tenant_id=tenant_id, role="editor")
+    return tenant_id
 
 
 def _headers(tenant_id: str, *, role: str = "admin", sub: str = "admin-user") -> dict:
-    token = create_access_token({"sub": sub, "tenant_id": tenant_id, "role": role})
+    token = create_access_token({"sub": f"{sub}-{tenant_id}", "tenant_id": tenant_id, "role": role})
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -369,7 +374,7 @@ def _save_approved_session(
 ) -> ProjectContext:
     ctx = _approvable_context(tenant_id=tenant_id, data_classification=data_classification)
     _approve(ctx)
-    store.save(ctx)
+    store.create(ctx)
     return ctx
 
 

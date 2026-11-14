@@ -60,7 +60,13 @@ from graph.checkpoint_manager import (
 from scenarios import list_scenarios
 from storage.access import SYSTEM_ACCESS
 from storage.cache import context_cache
-from storage.errors import StaleContextError, TenantIsolationError
+from storage.errors import (
+    SessionAlreadyExistsError,
+    SessionNotFoundError,
+    StaleContextError,
+    StorageUnavailableError,
+    TenantIsolationError,
+)
 from storage.field_security import is_encryption_enabled
 from storage.session_store import session_store
 
@@ -258,6 +264,47 @@ async def _tenant_isolation_handler(request: Request, exc: Exception) -> JSONRes
     return JSONResponse(status_code=404, content={"detail": "Session not found"})
 
 
+async def _session_not_found_handler(request: Request, exc: Exception) -> JSONResponse:
+    """删除后的旧上下文写入：返回 409 并清理缓存，避免旧副本继续被读取。"""
+    missing = exc if isinstance(exc, SessionNotFoundError) else None
+    session_id = missing.session_id if missing else ""
+    if session_id:
+        tenant_id = _request_tenant_id(request)
+        if tenant_id:
+            context_cache.delete(session_id, tenant_id)
+    return JSONResponse(
+        status_code=409,
+        content={
+            "detail": "Session no longer exists; reload before saving again",
+            "session_id": session_id,
+        },
+    )
+
+
+async def _session_already_exists_handler(request: Request, exc: Exception) -> JSONResponse:
+    """显式创建命中已存在 ID：返回 409，不覆盖既有会话。"""
+    exists = exc if isinstance(exc, SessionAlreadyExistsError) else None
+    return JSONResponse(
+        status_code=409,
+        content={
+            "detail": "Session already exists",
+            "session_id": exists.session_id if exists else "",
+        },
+    )
+
+
+async def _storage_unavailable_handler(request: Request, exc: Exception) -> JSONResponse:
+    """存储不可用：宁可失败也不返回无法核验版本的缓存内容。"""
+    unavailable = exc if isinstance(exc, StorageUnavailableError) else None
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": "Session storage unavailable",
+            "session_id": unavailable.session_id if unavailable else "",
+        },
+    )
+
+
 async def _workflow_blocked_handler(request: Request, exc: Exception) -> JSONResponse:
     """工作流处于阻断态或未知状态：返回 409，调用方须走恢复入口。"""
     blocked = exc if isinstance(exc, WorkflowBlockedError) else None
@@ -289,6 +336,9 @@ async def _llm_call_error_handler(request: Request, exc: Exception) -> JSONRespo
 
 app.add_exception_handler(StaleContextError, _stale_context_handler)
 app.add_exception_handler(TenantIsolationError, _tenant_isolation_handler)
+app.add_exception_handler(SessionNotFoundError, _session_not_found_handler)
+app.add_exception_handler(SessionAlreadyExistsError, _session_already_exists_handler)
+app.add_exception_handler(StorageUnavailableError, _storage_unavailable_handler)
 app.add_exception_handler(WorkflowBlockedError, _workflow_blocked_handler)
 app.add_exception_handler(LLMCallError, _llm_call_error_handler)
 

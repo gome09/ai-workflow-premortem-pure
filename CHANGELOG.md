@@ -4,6 +4,18 @@
 > 远程 `origin`（github.com/gome09/ai-workflow-premortem-pure）与本地共享同一根提交，**不包含更早的历史**，无法用于追溯 v1.0 之前的开发过程。
 > 截至 2026-09-01，本地 `main` 已与 `origin/main` 同步（当日推送 10 次提交，至 `08f8a99`）。
 
+## 1.9.0 — Database Remediation P0/P1 (2026-11-14)
+
+- **显式创建/仅更新**：双后端拆分 `create(ctx)` / `save(ctx)`；更新缺失父行抛 `SessionNotFoundError`、显式创建命中已存在 ID 抛 `SessionAlreadyExistsError`，API 统一映射 409，删除后的旧上下文写入不再复活会话。
+- **删除与留存**：`purge_session` 返回 `PurgeOutcome(deleted, archived_events, reason)`；PostgreSQL 父行 `FOR UPDATE`、SQLite `BEGIN IMMEDIATE`，留存 cutoff 在锁内复检；归档摘要只保留白名单字段。留存执行器区分 `sessions_deleted` / `sessions_skipped` / `sessions_missing`，busy/锁失败不计为删除成功。
+- **身份与脱敏**：`get_current_tenant` 每次请求复核数据库角色（`/auth/refresh` 之外不得沿用旧令牌角色）；审计/事件自由文本键扩展并统一写成确定性摘要信封；新增历史审计脱敏回填脚本。
+- **缓存版本核验**：缓存 v2 命名空间 `session:ctx:v2:{tenant_id}:{session_id}`；每次缓存命中先读取父行版本，行缺失/版本不一致即 miss 并回源；存储版本查询失败返回 HTTP 503，不把缓存当作数据库替代品。
+- **评估批次共享领取**：Alembic V014 为 `eval_experiments` 增加 `claim_owner` / `claim_attempt` / `claim_request_key` / `claim_heartbeat_at` / `claim_lease_until`；领取、心跳、进度与终态写入由存储层在 `sessions` → `eval_experiments` 锁顺序内完成，投影同步不覆盖协调列。租约默认 180s、心跳 30s（`EVAL_EXPERIMENT_LEASE_SECONDS` / `EVAL_EXPERIMENT_HEARTBEAT_INTERVAL_SECONDS`），过期租约在 run/status 入口恢复为 `interrupted`；不同或空请求键返回 409，同键重复请求返回当前状态且不重复调用目标系统。
+- **并发审计验收**：新增 PostgreSQL 双连接与 SQLite 双进程归档顺序测试，覆盖保存先提交、删除先锁、归档失败回滚。
+- **迁移**：Alembic V013 → V014（仅新增列，无索引变更）；SQLite 由 `initialize()` 幂等补列。部署前需排空旧 worker 与在途评估任务，禁止旧版本与新版本混跑。
+- **测试**：新增 `test_cache_version_guard.py`、`test_eval_experiment_claim.py`、`test_postgres_eval_claim.py`、`test_postgres_purge_archive_order.py`、`test_sqlite_purge_lock_order.py`，并完成 P0 的创建语义、留存 cutoff、审计脱敏与缓存命名空间覆盖。离线全量 `1368 passed, 10 skipped`（SQLite + memory + mock + single_step，35.3s）；PG/Redis 双连接用例需 `E2E_DATABASE_URL` 未在本地执行。Ruff、format、mypy、doc-check、version-check 通过。
+- **版本**：`1.9.0`（`core/version.py` / `pyproject.toml` / `uv.lock` 同步）。
+
 ## 1.8.0 — Release Gate Integration (2026-11-07)
 
 - **发布门禁**：新增只读 `GET /release-gate/{session_id}`，供 CI 在部署前调用。仅当当前 `ProjectApproval.effective_status=approved` 且 readiness 全部满足时返回 HTTP 200 + `decision=allow`；未批准、被驳回、stale、invalidated、public_demo、跨租户、凭证无效或门禁不可用一律阻断。

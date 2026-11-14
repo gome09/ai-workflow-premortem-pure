@@ -23,7 +23,7 @@ SESSION = "s-tenant"
 def seeded_store(tmp_path) -> SQLiteSessionStore:
     store = SQLiteSessionStore(str(tmp_path / "tenant.db"))
     store.initialize()
-    store.save(ProjectContext(session_id=SESSION, tenant_id=TENANT))
+    store.create(ProjectContext(session_id=SESSION, tenant_id=TENANT))
     return store
 
 
@@ -81,7 +81,14 @@ async def test_token_without_tenant_scope_is_rejected():
     assert excinfo.value.status_code == 403
 
 
-async def test_token_with_tenant_scope_is_accepted():
+async def test_token_with_tenant_scope_is_accepted(seeded_store, monkeypatch):
+    from tests.auth_seed import seed_sqlite_user
+
+    seed_sqlite_user(seeded_store, user_id="u", tenant_id=TENANT, role="viewer")
+    monkeypatch.setattr(
+        "core.session_service.session_store",
+        seeded_store,
+    )
     token = create_access_token({"sub": "u", "tenant_id": TENANT, "role": "viewer"})
 
     tenant = await get_current_tenant(token)

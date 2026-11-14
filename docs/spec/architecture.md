@@ -161,6 +161,32 @@ Project risk is derived from six structured factors, each on a 0–3 ordinal sca
 - valid run = real target execution + `execution_outcome=success` + `judge_result=passed` + `judge_mode=human` + a `human_label=passed` calibration with written `human_comment` and reviewer identity + current version/case/deployment bindings; a bare `judge_result=passed` or empty `actual_output` is not release evidence;
 - `ProjectApproval.evidence_digest` snapshots the batch runs (including actual-output and judge-reason digests), human calibrations (including judgment-basis digests and reviewers), treatment reviews, high/critical safety findings and blocking actions. Any later negative evidence change invalidates the effective approval while preserving history.
 
+## Storage and Cache Consistency (v1.9.0)
+
+### 显式创建与仅更新
+
+- `create(ctx)` 只插入新会话，命中已存在 ID 抛 `SessionAlreadyExistsError`；`save(ctx)` 只更新已存在父行，行缺失抛 `SessionNotFoundError`。两者都映射 HTTP 409，删除后的旧上下文写入不会复活会话。
+- 双后端 `save()` 都在写审计/投影前锁定 `sessions` 父行（PostgreSQL `FOR UPDATE`，SQLite 先 `BEGIN IMMEDIATE`），并比较 `_storage_version`；冲突抛 `StaleContextError` 映射 409。
+
+### 删除与留存
+
+- `purge_session` 先锁父行，再读取全部 `audit_events`、归档、写 `session_purged`、删除父行，返回 `PurgeOutcome`；归档摘要只保留白名单字段。
+- 留存 cutoff 在锁内复检；SQLite 的 `busy`/锁错误不会计为删除成功。checkpoint 清理发生在数据库提交之后。
+
+### 缓存版本核验
+
+- 缓存键固定 `session:ctx:v2:{tenant_id}:{session_id}`；payload 必须包含 `storage_version`，旧格式一律 miss。
+- 每次缓存命中先执行轻量 `get_session_version`：行不存在 → 删除缓存并返回 `None`；版本不一致 → 删除缓存并回源；一致 → 续期 TTL。
+- 版本查询失败抛 `StorageUnavailableError` 并映射 HTTP 503；不得把缓存当作数据库替代品。空租户的历史会话只有显式 `SYSTEM_ACCESS` 通道可查询版本。
+
+### 评估批次共享领取
+
+- Alembic V014 在 `eval_experiments` 增加协调列：`claim_owner` / `claim_attempt` / `claim_request_key` / `claim_heartbeat_at` / `claim_lease_until`。
+- 领取事务锁顺序固定 `sessions` → `eval_experiments`；`core/eval_claim.py::begin_claim` 在锁内决定是否可领取并写入 `eval_experiment_started` 审计。
+- 心跳只更新协调列，不推进 context 版本、不写审计；每次外部调用前 `EvalLeaseHeartbeat.verify` 读取数据库确认 owner/attempt 与租约。
+- 进度/终态写入校验 owner、attempt 与租约；失去领取抛 `EvalClaimLostError`，不得覆盖新 owner 的批次。租约过期在 run/status 入口恢复为 `interrupted`，随后可重新领取。
+- 投影同步只写业务列，不得覆盖协调列。不同或空请求键在运行中返回 409；同键重复请求返回当前状态。
+
 ## Workflow State Fail-Closed
 
 未知或非法 `current_state` 不允许自动回退到 `INIT`：
@@ -216,6 +242,8 @@ Stage rerun, revise, rollback, and sync-review-actions are explicit stage operat
 - `core/risk` is the deterministic six-factor risk authority; `core/gates/risk_profile.py` is a compatibility re-export.
 - `core/coverage/policy.py` is the shared high-risk node / Stage 3 sampling authority.
 - `core/session_service.py` is a compatibility facade over the five lifecycle domain services; domain services must not import each other or the facade at module scope.
+- Session persistence separates intent: `session_store.create(ctx)` inserts a brand-new parent row plus projections and rejects duplicate IDs; `session_store.save(ctx)` only updates an existing tenant-scoped parent row and raises `SessionNotFoundError` (mapped to HTTP 409) when the row is gone. Only `create_session` uses `create`; all other write paths use `save`.
+- Admin delete and retention purge share one `purge_session` transaction: the parent row is locked first (`FOR UPDATE` on PostgreSQL, `BEGIN IMMEDIATE` on SQLite), then audit events are archived, the whitelisted `session_purged` event is appended, derived rows are removed, and the parent row is deleted. A missing or updated-away candidate returns `PurgeOutcome(stale/not_found)` without archiving or touching checkpoints.
 - `core/gates/rules/manifest.py` is the authoritative source for gate rule metadata (owner / version / changelog / safety_bottom_line).
 - `gate_evaluation_records` table (alembic V005) is the baseline data source for governance pass-rate trends. Its rows are projections of `sessions` and are deleted with the session on admin delete or retention purge; tenant backfill covers legacy NULL rows.
 - LangGraph checkpoint tables are owned by Alembic V006; the durable resume outbox is owned by V007; V008 adds `sessions.version` (optimistic locking), JSONB generated columns for list/governance queries, tenant indexes and `human_actions.tenant_id`; V009 adds `sessions.projection_state` plus `eval_runs.pass_criteria` / `llm_judge_suggestion`; V010 adds `sessions.context_digest`; V011 adds real-target execution metadata on `eval_runs`; V012 adds `workspace_invitations`, `eval_cases.standard_version` and `eval_runs.case_version_digest` / `target_deployment_version`; V013 adds release-gate `service_tokens` and `release_gate_checks`. Current chain and legacy-database upgrade steps are documented in [storage/README.md](../../storage/README.md).

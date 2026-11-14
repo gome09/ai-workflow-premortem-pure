@@ -181,10 +181,17 @@
 | POST | `/sessions/{session_id}/eval-experiments` | 创建实验 |
 | GET | `/sessions/{session_id}/eval-experiments/{experiment_id}` | 查看单个实验 |
 | POST | `/sessions/{session_id}/eval-experiments/{experiment_id}/run` | 运行实验；`background=true` 或 target_http 真实执行时返回 202 + `status=running`，支持 `idempotency_key` / `timeout_seconds` |
-| GET | `/sessions/{session_id}/eval-experiments/{experiment_id}/status` | 查看后台执行状态、完成/失败用例数、心跳、错误码与是否可恢复 |
+| GET | `/sessions/{session_id}/eval-experiments/{experiment_id}/status` | 查看后台执行状态、完成/失败用例数、心跳、领取 attempt/租约、错误码与是否可恢复 |
 | GET | `/sessions/{session_id}/eval-experiments/{experiment_id}/metrics` | 查看实验指标 |
 | GET | `/sessions/{session_id}/eval-experiments/{experiment_id}/comparison` | 查看实验对比摘要 |
 | POST | `/sessions/{session_id}/eval-experiments/{experiment_id}/comparison` | 生成实验对比 |
+
+运行语义（v1.9.0）：
+
+- 运行前由存储层领取实验。不同或空 `idempotency_key` 在实验运行中返回 409；同一 `idempotency_key` 的重复请求返回当前 status（`accepted=false`）且不重复调用目标系统。
+- 已 `completed` 且同请求键返回既有结果；不同请求键返回 400，需创建新实验。
+- 同步执行丢失领取（租约过期/被新 attempt 覆盖）返回 409。
+- `status` 额外返回 `claim_attempt`、`claim_heartbeat_at`、`claim_lease_until`、`lease_expired`；不返回 `claim_owner`。租约过期的运行会在查询时恢复为 `interrupted`（`last_error_code=lease_expired`）。
 
 ---
 

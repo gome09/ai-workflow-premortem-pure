@@ -29,11 +29,26 @@ class TestContextCache:
         cache.set(ctx)
         mock_client.setex.assert_called_once()
 
-        # 测试 get（返回序列化后的数据）
-        mock_client.get.return_value = ctx.model_dump_json()
+        # 测试 get（返回序列化后的数据，v2 payload 必须带 storage_version）
+        from storage.cache import _serialize
+
+        mock_client.get.return_value = _serialize(ctx)
         restored = cache.get(ctx.session_id)
         assert restored is not None
         assert restored.research_target == "测试对象"
+
+    @patch("storage.cache.redis.from_url")
+    def test_get_returns_none_for_legacy_payload(self, mock_redis_factory):
+        """T08：缺少 storage_version 的旧 payload 一律视为 miss。"""
+        mock_client = MagicMock()
+        mock_redis_factory.return_value = mock_client
+
+        from storage.cache import ContextCache
+
+        cache = ContextCache()
+        ctx = ProjectContext()
+        mock_client.get.return_value = ctx.model_dump_json()
+        assert cache.get(ctx.session_id) is None
 
     @patch("storage.cache.redis.from_url")
     def test_redis_failure_does_not_raise(self, mock_redis_factory):

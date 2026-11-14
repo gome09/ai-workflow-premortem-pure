@@ -30,7 +30,7 @@ def _service(tmp_path):
 def test_one_report_generation_appends_one_unique_id(tmp_path):
     with _service(tmp_path) as (svc, store):
         ctx = ProjectContext(tenant_id=_TENANT, research_target="report uniqueness")
-        store.save(ctx)
+        store.create(ctx)
 
         first = svc.create_report_artifact(ctx.session_id, tenant_id=_TENANT)
         report_id = first["report_id"]
@@ -65,7 +65,7 @@ def test_one_report_generation_appends_one_unique_id(tmp_path):
 def test_two_report_generations_create_two_distinct_ids(tmp_path):
     with _service(tmp_path) as (svc, store):
         ctx = ProjectContext(tenant_id=_TENANT)
-        store.save(ctx)
+        store.create(ctx)
 
         first = svc.create_report_artifact(ctx.session_id, tenant_id=_TENANT)
         second = svc.create_report_artifact(ctx.session_id, tenant_id=_TENANT)

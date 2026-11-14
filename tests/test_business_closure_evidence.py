@@ -65,7 +65,7 @@ def _ctx(*, verified: bool = False, referenced: bool = True) -> ProjectContext:
 
 def test_unverified_evidence_blocks_high_risk_gate(gate_store):
     ctx = _ctx(verified=False)
-    gate_store.save(ctx)
+    gate_store.create(ctx)
 
     result = evaluate_stage_gate(ctx, 1)
 
@@ -122,7 +122,7 @@ def test_dismiss_action_does_not_clear_evidence_gate(gate_store):
             stage_output_version=1,
         )
     )
-    gate_store.save(ctx)
+    gate_store.create(ctx)
     action = ctx.pending_actions[0]
 
     # Simulate the dismiss outcome without relying on the generic resolution

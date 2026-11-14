@@ -128,7 +128,7 @@ def test_batch_saves_per_item_and_reuses_completed_runs(tmp_path, monkeypatch):
     with _service(tmp_path) as (svc, store):
         ctx = ProjectContext(tenant_id=_TENANT)
         experiment = _seed(ctx)
-        store.save(ctx)
+        store.create(ctx)
 
         result = svc.run_eval_experiment(
             ctx.session_id,
@@ -169,7 +169,7 @@ def test_timeout_preserves_completed_runs_and_resume_skips_them(tmp_path, monkey
     with _service(tmp_path) as (svc, store):
         ctx = ProjectContext(tenant_id=_TENANT)
         experiment = _seed(ctx)
-        store.save(ctx)
+        store.create(ctx)
 
         with pytest.raises(EvalExperimentTimeoutError):
             svc.run_eval_experiment(
@@ -224,7 +224,7 @@ def test_resume_does_not_reexecute_saved_failed_runs(tmp_path, monkeypatch):
     with _service(tmp_path) as (svc, store):
         ctx = ProjectContext(tenant_id=_TENANT)
         experiment = _seed(ctx)
-        store.save(ctx)
+        store.create(ctx)
 
         with pytest.raises(EvalExperimentTimeoutError):
             svc.run_eval_experiment(
@@ -278,7 +278,7 @@ def test_background_run_exposes_status_and_completes(tmp_path, monkeypatch):
     with _service(tmp_path) as (svc, store):
         ctx = ProjectContext(tenant_id=_TENANT)
         experiment = _seed(ctx)
-        store.save(ctx)
+        store.create(ctx)
 
         accepted = svc.run_eval_experiment(
             ctx.session_id,
@@ -309,7 +309,7 @@ def test_running_experiment_rejects_second_start(tmp_path):
         experiment = _seed(ctx)
         experiment.status = "running"
         experiment.last_heartbeat_at = __import__("datetime").datetime.utcnow()
-        store.save(ctx)
+        store.create(ctx)
 
         with pytest.raises(ValueError, match="already running"):
             svc.run_eval_experiment(
@@ -330,7 +330,7 @@ def test_background_submission_conflicts_before_worker_marks_running(tmp_path):
     with _service(tmp_path) as (svc, store):
         ctx = ProjectContext(tenant_id=_TENANT)
         experiment = _seed(ctx)
-        store.save(ctx)
+        store.create(ctx)
         exec_key = f"{ctx.session_id}:{experiment.experiment_id}"
         submit_eval_experiment(exec_key, lambda: release.wait(5), request_key="req-first")
         try:

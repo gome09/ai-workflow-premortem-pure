@@ -782,6 +782,16 @@ def api_client_and_store(tmp_path):
         patch("core.session_service.session_store", store),
         patch("core.session_service.context_cache", cache),
     ):
+        from tests.auth_seed import seed_sqlite_user
+
+        for user_id, role in (
+            ("editor-user", "editor"),
+            ("viewer-user", "viewer"),
+            (_CREATOR, "admin"),
+            (_REVIEWER, "admin"),
+        ):
+            seed_sqlite_user(store, user_id=user_id, tenant_id=_TENANT, role=role)
+        seed_sqlite_user(store, user_id="other-admin", tenant_id="other-tenant", role="admin")
         from api.main import app
 
         yield TestClient(app), store
@@ -797,7 +807,7 @@ def _headers(role: str, sub: str, tenant_id: str = _TENANT) -> dict:
 def test_api_approval_authorization_and_success(api_client_and_store):
     client, store = api_client_and_store
     ctx = _ctx()
-    store.save(ctx)
+    store.create(ctx)
 
     path = f"/sessions/{ctx.session_id}/approvals/release"
 
@@ -840,7 +850,7 @@ def test_api_approval_authorization_and_success(api_client_and_store):
 def test_api_reports_do_not_grant_approval(api_client_and_store):
     client, store = api_client_and_store
     ctx = _ctx()
-    store.save(ctx)
+    store.create(ctx)
 
     response = client.post(
         f"/sessions/{ctx.session_id}/reports", headers=_headers("editor", "editor-user")
@@ -983,6 +993,7 @@ def test_newer_failed_run_without_new_experiment_blocks_older_approved_batch():
         pass_criteria=list(case.pass_criteria),
         judge_result="failed",
         status="completed",
+        created_at=datetime.utcnow() + timedelta(seconds=1),
     )
     ctx.eval_runs.append(failed_run)
 

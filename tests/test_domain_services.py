@@ -63,7 +63,7 @@ def test_session_workflow_service_is_independent(domain_env):
 def test_governance_service_is_independent(domain_env):
     ctx = ProjectContext(tenant_id="tenant-a")
     ctx.flagged_items = [FlaggedItem(stage=1, content="【需核验】证据", status=FlagStatus.PENDING)]
-    domain_env.save(ctx)
+    domain_env.create(ctx)
     action = create_review_actions_for_stage(ctx, stage=1)[0]
     domain_env.save(ctx)
 
@@ -91,7 +91,7 @@ def test_evidence_service_is_independent(domain_env):
             summary="reference",
         )
     ]
-    domain_env.save(ctx)
+    domain_env.create(ctx)
 
     service = EvidenceService()
     result = service.verify_evidence(
@@ -115,7 +115,7 @@ def test_evaluation_service_is_independent(domain_env):
             expected_behavior="safe",
         )
     ]
-    domain_env.save(ctx)
+    domain_env.create(ctx)
 
     service = EvaluationService()
     result = service.score_eval_case(
@@ -148,7 +148,7 @@ def test_audit_trace_service_is_independent(domain_env):
     ctx.interrupt_records = [
         InterruptRecord(session_id=ctx.session_id, action_id="A-1", stage_id=1)
     ]
-    domain_env.save(ctx)
+    domain_env.create(ctx)
 
     service = AuditTraceService()
     traces = service.list_traces(ctx.session_id, parser_status="failed", tenant_id="tenant-a")

@@ -59,13 +59,18 @@ def api_client(store):
         patch("core.session_service.session_store", store),
         patch("core.session_service.context_cache", cache),
     ):
+        from tests.auth_seed import seed_sqlite_roles
+
+        seed_sqlite_roles(store, tenant_id="test-tenant")
         from api.main import app
 
         yield TestClient(app), store, cache
 
 
 def _headers(role: str = "admin") -> dict:
-    token = create_access_token({"sub": "test-user", "tenant_id": "test-tenant", "role": role})
+    token = create_access_token(
+        {"sub": f"{role}-user-test-tenant", "tenant_id": "test-tenant", "role": role}
+    )
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -219,7 +224,7 @@ def _seed_blocked_session(store, cache, state: SessionState, tenant_id: str = "t
     ctx = ProjectContext(tenant_id=tenant_id, session_name="wf-state")
     ctx.current_state = state
     ctx.last_error = "simulated"
-    store.save(ctx)
+    store.create(ctx)
     cache.set(ctx)
     return ctx
 
@@ -245,7 +250,7 @@ def test_chat_returns_409_for_unknown_state(api_client):
     client, store, cache = api_client
     ctx = ProjectContext(tenant_id="test-tenant", session_name="wf-state")
     ctx.current_state = "legacy_state"  # type: ignore[assignment]
-    store.save(ctx)
+    store.create(ctx)
 
     response = client.post(
         f"/chat/{ctx.session_id}",
@@ -297,7 +302,7 @@ def test_recover_endpoint_rejects_non_blocked_session(api_client):
     client, store, cache = api_client
     ctx = ProjectContext(tenant_id="test-tenant", session_name="wf-state")
     ctx.current_state = SessionState.S1_RUNNING
-    store.save(ctx)
+    store.create(ctx)
     cache.set(ctx)
 
     response = client.post(

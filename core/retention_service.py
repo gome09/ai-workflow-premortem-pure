@@ -20,7 +20,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from core.config import settings
-from storage.access import SYSTEM_ACCESS
 
 logger = logging.getLogger(__name__)
 
@@ -51,15 +50,20 @@ def _record_retention_metrics(result: dict[str, Any]) -> None:
 
 
 def _purge_one_session(
-    store: Any, cache: Any, session_id: str, tenant_id: str
+    store: Any,
+    cache: Any,
+    session_id: str,
+    tenant_id: str,
+    cutoff: datetime,
 ) -> dict[str, str] | None:
     """按会话删除生命周期清理单个到期会话。
 
-    数据库删除（审计归档 + 会话行）是提交点；checkpoint 是派生数据，
-    只有在数据库提交成功后才清理。若 checkpoint 清理失败，返回错误条目
-    供本轮统计记录，但不会把已删除的会话“恢复”回来。
+    数据库删除（审计归档 + 会话行）是提交点；``purge_session`` 在锁内复检
+    ``updated_at``，只有真正删除后才清理 checkpoint/缓存。候选快照过期时
+    返回 ``stale``/``not_found`` 结果，不清理派生数据。
     """
     from graph.checkpoint_manager import delete_session_checkpoints
+    from storage.access import SYSTEM_ACCESS
     from storage.backends.postgres import PostgresSessionStore
 
     # 历史行可能没有租户归属，此时只能显式走系统访问通道读取。
@@ -75,7 +79,16 @@ def _purge_one_session(
         "current_state": ctx.current_state.value if ctx is not None else "unknown",
         "retention_days": settings.session_retention_days,
     }
-    store.purge_session(session_id, tenant_id, "retention", summary)
+    outcome = store.purge_session(
+        session_id,
+        tenant_id,
+        "retention",
+        summary,
+        retention_cutoff=cutoff,
+        system_access=None if tenant_id else SYSTEM_ACCESS,
+    )
+    if not outcome.deleted:
+        return {"session_id": session_id, "stage": "purge", "result": outcome.reason}
 
     cleanup_error: dict[str, str] | None = None
     if ctx is not None:
@@ -121,6 +134,8 @@ def run_retention_cycle(
         "audit_retention_days": settings.audit_retention_days,
         "sessions_matched": 0,
         "sessions_purged": 0,
+        "sessions_skipped": 0,
+        "sessions_missing": 0,
         "audit_events_matched": 0,
         "archived_events_matched": 0,
         "audit_events_deleted": 0,
@@ -142,10 +157,15 @@ def run_retention_cycle(
                 tenant_id = str(row["tenant_id"] or "")
                 try:
                     cleanup_error = _purge_one_session(
-                        target_store, target_cache, session_id, tenant_id
+                        target_store, target_cache, session_id, tenant_id, cutoff
                     )
-                    result["sessions_purged"] += 1
-                    if cleanup_error:
+                    if cleanup_error is None or cleanup_error.get("result") is None:
+                        result["sessions_purged"] += 1
+                    elif cleanup_error.get("result") == "stale":
+                        result["sessions_skipped"] += 1
+                    else:
+                        result["sessions_missing"] += 1
+                    if cleanup_error and cleanup_error.get("result") is None:
                         _append_error(result, cleanup_error)
                 except Exception as exc:  # 单个会话失败不阻断整轮清理
                     logger.warning(
@@ -191,6 +211,8 @@ async def _retention_loop(interval_seconds: int) -> None:
                     "dry_run": summary.get("dry_run"),
                     "sessions_matched": summary.get("sessions_matched"),
                     "sessions_purged": summary.get("sessions_purged"),
+                    "sessions_skipped": summary.get("sessions_skipped"),
+                    "sessions_missing": summary.get("sessions_missing"),
                     "audit_events_matched": summary.get("audit_events_matched"),
                     "audit_events_deleted": summary.get("audit_events_deleted"),
                     "archived_events_deleted": summary.get("archived_events_deleted"),

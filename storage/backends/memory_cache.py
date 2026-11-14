@@ -9,6 +9,7 @@ import threading
 import time
 
 from core.models import ProjectContext
+from storage.cache_keys import context_cache_key
 from storage.field_security import context_from_cache_payload, context_payload_for_cache
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ class MemoryCache:
         self._lock = threading.Lock()
 
     def _key(self, session_id: str, tenant_id: str = "") -> str:
-        return f"session:ctx:{tenant_id}:{session_id}"
+        return context_cache_key(session_id, tenant_id)
 
     def set(self, ctx: ProjectContext) -> None:
         try:

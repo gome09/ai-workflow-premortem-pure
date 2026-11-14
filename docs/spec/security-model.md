@@ -71,6 +71,10 @@ This project has two security layers:
 
 读取路径为 fail-closed：`get_current_tenant` 对空 `tenant_id` 令牌直接返回 403；存储层的 `load`、`list_sessions`、`session_exists`、`list_projection` 在空租户下抛 `TenantIsolationError`（PostgreSQL 与 SQLite 一致）。跨租户读取只能显式传入 `SYSTEM_ACCESS` 内部哨兵，且每次使用都会写 warning 审计日志。
 
+请求级角色以数据库当前成员记录为唯一权威：`get_current_tenant` 在验证 JWT 签名、类型、到期时间与非空租户后，通过 `get_user_by_id` 读取当前角色并重新构造 `TenantContext`。token 内的 role 不参与授权；成员被删除、租户不匹配、角色非法分别返回 401/403/401，数据库不可用时返回 503，不回退 token role。`/auth/refresh` 继续重读当前角色；机器 release gate 继续使用独立的 service token，不受人类 JWT 路径影响。同一请求中 FastAPI 依赖缓存保证只查询一次。
+
+上下文缓存不构成删除或租户边界的绕过点：每次命中先读取数据库父行版本，父行删除或版本不一致即删除缓存并回源；版本查询失败返回 503，不回退返回缓存内容。空租户的历史会话只有显式 `SYSTEM_ACCESS` 通道可查询版本。
+
 这属于面向本地/小团队场景的行级隔离，不是企业级强隔离方案。
 
 ### Rate Limiting

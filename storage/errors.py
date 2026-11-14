@@ -29,6 +29,42 @@ class StaleContextError(StorageError):
         )
 
 
+class SessionNotFoundError(StorageError):
+    """Raised when ``save`` targets a session row that no longer exists."""
+
+    def __init__(self, session_id: str, operation: str = "save") -> None:
+        self.session_id = session_id
+        self.operation = operation
+        super().__init__(f"Session not found during {operation}: {session_id}")
+
+
+class SessionAlreadyExistsError(StorageError):
+    """Raised when ``create`` targets a session ID that already exists."""
+
+    def __init__(self, session_id: str, operation: str = "create") -> None:
+        self.session_id = session_id
+        self.operation = operation
+        super().__init__(f"Session already exists during {operation}: {session_id}")
+
+
+class StorageUnavailableError(StorageError):
+    """Raised when storage is unreachable and cached data must not be trusted."""
+
+    def __init__(self, session_id: str, operation: str = "read") -> None:
+        self.session_id = session_id
+        self.operation = operation
+        super().__init__(f"Storage unavailable during {operation}: {session_id}")
+
+
+class EvalClaimLostError(StorageError):
+    """Raised when a progress/terminal write no longer owns the experiment lease."""
+
+    def __init__(self, experiment_id: str, reason: str = "claim_lost") -> None:
+        self.experiment_id = experiment_id
+        self.reason = reason
+        super().__init__(f"Eval experiment claim lost: {experiment_id} ({reason})")
+
+
 class FieldDecryptionError(StorageError):
     """Raised when an encrypted field cannot be decrypted (wrong key / corrupted data).
 

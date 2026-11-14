@@ -7,6 +7,7 @@ import logging
 from datetime import datetime
 
 from core.config import settings
+from core.eval_claim import EvalClaimConflictError, begin_claim, new_claim_owner
 from core.eval_dataset_service import (
     add_cases_to_dataset,
     create_dataset,
@@ -18,7 +19,6 @@ from core.eval_dataset_service import (
 )
 from core.eval_execution import (
     in_flight_request_key,
-    is_eval_experiment_running,
     submit_eval_experiment,
 )
 from core.eval_experiment_service import (
@@ -30,6 +30,7 @@ from core.eval_experiment_service import (
     list_experiments,
     run_experiment,
 )
+from core.eval_heartbeat import EvalLeaseHeartbeat
 from core.eval_judgment_service import (
     calibrate_eval_run as calibrate_eval_run_operation,
 )
@@ -77,7 +78,7 @@ from core.trace_backfill_service import (
     convert_trace_to_eval_case,
     create_dataset_from_failed_traces,
 )
-from storage.errors import StaleContextError
+from storage.errors import EvalClaimLostError, StaleContextError
 
 logger = logging.getLogger(__name__)
 
@@ -485,39 +486,68 @@ class EvaluationService(SessionAccess):
             },
         )
 
-    def _save_eval_progress(self, ctx) -> None:
-        self._store().save(ctx)
-        self._cache_set(ctx)
+    def _release_terminal_best_effort(self, ctx, experiment_id: str, claim) -> None:
+        """Persist the terminal state and release the lease; never masks the original error."""
+        try:
+            self._store().save_eval_experiment_progress(
+                ctx, experiment_id, claim.owner, claim.attempt, terminal=True
+            )
+            self._cache_set(ctx)
+        except EvalClaimLostError:
+            logger.warning(
+                "eval_experiment_terminal_release_rejected",
+                extra={"experiment_id": experiment_id, "reason": "claim_lost"},
+            )
+        except StaleContextError:
+            logger.warning(
+                "eval_experiment_terminal_release_rejected",
+                extra={"experiment_id": experiment_id, "reason": "stale_context"},
+            )
 
-    def _reconcile_stale_experiment(self, ctx, experiment) -> bool:
-        """Mark a running experiment interrupted when its heartbeat is stale."""
-        if experiment.status != "running":
-            return False
-        if is_eval_experiment_running(f"{ctx.session_id}:{experiment.experiment_id}"):
-            # This process still owns the job; a long single case must not be
-            # mistaken for a crashed worker by a concurrent status query.
-            return False
-        heartbeat = experiment.last_heartbeat_at or experiment.started_at
-        if heartbeat is None:
-            return False
-        if (datetime.utcnow() - heartbeat).total_seconds() < int(
-            settings.eval_experiment_heartbeat_stale_seconds
-        ):
-            return False
-        experiment.status = "interrupted"
-        experiment.last_error_code = "heartbeat_stale"
-        experiment.completed_at = datetime.utcnow()
-        self._save_eval_progress(ctx)
-        return True
+    def _mark_interrupted_best_effort(
+        self, session_id: str, tenant_id: str, experiment_id: str, claim, error_code: str
+    ) -> None:
+        """Reload and conditionally mark a still-running experiment interrupted."""
+        try:
+            fresh = self._store().load(session_id, tenant_id)
+        except Exception:  # noqa: BLE001 - best effort repair only
+            logger.exception(
+                "eval_experiment_repair_load_failed", extra={"experiment_id": experiment_id}
+            )
+            return
+        if fresh is None:
+            return
+        try:
+            experiment = get_experiment(fresh, experiment_id)
+        except ValueError:
+            return
+        if experiment.status == "running":
+            experiment.status = "interrupted"
+            experiment.last_error_code = error_code
+            experiment.completed_at = datetime.utcnow()
+            experiment.last_heartbeat_at = experiment.completed_at
+        self._release_terminal_best_effort(fresh, experiment_id, claim)
 
     def get_eval_experiment_status(
         self, session_id: str, experiment_id: str, tenant_id: str = ""
     ) -> dict:
-        ctx = self.get_session(session_id, tenant_id)
+        ctx = self._store().load(session_id, tenant_id)
         if not ctx:
             raise ValueError(f"Session not found: {session_id}")
+        reconciled = self._store().recover_stale_eval_experiment(
+            session_id, tenant_id, experiment_id
+        )
+        if reconciled:
+            self._cache_delete(session_id, tenant_id)
+            ctx = self._store().load(session_id, tenant_id) or ctx
         experiment = get_experiment(ctx, experiment_id)
-        reconciled = self._reconcile_stale_experiment(ctx, experiment)
+        coord = self._store().get_eval_experiment_coordination(session_id, tenant_id, experiment_id)
+        lease_until = coord.lease_until if coord else None
+        lease_expired = bool(
+            experiment.status == "running"
+            and lease_until is not None
+            and lease_until <= datetime.utcnow()
+        )
         runs = [
             run
             for run in ctx.eval_runs
@@ -547,6 +577,14 @@ class EvaluationService(SessionAccess):
             "last_error_code": experiment.last_error_code,
             "execution_attempt": experiment.execution_attempt,
             "run_request_key": experiment.run_request_key,
+            "claim_attempt": coord.attempt if coord else 0,
+            "claim_heartbeat_at": coord.heartbeat_at.isoformat()
+            if coord and coord.heartbeat_at
+            else "",
+            "claim_lease_until": coord.lease_until.isoformat()
+            if coord and coord.lease_until
+            else "",
+            "lease_expired": lease_expired,
             "resumable": resumable,
             "reconciled_stale_heartbeat": reconciled,
         }
@@ -560,9 +598,10 @@ class EvaluationService(SessionAccess):
         dry_run_only: bool,
         request_key: str,
         timeout_seconds: int | None,
+        claim,
     ) -> None:
-        """Background job body: per-item persistence + failure classification."""
-        ctx = self.get_session(session_id, tenant_id)
+        """Background job body: leased, per-item persistence, claim-aware failures."""
+        ctx = self._store().load(session_id, tenant_id)
         if not ctx:
             logger.warning(
                 "eval_experiment_background_session_missing",
@@ -573,6 +612,8 @@ class EvaluationService(SessionAccess):
                 },
             )
             return
+        heartbeat = EvalLeaseHeartbeat(self._store(), session_id, tenant_id, experiment_id, claim)
+        heartbeat.start()
         try:
             run_experiment(
                 ctx,
@@ -580,15 +621,31 @@ class EvaluationService(SessionAccess):
                 dry_run_only=dry_run_only,
                 request_key=request_key,
                 timeout_seconds=timeout_seconds,
-                progress_callback=lambda: self._save_eval_progress(ctx),
+                claim=claim,
+                guard=heartbeat.verify,
+                progress_callback=lambda: self._store().save_eval_experiment_progress(
+                    ctx, experiment_id, claim.owner, claim.attempt
+                ),
             )
-            self._save_eval_progress(ctx)
+            self._store().save_eval_experiment_progress(
+                ctx, experiment_id, claim.owner, claim.attempt, terminal=True
+            )
+            self._cache_set(ctx)
             self._log_event(
                 ctx,
                 session_id=session_id,
                 event_type="eval_experiment_run",
                 stage=3,
                 payload={"experiment_id": experiment_id, "background": True},
+            )
+        except EvalClaimLostError:
+            logger.warning(
+                "eval_experiment_background_claim_lost",
+                extra={
+                    "event": "eval_experiment_background_claim_lost",
+                    "session_id": session_id,
+                    "experiment_id": experiment_id,
+                },
             )
         except StaleContextError:
             logger.warning(
@@ -599,19 +656,9 @@ class EvaluationService(SessionAccess):
                     "experiment_id": experiment_id,
                 },
             )
-            try:
-                fresh = self.get_session(session_id, tenant_id)
-                if fresh is not None:
-                    experiment = get_experiment(fresh, experiment_id)
-                    experiment.status = "interrupted"
-                    experiment.last_error_code = "stale_context"
-                    experiment.completed_at = datetime.utcnow()
-                    self._save_eval_progress(fresh)
-            except Exception:  # noqa: BLE001 - best effort state repair
-                logger.exception(
-                    "eval_experiment_background_stale_persist_failed",
-                    extra={"session_id": session_id, "experiment_id": experiment_id},
-                )
+            self._mark_interrupted_best_effort(
+                session_id, tenant_id, experiment_id, claim, "stale_context"
+            )
         except EvalExperimentTimeoutError:
             logger.warning(
                 "eval_experiment_timeout",
@@ -621,11 +668,15 @@ class EvaluationService(SessionAccess):
                     "experiment_id": experiment_id,
                 },
             )
+            self._release_terminal_best_effort(ctx, experiment_id, claim)
         except Exception:  # noqa: BLE001 - background failures are reflected in status
             logger.exception(
                 "eval_experiment_background_failed",
                 extra={"session_id": session_id, "experiment_id": experiment_id},
             )
+            self._release_terminal_best_effort(ctx, experiment_id, claim)
+        finally:
+            heartbeat.stop()
 
     def run_eval_experiment(
         self,
@@ -638,19 +689,62 @@ class EvaluationService(SessionAccess):
         timeout_seconds: int | None = None,
         tenant_id: str = "",
     ) -> dict:
-        ctx = self.get_session(session_id, tenant_id)
+        ctx = self._store().load(session_id, tenant_id)
         if not ctx:
             raise ValueError(f"Session not found: {session_id}")
+        if self._store().recover_stale_eval_experiment(session_id, tenant_id, experiment_id):
+            self._cache_delete(session_id, tenant_id)
+            ctx = self._store().load(session_id, tenant_id)
+            if not ctx:
+                raise ValueError(f"Session not found: {session_id}")
         experiment = get_experiment(ctx, experiment_id)
-        self._reconcile_stale_experiment(ctx, experiment)
         if background is None:
             background = experiment.run_mode == "target_http" and not dry_run_only
 
+        exec_key = f"{session_id}:{experiment_id}"
         if background:
-            if experiment.status == "running":
-                raise ValueError("EvalExperiment is already running")
-            if experiment.status == "completed":
-                if not idempotency_key or experiment.run_request_key == idempotency_key:
+            inflight_key = in_flight_request_key(exec_key)
+            if inflight_key is not None and idempotency_key and idempotency_key != inflight_key:
+                # 另一个请求键已在执行（含 worker 尚未把状态写回的窗口）→ 明确冲突。
+                raise EvalClaimConflictError(experiment_id, "in_flight")
+            if inflight_key is not None and idempotency_key and idempotency_key == inflight_key:
+                return self._with_stage_advancement(
+                    ctx,
+                    operation="eval_experiment_queued",
+                    result={
+                        "accepted": True,
+                        "experiment_id": experiment_id,
+                        "experiment_status": "running",
+                    },
+                    source="eval_experiment_run",
+                    stage=3,
+                    reason="eval_experiment_already_queued",
+                    metadata={"experiment_id": experiment_id, "background": True},
+                )
+
+        owner = new_claim_owner()
+        outcome = self._store().claim_eval_experiment(
+            session_id,
+            tenant_id,
+            experiment_id,
+            owner=owner,
+            request_key=idempotency_key,
+            lease_seconds=int(settings.eval_experiment_lease_seconds),
+            decide=lambda loaded, coordination_attempt, now: begin_claim(
+                loaded,
+                experiment_id,
+                owner=owner,
+                request_key=idempotency_key,
+                timeout_seconds=timeout_seconds,
+                coordination_attempt=coordination_attempt,
+                now=now,
+            ),
+        )
+        if not outcome.claimed:
+            if outcome.reason == "not_found":
+                raise ValueError(f"Eval experiment not found: {experiment_id}")
+            if outcome.reason == "completed":
+                if background:
                     status = self.get_eval_experiment_status(session_id, experiment_id, tenant_id)
                     return self._with_stage_advancement(
                         ctx,
@@ -665,39 +759,64 @@ class EvaluationService(SessionAccess):
                         reason="eval_experiment_already_completed",
                         metadata={"experiment_id": experiment_id, "background": True},
                     )
-                raise ValueError("EvalExperiment is already completed; create a new experiment.")
-            if (
-                idempotency_key
-                and experiment.run_request_key
-                and experiment.run_request_key != idempotency_key
-            ):
-                raise ValueError("EvalExperiment request key does not match the persisted run")
-            exec_key = f"{session_id}:{experiment_id}"
-            inflight_key = in_flight_request_key(exec_key)
-            if inflight_key is not None and not (
-                not idempotency_key or idempotency_key == inflight_key
-            ):
-                # 另一个请求键已在执行（含 worker 尚未把状态写回的窗口）→ 明确冲突。
-                raise ValueError("EvalExperiment is already running")
-            submit_eval_experiment(
-                exec_key,
-                lambda: self._execute_eval_experiment_job(
-                    session_id,
-                    tenant_id,
-                    experiment_id,
-                    dry_run_only=dry_run_only,
+                fresh = self._store().load(session_id, tenant_id) or ctx
+                return self._with_stage_advancement(
+                    fresh,
+                    operation="eval_experiment_run",
+                    result=get_experiment(fresh, experiment_id),
+                    source="eval_experiment_run",
+                    stage=3,
+                    reason="eval_experiment_already_completed",
+                    metadata={"experiment_id": experiment_id, "dry_run_only": dry_run_only},
+                )
+            if outcome.reason == "already_running":
+                # 同一 request key 的重复请求：返回当前状态，不重复执行。
+                status = self.get_eval_experiment_status(session_id, experiment_id, tenant_id)
+                return self._with_stage_advancement(
+                    ctx,
+                    operation="eval_experiment_run",
+                    result={
+                        "accepted": False,
+                        "experiment_id": experiment_id,
+                        "status_payload": status,
+                    },
+                    source="eval_experiment_run",
+                    stage=3,
+                    reason="eval_experiment_already_running",
+                    metadata={"experiment_id": experiment_id, "background": bool(background)},
+                )
+            raise EvalClaimConflictError(experiment_id, outcome.reason)
+        claim = outcome.claim
+        if claim is None:  # claimed outcomes always carry a claim
+            raise EvalClaimConflictError(experiment_id, outcome.reason)
+
+        if background:
+            try:
+                submit_eval_experiment(
+                    exec_key,
+                    lambda: self._execute_eval_experiment_job(
+                        session_id,
+                        tenant_id,
+                        experiment_id,
+                        dry_run_only=dry_run_only,
+                        request_key=idempotency_key,
+                        timeout_seconds=timeout_seconds,
+                        claim=claim,
+                    ),
                     request_key=idempotency_key,
-                    timeout_seconds=timeout_seconds,
-                ),
-                request_key=idempotency_key,
-            )
+                )
+            except Exception:
+                self._mark_interrupted_best_effort(
+                    session_id, tenant_id, experiment_id, claim, "submit_failed"
+                )
+                raise
             return self._with_stage_advancement(
                 ctx,
                 operation="eval_experiment_queued",
                 result={
                     "accepted": True,
                     "experiment_id": experiment_id,
-                    "experiment_status": experiment.status,
+                    "experiment_status": "running",
                 },
                 source="eval_experiment_run",
                 stage=3,
@@ -705,36 +824,63 @@ class EvaluationService(SessionAccess):
                 metadata={"experiment_id": experiment_id, "background": True},
             )
 
-        experiment = run_experiment(
-            ctx,
-            experiment_id=experiment_id,
-            dry_run_only=dry_run_only,
-            request_key=idempotency_key,
-            timeout_seconds=timeout_seconds,
-            progress_callback=lambda: self._save_eval_progress(ctx),
-        )
-        self._store().save(ctx)
-        self._cache_set(ctx)
-        self._log_event(
-            ctx,
-            session_id=session_id,
-            event_type="eval_experiment_run",
-            stage=3,
-            payload=experiment.model_dump(mode="json"),
-        )
-        return self._with_stage_advancement(
-            ctx,
-            operation="eval_experiment_run",
-            result=experiment,
-            source="eval_experiment_run",
-            stage=3,
-            reason="eval_experiment_run",
-            metadata={
-                "experiment_id": experiment.experiment_id,
-                "dataset_id": experiment.dataset_id,
-                "dry_run_only": dry_run_only,
-            },
-        )
+        fresh = self._store().load(session_id, tenant_id)
+        if not fresh:
+            self._mark_interrupted_best_effort(
+                session_id, tenant_id, experiment_id, claim, "session_missing"
+            )
+            raise ValueError(f"Session not found: {session_id}")
+        heartbeat = EvalLeaseHeartbeat(self._store(), session_id, tenant_id, experiment_id, claim)
+        heartbeat.start()
+        try:
+            experiment = run_experiment(
+                fresh,
+                experiment_id=experiment_id,
+                dry_run_only=dry_run_only,
+                request_key=idempotency_key,
+                timeout_seconds=timeout_seconds,
+                claim=claim,
+                guard=heartbeat.verify,
+                progress_callback=lambda: self._store().save_eval_experiment_progress(
+                    fresh, experiment_id, claim.owner, claim.attempt
+                ),
+            )
+            self._store().save_eval_experiment_progress(
+                fresh, experiment_id, claim.owner, claim.attempt, terminal=True
+            )
+            self._cache_set(fresh)
+            self._log_event(
+                fresh,
+                session_id=session_id,
+                event_type="eval_experiment_run",
+                stage=3,
+                payload=experiment.model_dump(mode="json"),
+            )
+            return self._with_stage_advancement(
+                fresh,
+                operation="eval_experiment_run",
+                result=experiment,
+                source="eval_experiment_run",
+                stage=3,
+                reason="eval_experiment_run",
+                metadata={
+                    "experiment_id": experiment.experiment_id,
+                    "dataset_id": experiment.dataset_id,
+                    "dry_run_only": dry_run_only,
+                },
+            )
+        except EvalClaimLostError:
+            raise
+        except StaleContextError:
+            self._mark_interrupted_best_effort(
+                session_id, tenant_id, experiment_id, claim, "stale_context"
+            )
+            raise
+        except Exception:
+            self._release_terminal_best_effort(fresh, experiment_id, claim)
+            raise
+        finally:
+            heartbeat.stop()
 
     def get_eval_experiment_metrics(
         self, session_id: str, experiment_id: str, tenant_id: str = ""

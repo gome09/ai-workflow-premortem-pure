@@ -48,6 +48,10 @@ class _FakeConnection:
         self.executed.append((" ".join(sql.split()), params))
         if sql.lstrip().upper().startswith("SELECT"):
             return _FakeResult(row=self.select_row)
+        if sql.lstrip().upper().startswith("DELETE"):
+            return _FakeResult(rowcount=0)
+        if sql.lstrip().upper().startswith(("INSERT", "UPDATE")):
+            return _FakeResult(rowcount=1)
         return _FakeResult()
 
     def executemany(self, sql: str, rows: list[tuple]) -> None:
@@ -128,7 +132,7 @@ def test_save_insert_path_uses_version_zero() -> None:
     store = _store_with_conn(conn)
     ctx = ProjectContext(session_id="s-new", tenant_id="tenant-a", current_state=SessionState.INIT)
 
-    store.save(ctx)
+    store.create(ctx)
 
     assert ctx._storage_version == 0
     insert_sql, _ = next(

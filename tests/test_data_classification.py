@@ -58,13 +58,18 @@ def client_and_service(tmp_path):
         patch("core.session_service.session_store", store),
         patch("core.session_service.context_cache", cache),
     ):
+        from tests.auth_seed import seed_sqlite_roles
+
+        seed_sqlite_roles(store, tenant_id="test-tenant")
         from api.main import app
 
         yield TestClient(app), SessionService()
 
 
 def _headers(role: str) -> dict:
-    token = create_access_token({"sub": "test-user", "tenant_id": "test-tenant", "role": role})
+    token = create_access_token(
+        {"sub": f"{role}-user-test-tenant", "tenant_id": "test-tenant", "role": role}
+    )
     return {"Authorization": f"Bearer {token}"}
 
 

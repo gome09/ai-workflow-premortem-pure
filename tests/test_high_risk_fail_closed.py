@@ -91,7 +91,7 @@ def test_markdown_fallback_is_rejected_for_high_risk(tier, gate_store):
     expected_tier = ProjectGateRiskTier.HIGH if tier == "high" else ProjectGateRiskTier.CRITICAL
     assert classify_project_risk(ctx)[0] == expected_tier
     assert requires_strict_structured_output(ctx) is True
-    gate_store.save(ctx)
+    gate_store.create(ctx)
 
     updated = Stage1Executor().parse_output(MARKDOWN_STAGE1, ctx)
 
@@ -174,7 +174,7 @@ def test_high_risk_stage2_policy_gap_creates_blocking_edit_action(gate_store):
         ]
     )
     ctx.current_state = SessionState.S2_RUNNING
-    gate_store.save(ctx)
+    gate_store.create(ctx)
 
     updated = Stage2Executor().parse_output(MARKDOWN_STAGE2, ctx)
 
@@ -201,7 +201,7 @@ def test_high_risk_stage2_policy_gap_creates_blocking_edit_action(gate_store):
 # ── 4. Gate 规则异常确定性阻断 ──────────────────────────────────────
 def test_gate_rule_exception_becomes_deterministic_blocker(gate_store, monkeypatch):
     ctx = _risky_ctx("high")
-    gate_store.save(ctx)
+    gate_store.create(ctx)
 
     def boom(_ctx, _stage):
         raise RuntimeError("rule crashed")
@@ -222,7 +222,7 @@ def test_gate_rule_exception_becomes_deterministic_blocker(gate_store, monkeypat
 @pytest.mark.parametrize("tier", ["high", "critical"])
 def test_high_risk_gate_persistence_failure_blocks(tier, gate_store, monkeypatch):
     ctx = _risky_ctx(tier)
-    gate_store.save(ctx)
+    gate_store.create(ctx)
     monkeypatch.setattr(
         gate_store,
         "record_gate_evaluation",
@@ -250,7 +250,7 @@ def test_high_risk_gate_persistence_failure_blocks(tier, gate_store, monkeypatch
 
 def test_low_risk_gate_persistence_failure_stays_non_blocking(gate_store, monkeypatch):
     ctx = _low_risk_ctx()
-    gate_store.save(ctx)
+    gate_store.create(ctx)
     monkeypatch.setattr(
         gate_store,
         "record_gate_evaluation",

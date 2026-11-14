@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from typing import Any
 
 # 需要脱敏的自由文本字段名。命中即整值替换为摘要信封。
@@ -34,6 +35,38 @@ FREE_TEXT_KEYS: frozenset[str] = frozenset(
         "payload_before",
         "payload_after",
         "title",
+        # 评估输入、预期行为、实际输出与人工判定依据。
+        "input_payload",
+        "expected_behavior",
+        "actual_output",
+        "human_comment",
+        "judge_reason",
+        "pass_criteria",
+        # 会话正文与名称。
+        "research_target",
+        "goal",
+        "session_name",
+        # 校准/判定模型已保护的字段，避免快照副本绕过。
+        "disagreement_reason",
+        "rationale",
+        "error_message",
+        "llm_judge_suggestion",
+    }
+)
+
+# 删除归档只允许保留的标量字段；不信任调用方传入的任意 summary。
+PURGE_SUMMARY_KEYS: frozenset[str] = frozenset(
+    {
+        "session_id",
+        "tenant_id",
+        "current_state",
+        "data_classification",
+        "created_at",
+        "updated_at",
+        "purged_by",
+        "retention_days",
+        "archived_audit_events",
+        "reason",
     }
 )
 
@@ -68,6 +101,16 @@ def redacted_envelope(value: Any) -> dict[str, Any]:
     return envelope
 
 
+def _is_redacted_envelope(value: Any) -> bool:
+    """Whether the value is already a deterministic redaction envelope."""
+    return (
+        isinstance(value, dict)
+        and value.get("_redacted") is True
+        and "sha256" in value
+        and "length" in value
+    )
+
+
 def redact_payload(value: Any, classification: str) -> Any:
     """Recursively redact a payload for event/audit persistence."""
     if classification == _PUBLIC_CLASSIFICATION:
@@ -75,7 +118,9 @@ def redact_payload(value: Any, classification: str) -> Any:
     if isinstance(value, dict):
         return {
             key: (
-                redacted_envelope(item)
+                item
+                if _is_redacted_envelope(item)
+                else redacted_envelope(item)
                 if key in FREE_TEXT_KEYS
                 else redact_payload(item, classification)
             )
@@ -88,6 +133,24 @@ def redact_payload(value: Any, classification: str) -> Any:
             return value
         return value[:MAX_PLAIN_STRING] + f"...<truncated:{len(value)} chars>"
     return value
+
+
+def sanitize_purge_summary(summary: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Build the only summary shape allowed in ``session_purged`` archives.
+
+    Only whitelisted scalar fields are kept. Nested structures, free text and
+    any caller-provided business content are dropped at the storage boundary.
+    """
+    if not summary:
+        return {}
+    sanitized: dict[str, Any] = {}
+    for key in sorted(PURGE_SUMMARY_KEYS):
+        if key not in summary:
+            continue
+        value = summary[key]
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            sanitized[key] = value
+    return sanitized
 
 
 def snapshot(value: Any, classification: str) -> dict[str, Any] | None:

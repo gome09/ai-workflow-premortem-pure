@@ -148,7 +148,7 @@ def _risk_treatment_blockers(ctx: ProjectContext) -> list:
 
 def test_missing_treatment_blocks_stage4(gate_store):
     ctx = _ctx()
-    gate_store.save(ctx)
+    gate_store.create(ctx)
 
     blockers = _risk_treatment_blockers(ctx)
 
@@ -161,7 +161,7 @@ def test_missing_treatment_blocks_stage4(gate_store):
 
 def test_planned_or_unreviewed_treatment_still_blocks(gate_store):
     ctx = _ctx()
-    gate_store.save(ctx)
+    gate_store.create(ctx)
     treatment = upsert_risk_treatment(
         ctx,
         source_type="failure_mode",
@@ -181,7 +181,7 @@ def test_planned_or_unreviewed_treatment_still_blocks(gate_store):
 
 def test_reviewed_completed_treatment_unblocks(gate_store):
     ctx = _ctx()
-    gate_store.save(ctx)
+    gate_store.create(ctx)
     treatment = upsert_risk_treatment(
         ctx,
         source_type="failure_mode",
@@ -208,7 +208,7 @@ def test_reviewed_completed_treatment_unblocks(gate_store):
 
 def test_content_change_makes_treatment_stale(gate_store):
     ctx = _ctx()
-    gate_store.save(ctx)
+    gate_store.create(ctx)
     treatment = upsert_risk_treatment(
         ctx,
         source_type="failure_mode",
@@ -252,7 +252,7 @@ def test_open_high_safety_finding_requires_treatment(gate_store):
             requires_human_review=True,
         )
     )
-    gate_store.save(ctx)
+    gate_store.create(ctx)
 
     assert treatment_blockers(ctx)
     assert _risk_treatment_blockers(ctx)
@@ -260,7 +260,7 @@ def test_open_high_safety_finding_requires_treatment(gate_store):
 
 def test_public_demo_is_exempt(gate_store):
     ctx = _ctx(data_classification="public_demo")
-    gate_store.save(ctx)
+    gate_store.create(ctx)
 
     assert treatment_blockers(ctx) == []
     assert _risk_treatment_blockers(ctx) == []
@@ -268,7 +268,7 @@ def test_public_demo_is_exempt(gate_store):
 
 def test_resolution_operation_points_to_treatment_api(gate_store):
     ctx = _ctx()
-    gate_store.save(ctx)
+    gate_store.create(ctx)
 
     operations = build_stage_resolution_operations(ctx, 4)
     operation = next(

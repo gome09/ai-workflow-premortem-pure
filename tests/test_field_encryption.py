@@ -204,7 +204,7 @@ def test_sqlite_round_trip_with_key(tmp_path, monkeypatch):
         )
     ]
 
-    store.save(ctx)
+    store.create(ctx)
 
     # Raw context_json in DB must contain the enc:v1: prefix
     with store._get_conn() as conn:  # noqa: SLF001  # direct DB introspection for test
@@ -251,7 +251,7 @@ def test_sqlite_round_trip_without_key(tmp_path, monkeypatch):
         )
     ]
 
-    store.save(ctx)
+    store.create(ctx)
 
     # Raw context_json stores plaintext (no enc: prefix)
     with store._get_conn() as conn:  # noqa: SLF001
@@ -284,7 +284,7 @@ def test_raw_context_json_is_valid_json(tmp_path, monkeypatch):
     ctx = ProjectContext()
     ctx.data_classification = "business_internal"
     ctx.user_materials = ["secret text"]
-    store.save(ctx)
+    store.create(ctx)
 
     with store._get_conn() as conn:  # noqa: SLF001
         row = conn.execute(

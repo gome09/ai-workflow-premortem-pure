@@ -45,13 +45,18 @@ def client_and_service(tmp_path):
         patch("core.session_service.session_store", store),
         patch("core.session_service.context_cache", cache),
     ):
+        from tests.auth_seed import seed_sqlite_roles
+
+        seed_sqlite_roles(store, tenant_id="test-tenant", roles=("editor", "admin"))
         from api.main import app
 
         yield TestClient(app), SessionService(), str(db_path)
 
 
 def _headers(role: str) -> dict:
-    token = create_access_token({"sub": "test-user", "tenant_id": "test-tenant", "role": role})
+    token = create_access_token(
+        {"sub": f"{role}-user-test-tenant", "tenant_id": "test-tenant", "role": role}
+    )
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -83,7 +88,7 @@ def test_delete_existing_session_succeeds(client_and_service):
     assert data["session_id"] == ctx.session_id
     assert "archived_audit_events" in data
     assert data["archived_audit_events"] >= 1
-    assert data["purged_by"] == "test-user"
+    assert data["purged_by"] == "admin-user-test-tenant"
 
 
 # ── 4: Session not retrievable after DELETE ───────────────────────────

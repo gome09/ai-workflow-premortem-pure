@@ -105,7 +105,7 @@ def _sensitive_ctx() -> ProjectContext:
 
 def test_sqlite_encrypts_all_sensitive_paths_and_round_trips(store):
     ctx = _sensitive_ctx()
-    store.save(ctx)
+    store.create(ctx)
 
     raw = _raw_context_json(store, ctx.session_id)
     assert "enc:v1:" in raw
@@ -146,7 +146,7 @@ def test_sqlite_encrypts_all_sensitive_paths_and_round_trips(store):
 
 def test_report_artifacts_are_encrypted_in_projection_table(store):
     ctx = _sensitive_ctx()
-    store.save(ctx)
+    store.create(ctx)
 
     with store._get_conn() as conn:  # noqa: SLF001
         row = conn.execute(
@@ -169,7 +169,7 @@ def test_report_artifacts_are_encrypted_in_projection_table(store):
 
 def test_wrong_key_fails_closed(store, monkeypatch):
     ctx = _sensitive_ctx()
-    store.save(ctx)
+    store.create(ctx)
 
     monkeypatch.setattr(settings, "data_encryption_key", _KEY_B)
     _reset_fernet_cache()
@@ -183,7 +183,7 @@ def test_wrong_key_fails_closed(store, monkeypatch):
 
 def test_missing_key_on_non_sqlite_backend_refuses_ciphertext(store, monkeypatch):
     ctx = _sensitive_ctx()
-    store.save(ctx)
+    store.create(ctx)
 
     monkeypatch.setattr(settings, "data_encryption_key", "")
     monkeypatch.setattr(settings, "storage_backend", "postgres")
@@ -195,7 +195,7 @@ def test_missing_key_on_non_sqlite_backend_refuses_ciphertext(store, monkeypatch
 
 def test_wrong_tenant_cannot_read_and_empty_tenant_is_rejected(store):
     ctx = _sensitive_ctx()
-    store.save(ctx)
+    store.create(ctx)
 
     assert store.load(ctx.session_id, "tenant-b") is None
     with pytest.raises(TenantIsolationError):
@@ -206,7 +206,7 @@ def test_public_demo_stays_plaintext(store):
     ctx = ProjectContext(tenant_id=TENANT, session_name="demo")
     ctx.data_classification = "public_demo"
     ctx.user_materials = ["演示材料-明文"]
-    store.save(ctx)
+    store.create(ctx)
 
     raw = _raw_context_json(store, ctx.session_id)
     assert "enc:v1:" not in raw
@@ -219,7 +219,7 @@ def test_public_demo_stays_plaintext(store):
 
 def test_projection_human_actions_encrypted_at_rest(store):
     ctx = _sensitive_ctx()
-    store.save(ctx)
+    store.create(ctx)
     action_id = ctx.pending_actions[0].action_id
 
     with store._get_conn() as conn:  # noqa: SLF001
@@ -315,7 +315,7 @@ def test_eval_safety_redteam_and_cache_copies_are_encrypted(store):
         )
     )
 
-    store.save(ctx)
+    store.create(ctx)
     raw = _raw_context_json(store, ctx.session_id)
     for marker in (
         "样本-明文-eval-001",

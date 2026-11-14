@@ -220,6 +220,15 @@ def api_client_and_store(tmp_path):
         patch("core.session_service.session_store", store),
         patch("core.session_service.context_cache", cache),
     ):
+        from tests.auth_seed import seed_sqlite_user
+
+        for user_id, role in (
+            ("editor-user", "editor"),
+            (_CREATOR, "admin"),
+            (_REVIEWER, "admin"),
+        ):
+            seed_sqlite_user(store, user_id=user_id, tenant_id=_TENANT, role=role)
+        seed_sqlite_user(store, user_id="other-admin", tenant_id="other-tenant", role="admin")
         from api.main import app
 
         yield TestClient(app), store
@@ -238,7 +247,7 @@ def test_api_rejects_unqualified_self_and_cross_tenant_then_allows_admin(
     client, store = api_client_and_store
     ctx = _critical_ctx()
     action = _expert_action(ctx)
-    store.save(ctx)
+    store.create(ctx)
 
     base = f"/sessions/{ctx.session_id}/actions/{action.action_id}/resolve"
 

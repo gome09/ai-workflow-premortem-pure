@@ -202,7 +202,7 @@ def service(tmp_path):
 def test_complete_business_closure_flow(service):
     svc, store, _cache = service
     ctx = _complete_ctx()
-    store.save(ctx)
+    store.create(ctx)
 
     status = svc.get_approval_status(ctx.session_id, tenant_id=_TENANT)
     assert status["release_readiness"]["can_approve"] is True
@@ -227,7 +227,7 @@ def test_complete_business_closure_flow(service):
 def test_content_change_invalidates_test_and_approval(service):
     svc, store, cache = service
     ctx = _complete_ctx()
-    store.save(ctx)
+    store.create(ctx)
     svc.request_release_approval(
         ctx.session_id,
         decision="approve",
@@ -252,7 +252,7 @@ def test_content_change_invalidates_test_and_approval(service):
 def test_risk_treatment_listing_is_exposed(service):
     svc, store, _cache = service
     ctx = _complete_ctx()
-    store.save(ctx)
+    store.create(ctx)
 
     payload = svc.list_risk_treatments(ctx.session_id, tenant_id=_TENANT)
     assert payload["applicable"] is True

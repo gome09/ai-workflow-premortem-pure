@@ -11,8 +11,10 @@ from api.schemas import (
 )
 from auth.jwt import TenantContext, get_current_tenant
 from auth.permissions import Role, require_roles
+from core.eval_claim import EvalClaimConflictError
 from core.session_service import session_service
 from core.target_testing import TargetSystemConfig
+from storage.errors import EvalClaimLostError
 
 router = APIRouter(prefix="/sessions", tags=["eval-experiments"])
 
@@ -106,6 +108,8 @@ def run_eval_experiment(
         if isinstance(payload, dict) and payload.get("accepted") is True:
             return JSONResponse(status_code=202, content=payload)
         return payload
+    except (EvalClaimConflictError, EvalClaimLostError) as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
         status_code = 409 if "already running" in str(e) else 400
         raise HTTPException(status_code=status_code, detail=str(e))

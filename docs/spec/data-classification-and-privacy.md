@@ -101,10 +101,11 @@
 事件与审计是独立的持久化路径（`session_events` / `audit_events`），不能沿用上下文加密假设，因此统一在写入层脱敏：
 
 - 入口：`core/session_service.py::_log_event` 与 `core/audit_service.py` 在落库前调用 `core/data_protection.py::redact_payload` / `snapshot`。
-- 规则：`business_internal` / `sensitive_personal` 的自由文本键（`user_input` / `summary` / `claims` / `description` / `trigger_reason` / `reviewer_note` / `content` / `payload_before` / `payload_after` / `title` 等，权威清单见 `FREE_TEXT_KEYS`）整值替换为确定性摘要信封 `{"_redacted": true, "sha256": ..., "length": ...}`；非敏感字符串超过 `MAX_PLAIN_STRING`（200）截断。
+- 规则：`business_internal` / `sensitive_personal` 的自由文本键（`user_input` / `summary` / `claims` / `description` / `trigger_reason` / `reviewer_note` / `content` / `payload_before` / `payload_after` / `title`、评估字段 `input_payload` / `expected_behavior` / `actual_output` / `human_comment` / `judge_reason` / `pass_criteria`、会话字段 `research_target` / `goal` / `session_name` 以及 `disagreement_reason` / `rationale` / `error_message` / `llm_judge_suggestion`，权威清单见 `FREE_TEXT_KEYS`）整值替换为确定性摘要信封 `{"_redacted": true, "sha256": ..., "length": ...}`；非敏感字符串超过 `MAX_PLAIN_STRING`（200）截断。已脱敏信封重复处理保持幂等。
 - 用户消息事件只记录 `input_sha256` / `input_length` / 状态，不落原文。
 - `public_demo` 保持可读，保住离线演示的审计可观测性。
 - 确定性：同一输入与同一分级必得同一信封，不依赖随机数或外部服务，便于测试与审计比对。
+- 删除归档边界：`purge_session` 与 `archive_audit_events` 不再信任调用方 summary，只持久化 `sanitize_purge_summary` 白名单中的会话/租户标识、状态、分类、时间、删除者、留存天数与归档条数；`research_target`、`goal`、`session_name` 与任意嵌套正文不会进入 `session_purged.after_snapshot`。
 
 ## 5. 子系统③：AI 生成内容标识（《标识办法》+ EU AI Act Art.50）
 
@@ -122,7 +123,10 @@
 
 - **留存策略执行化**：`core/config.py` 提供 `audit_retention_days`（默认 **183**）与 `session_retention_days`（默认 0=永久）。`core/retention_service.py` 在应用 lifespan 启动后按 `RETENTION_SWEEP_INTERVAL_SECONDS`（默认 86400 秒）周期扫描，首次扫描在启动后一个周期执行。`RETENTION_DRY_RUN` 默认 `true`，只统计候选不写库；显式设为 `false` 才实际删除。到期会话走与管理员删除一致的链路（checkpoint → 审计归档 → 投影表级联 → 缓存失效）；到期审计事件同时删除活动表与归档表，按 `RETENTION_BATCH_SIZE`（默认 1000）分批。`/health` 暴露 `retention_enabled`、`retention_dry_run` 与 `retention_scheduler` 状态。
 - **删除能力**：新增 `DELETE /sessions/{id}`（admin），级联删除各独立表记录，但**审计事件不删除**（改为写入一条 `session_purged` 审计事件保留处置痕迹）——PIPL 删除权与审计完整性的平衡点。
-- **派生数据与租户边界（v1.4.0）**：`purge_session` 除 `sessions` 外还删除 `gate_evaluation_records` 等投影/派生化数据；所有删除谓词都带 `tenant_id`（PostgreSQL 为 `session_id = %s AND tenant_id = %s::uuid`），仅在 `tenant_id` 为空的历史行上退化为按会话 ID 删除，避免跨租户误删。留存执行器从 `list_expired_sessions` 逐行取 `session_id` + `tenant_id` 后调用同一删除链路，因此 retention 与管理员删除的数据覆盖范围一致，且不会跨租户删除。回归测试见 `tests/test_retention_tenant_scope.py`。
+- **派生数据与租户边界（v1.4.0）**：`purge_session` 除 `sessions` 外还删除 `gate_evaluation_records` 等投影/派生化数据；所有删除谓词都带 `tenant_id`（PostgreSQL 为 `session_id = %s AND tenant_id = %s::uuid`），空租户仅允许显式 `SYSTEM_ACCESS` 且只匹配 `tenant_id IS NULL` 的历史行，不再退化为跨租户无条件删除。留存执行器从 `list_expired_sessions` 逐行取 `session_id` + `tenant_id` 后调用同一删除链路，因此 retention 与管理员删除的数据覆盖范围一致，且不会跨租户删除。回归测试见 `tests/test_retention_tenant_scope.py` 与 `tests/test_retention_cutoff_recheck.py`。
+- **候选更新与事务边界（P0）**：留存候选选出后由 `purge_session` 在写事务内复检 `updated_at`。PostgreSQL 先对父行 `SELECT ... FOR UPDATE` 再读取完整活动审计，逐条归档、写入白名单化的 `session_purged` 并删除父行；SQLite 在读取前执行 `BEGIN IMMEDIATE`，同一连接完成复检、归档与删除。结果以 `PurgeOutcome(deleted, archived_events, reason)` 区分 `deleted` / `stale` / `not_found`；只有 `deleted` 才清理 checkpoint/缓存并计入 `sessions_purged`，`stale` 与 `not_found` 分别计入 `sessions_skipped` / `sessions_missing`。任何归档或 DELETE 失败都回滚整个事务。
+- **历史审计脱敏回填（P0）**：`scripts/redact_legacy_audit_payloads.py` 默认 dry-run，按批扫描 `audit_events`、`audit_events_archive` 与 `session_events`，对已追通自由文本键与 `session_purged` 摘要执行保守脱敏；保留原 event_id、actor、时间与 hash，写入 `_redaction_backfill` 标记保证幂等，非法 JSON 只报告不修改。父会话缺失或分类未知的历史副本按 `business_internal` 保守处理。
+- **缓存命名空间与版本核验（T08）**：上下文缓存键升级为 `session:ctx:v2:{tenant_id}:{session_id}`，payload 必须携带 `storage_version`（旧格式一律 miss）。每次缓存命中先读取数据库父行版本：行不存在或版本不一致即删除缓存并回源；版本查询失败返回 HTTP 503，缓存不再作为删除事实来源。旧键不自动删除，需在排空旧 worker 后运行 `scripts/purge_legacy_context_cache.py`（默认 dry-run，仅匹配本应用 `session:ctx:*` 旧键），并重启所有进程清空 MemoryCache。
 - **备份指引**：`docs/` 补充生产部署备份章节（`pg_dump` 定时 + volume 快照 + 恢复演练清单），属文档交付，不写代码。
 
 ## 7. 子系统⑤：PIA 支持（PIPL 55/56 条）

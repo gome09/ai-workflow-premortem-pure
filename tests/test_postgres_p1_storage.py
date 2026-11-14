@@ -63,7 +63,7 @@ def test_goal_is_ciphertext_at_rest_and_decrypts(tenant_id):
     ctx.data_classification = "business_internal"
     ctx.goal = "PG secret goal"
     ctx.research_target = "PG target"
-    session_store.save(ctx)
+    session_store.create(ctx)
 
     raw = _raw_context(ctx.session_id)
     assert "enc:v1:" in raw

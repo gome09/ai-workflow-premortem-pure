@@ -2,7 +2,7 @@
 
 ## Status Summary
 
-Phase 0–4 与 formal-project-uplift Wave A–E 的代码侧工作已完成；Phase 4 剩余项仅为远端治理动作（分支保护、漏洞报告设置、CodeQL required check、GitHub Release），完成前不得宣称已发布。当前应用版本为 `1.8.0`（Release Gate Integration），ProjectContext schema 保持 `0.10.0`（新增可选 `target_deployment` / `input_versions`，无需 context 迁移），Alembic head 为 `V013`（`service_tokens` + `release_gate_checks`；V012 为 `workspace_invitations`、`eval_cases.standard_version`、`eval_runs.case_version_digest` / `target_deployment_version`；V011 为真实目标执行元数据；V010 为 `sessions.context_digest`；V009 为 `sessions.projection_state`、`eval_runs.pass_criteria` / `llm_judge_suggestion`）。默认执行路径仍为 `single_step`；`langgraph_interrupt` 是受控 opt-in，生产启用要求加密 PostgreSQL checkpoint、独立 Fernet key、单 worker 与 fail-closed readiness。
+Phase 0–4 与 formal-project-uplift Wave A–E 的代码侧工作已完成；Phase 4 剩余项仅为远端治理动作（分支保护、漏洞报告设置、CodeQL required check、GitHub Release），完成前不得宣称已发布。当前应用版本为 `1.9.0`（Database Remediation P0/P1），ProjectContext schema 保持 `0.10.0`（新增可选 `target_deployment` / `input_versions`，无需 context 迁移），Alembic head 为 `V014`（`eval_experiments` 领取协调列；V013 为 `service_tokens` + `release_gate_checks`；V012 为 `workspace_invitations`、`eval_cases.standard_version`、`eval_runs.case_version_digest` / `target_deployment_version`；V011 为真实目标执行元数据；V010 为 `sessions.context_digest`；V009 为 `sessions.projection_state`、`eval_runs.pass_criteria` / `llm_judge_suggestion`）。默认执行路径仍为 `single_step`；`langgraph_interrupt` 是受控 opt-in，生产启用要求加密 PostgreSQL checkpoint、独立 Fernet key、单 worker 与 fail-closed readiness。
 
 2026-09-21 的真实 PostgreSQL 验收已覆盖暂停、进程重建、恢复、清理、durable resume/outbox 与回滚；验收时 adapter 为 healthy/persistent/encrypted。当前 8000/8501 均未监听，因此运行状态只作为带日期的验收证据，不作为持续在线声明。
 
@@ -21,6 +21,10 @@ Phase 0–4 与 formal-project-uplift Wave A–E 的代码侧工作已完成；P
 `.upgrade/AUTHORITY.md` 是经批准权威来源的导航视图，不改变仓库文件本身的所有权。
 
 ## Recent Completed Work
+
+- P1 数据库修复（2026-11-14，版本 `1.9.0`，Alembic `V014`）：T03 评估批次共享领取——V014 为 `eval_experiments` 增加 `claim_owner` / `claim_attempt` / `claim_request_key` / `claim_heartbeat_at` / `claim_lease_until`；新增 `storage/eval_claim.py`、`core/eval_claim.py`、`core/eval_experiment_events.py`、`core/eval_heartbeat.py`；双后端实现 `claim_eval_experiment` / `heartbeat_eval_experiment` / `verify_eval_experiment_owner` / `save_eval_experiment_progress` / `recover_stale_eval_experiment` / `get_eval_experiment_coordination`，锁顺序固定 `sessions` → `eval_experiments`（PG `FOR UPDATE`，SQLite `BEGIN IMMEDIATE`），投影 upsert 不再覆盖协调列；`run_eval_experiment`、后台 job 与 status 改为 DB 直读 + 领取 + 心跳 + 租约过期恢复，同键重复返回当前状态、不同/空键 409，`EvalClaimLostError` 拒绝旧 owner 写入；新增 `EVAL_EXPERIMENT_LEASE_SECONDS`（180）与 `EVAL_EXPERIMENT_HEARTBEAT_INTERVAL_SECONDS`（30，≤ 租约 1/3）。T06 新增 PG 双连接（`test_postgres_purge_archive_order.py`）与 SQLite `BEGIN IMMEDIATE`（`test_sqlite_purge_lock_order.py`，3 项通过）归档顺序验收。T08 双后端新增 `get_session_version`（空租户需 `SYSTEM_ACCESS`），缓存命中先核对 DB 版本，缺失/不一致即删缓存回源，查询失败抛 `StorageUnavailableError` → HTTP 503；`storage/cache.py::_deserialize` 拒绝无 `storage_version` 的旧 payload。新增 `test_cache_version_guard.py`（10 项）与 `test_eval_experiment_claim.py`（9 项）；适配 `test_eval_batch_resilience.py`、`test_storage.py`、`test_scenario_session_flow.py`。验证：离线全量 `1368 passed, 10 skipped`（SQLite + memory + mock + single_step，35.3s）；Ruff check/format、mypy（211 files）、doc-check、version-check（1.9.0）通过。**未验证**：`test_postgres_eval_claim.py`、`test_postgres_purge_archive_order.py` 与 PG/Redis E2E 需 `E2E_DATABASE_URL` 未在本地执行；Redis 实机缓存版本核验、V013→V014 真实升级/降级未实测；不把 SQLite 测试当作 PG 通过。
+
+- P0 数据库修复（2026-11-13，版本当时保持 `1.8.0`，无 Alembic 迁移；head 为 `V013`）：T01 将存储写入拆为显式 `create(ctx)` 与仅更新 `save(ctx)`——`create` 只 INSERT 并拒绝重复 ID，`save` 只更新已存在的租户父行，父行缺失抛 `SessionNotFoundError`（API 409 + 缓存失效）；`create_session` 改用 `create`，双后端主行与投影同事务。T02 在 `purge_session`/`archive_audit_events` 边界使用 `sanitize_purge_summary` 白名单，`research_target`/`goal`/`session_name` 与嵌套正文不再进入 `session_purged.after_snapshot`。T04 `get_current_tenant` 改为请求级读取 DB 当前成员角色（token role 不参与授权），成员删除/租户不匹配/非法角色/DB 故障分别 fail-closed 为 401/403/503，并复用 FastAPI 依赖缓存与线程池避免阻塞事件循环。T05 `purge_session` 返回 `PurgeOutcome(deleted, archived_events, reason)`：PostgreSQL 父行 `FOR UPDATE` 后复检 cutoff，SQLite 读取前 `BEGIN IMMEDIATE`；仅 `deleted` 才清 checkpoint/缓存并计入 `sessions_purged`，`stale`/`not_found` 分别计入 `sessions_skipped`/`sessions_missing`，归档或 DELETE 失败整体回滚。T09 扩展 `FREE_TEXT_KEYS`（评估输入/预期/实际输出/人工判定依据/pass_criteria 等）并保证脱敏信封幂等；新增 `scripts/redact_legacy_audit_payloads.py`（默认 dry-run、批量事务、可续跑、非法 JSON 隔离）与 `scripts/purge_legacy_context_cache.py`（仅清理本应用旧 `session:ctx:*` 键），缓存键升级为 `session:ctx:v2:`。新增 7 个测试文件并适配既有首次持久化调用。验证：离线全量 `1344 passed, 8 skipped`（SQLite + memory + mock + single_step，39.5s）；Ruff check/format（424 files）、mypy（207 files）、doc-check（37 份 0 违规）、version-check（1.8.0）通过。**未验证**：真实 PostgreSQL 双连接锁顺序、Redis 旧键清理实机、真实业务库历史回填；P1 轮已补 PG 测试代码但同样未在本地执行。
 
 - 可重复交付与故障恢复（2026-11-09，版本保持 `1.8.0`，无 Alembic 迁移）：修复报告浅复制导致的重复追加——`_build_lightweight_context` 复制 `report_artifacts`，`create_report_artifact` 按 `report_id` 去重，`ProjectContext` validator 加载时去重，context/投影/API/DB/approval 计数一致；长评估批次改为逐项保存 + 确定性 `EvalRun.idempotency_key` + `EvalExperiment` 状态字段（`run_request_key` / `execution_attempt` / `last_heartbeat_at` / `last_error_code` / `timeout_seconds`），新增进程内 `ThreadPoolExecutor`（`EVAL_EXPERIMENT_WORKERS`）、202 后台执行、`GET .../status`、批次 deadline（`EVAL_EXPERIMENT_TIMEOUT_SECONDS`）、心跳 stale 标记 `interrupted` 与重启续跑跳过已保存结果（completed/failed）的用例；SQLite `sessions.version` 乐观锁与 `StaleContextError`，并发冲突 409 不静默覆盖；`/metrics` 改为自定义路由 + `GovernanceMetricsCollector` 每次 scrape 读取共享存储（积压清零归零），`PROMETHEUS_MULTIPROC_DIR` 下用 `MultiProcessCollector` 聚合多 worker，新增 `monitoring/alert_rules.yml` 6 条关键告警；live 冒烟要求 `parser_status=parsed` 且目标 `outcome=success`/2xx/非空/未截断；扩展业务 E2E 报告唯一性断言、PG 备份恢复测试与 V008 迁移回滚可读性测试。验证：离线全量 `1256 passed, 8 skipped`（SQLite + memory + mock + single_step，62.2s）；Ruff check/format（411 files）、mypy（204 files）、doc-check（37 份 0 违规）、version-check（1.8.0）通过。**未验证**：本地 PostgreSQL 备份恢复演练与 V008→V013 回滚实测、Docker 生产栈启动与多 worker `/metrics` 实机、Redis 实机缓存加密、`LIVE_LLM_TESTS=1` 真实模型/目标冒烟、浏览器端工作台操作；CI `production-safety` 覆盖 PG 迁移/恢复，需在提交后以实际 run 为准。
 - 业务闭环与发布门禁加固（2026-11-09，版本保持 `1.8.0`，无 Alembic 迁移）：发布批次选择改为“最新完整批次说了算”，新失败批次/失败实验不得被旧成功批次掩盖；`EvalRun.truncated` 接入证据校验，截断响应即使 HTTP 200 也按失败处理且不可校准为 passed；用户材料追加会使阶段 1–4 输出 stale、未决动作 supersede 并回到 `S1_RUNNING`，重评前不能再次批准；`ProjectApproval` 记录批准时目标版本，门禁新增可选 `target_version` / `artifact_digest` Query 与 `release_target_version_mismatch` / `release_artifact_digest_mismatch` 阻断；上下文、投影表、Redis/MemoryCache 补齐 eval/校准/红队/安全/标记项与人工备注字段的加密；生产配置拒绝 `CHANGE_ME` 占位密钥，`SECRETS_DIR` 支持非 Docker secret 目录与 POSIX 600 权限校验，`/health/ready` 暴露并校验 `data_encryption`；工作台接通目标部署、真实实验执行、EvalRun 人工校准、团队邀请与批准版本绑定展示。验证：全量 `1238 passed, 7 skipped`（SQLite + memory + mock + single_step，55.6s；7 skip = 原有 6 项 + Windows 跳过的 POSIX secret 权限测试）；Ruff check/format、mypy（203 files）通过。**未验证**：Docker 生产栈实际启动与 `/health/ready` 容器实测、Redis 实机缓存加密往返、POSIX secret 权限位、浏览器端双用户工作台操作；这些不以 SQLite/静态契约测试替代。
@@ -100,35 +104,35 @@ Phase 4: In progress
 
 ## current_task
 
-Release gate integration committed as `3ad2838` and pushed to `origin/main` via SSH; CI verification for that commit, PostgreSQL migration verification and remote governance actions remain
+P0/P1 database remediation implemented in the working tree (version 1.9.0, Alembic V014); local offline validation is green, real PostgreSQL concurrency/migration verification and commit/CI remain
 
 ## last_completed_task
 
-Release Gate Integration (2026-11-07): version 1.8.0 / Alembic V013; tenant-scoped service tokens and admin-only credential management; read-only `GET /release-gate/{session_id}` with allow-only-current-approval semantics; cache bypass; append-only `release_gate_checks`; fail-closed 503 on audit failure; new tests, contract assertions, PG-only lifecycle test, metrics and docs. Committed as `3ad2838` and pushed to `origin/main` via SSH (`28f8e79..3ad2838`).
+Database Remediation P0/P1 (2026-11-14): explicit create/save semantics, purge outcome + lock ordering, request-level role revalidation, audit redaction backfill, cache v2 namespace and DB-version cache guard (503 fail-closed), shared EvalExperiment claim/lease/heartbeat/stale recovery with Alembic V014, and PG/SQLite concurrency acceptance tests. Offline `1368 passed, 10 skipped`; version `1.9.0`.
 
 ## next_action
 
-Verify branch protection, private vulnerability reporting, and CodeQL required check on GitHub, then create the GitHub Release after maintainer approval
+Run the PG-only claim/purge tests with `E2E_DATABASE_URL` and exercise V013→V014 upgrade/downgrade, then commit the approved files explicitly and verify CI
 
 ## last_update
 
-- Date: 2026-11-09T18:00:00+08:00
-- Updated by: Business delivery reliability phase
-- Summary: Version stays 1.8.0; no Alembic migration. Report artifacts are deduplicated by `report_id` across lightweight context, service append and context validation. Long eval batches now persist each `EvalRun`, carry deterministic idempotency keys, expose `GET .../status`, run in a bounded in-process executor with 202 + polling, enforce a batch deadline and stale-heartbeat `interrupted` recovery. SQLite gains optimistic locking. Governance gauges moved to a DB-backed collector with multiprocess aggregation and 6 Prometheus alert rules. Live LLM/target smoke tests require parsed output and successful 2xx target responses. Backup/restore and V008 downgrade readability tests added. Changes are uncommitted in the working tree; CI results must be checked after commit.
+- Date: 2026-11-14T09:30:00+08:00
+- Updated by: Database remediation P1 (T03/T06/T08)
+- Summary: Version 1.9.0 with Alembic V014. EvalExperiment runs are now claimed through DB coordination columns with lease/heartbeat, per-call ownership verification, stale-lease recovery and claim-lost rejection; projection sync cannot overwrite coordination columns, and same-key retries return the current status while different keys get 409. Cache hits verify the parent-row storage version, drop deleted/stale copies and fail closed with 503 when storage cannot be verified. Purge/save lock ordering has SQLite and PG-only acceptance tests. Changes are uncommitted in the working tree; PG-only tests and CI results must be checked after commit.
 
 ## last_validation
 
-- Status: partial（本地离线全量、Ruff、mypy、doc-check、version-check 通过；真实 PostgreSQL 备份恢复/回滚、Docker 多 worker `/metrics`、Redis 实机、live LLM/target 冒烟未执行）
-- Check: `pytest tests/ -q`（1256 passed, 8 skipped）+ `ruff check` + `ruff format --check` + `mypy` + `doc-check` + `version-check`
+- Status: partial（本地离线全量、Ruff、format、mypy、doc-check、version-check 通过；真实 PostgreSQL 领取/归档并发验收、V013→V014 升级/降级、Redis 实机缓存核验、Docker 多 worker `/metrics`、live LLM/target 冒烟未执行）
+- Check: `pytest tests/ -q`（1368 passed, 10 skipped）+ `ruff check` + `ruff format --check` + `mypy`（211 files）+ `doc-check` + `version-check`（1.9.0）
 - Environment: local SQLite/memory/mock/single_step；Windows PowerShell（GNU make 不可用，执行底层等价命令）
-- Scope: business-delivery-reliability
+- Scope: database-remediation-p1
 - Subject: working tree（未提交）
 - Subject digest: not_applicable
-- Recorded: 2026-11-09T18:00:00+08:00
+- Recorded: 2026-11-14T09:30:00+08:00
 
 ## unverified_items
 
-Local PostgreSQL backup/restore drill and V008→V013 downgrade readability (`tests/test_postgres_backup_restore.py` / `test_migration_upgrade_path.py` skips without `E2E_*` DSNs), Docker production stack startup and multi-worker `/metrics` aggregation, Redis-backed cache encryption round-trip, live LLM smoke (`LIVE_LLM_TESTS=1`) and live target smoke, browser-side workbench interaction, the CI result for the uncommitted working tree, and main branch protection / private vulnerability reporting / CodeQL required check / GitHub Release remain unverified. Offline skips are not passes.
+Local PostgreSQL claim/lease concurrency and purge archive-order tests (`tests/test_postgres_eval_claim.py` / `test_postgres_purge_archive_order.py` skip without `E2E_DATABASE_URL`), V013→V014 upgrade/downgrade on a real database, Redis-backed cache version verification, local PostgreSQL backup/restore drill and V008→V014 downgrade readability, Docker production stack startup and multi-worker `/metrics` aggregation, live LLM smoke (`LIVE_LLM_TESTS=1`) and live target smoke, browser-side workbench interaction, the CI result for the uncommitted working tree, and main branch protection / private vulnerability reporting / CodeQL required check / GitHub Release remain unverified. Offline skips are not passes.
 
 ## current_blockers
 

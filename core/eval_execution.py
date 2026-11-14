@@ -70,12 +70,6 @@ def in_flight_request_key(key: str) -> str | None:
         return _request_keys.get(key, "")
 
 
-def is_eval_experiment_running(key: str) -> bool:
-    with _lock:
-        future = _futures.get(key)
-        return future is not None and not future.done()
-
-
 def shutdown_eval_executor() -> None:
     global _executor
     with _lock:

@@ -620,6 +620,13 @@ def test_business_purge_failure_rolls_back_without_session_purged(monkeypatch):
         def fetchall(self) -> list[dict[str, Any]]:
             return []
 
+    class _SingleRow:
+        def __init__(self, row: dict[str, Any]) -> None:
+            self._row = row
+
+        def fetchone(self) -> dict[str, Any]:
+            return self._row
+
     class FailingPurgeConnection:
         def __init__(self) -> None:
             self.statements: list[str] = []
@@ -636,6 +643,13 @@ def test_business_purge_failure_rolls_back_without_session_purged(monkeypatch):
 
         def execute(self, sql: str, params: tuple[Any, ...]) -> Any:
             self.statements.append(sql)
+            if sql.lstrip().startswith("SELECT tenant_id::text"):
+                return _SingleRow(
+                    {
+                        "tenant_id": "tenant-a",
+                        "updated_at": "2026-01-01T00:00:00",
+                    }
+                )
             if sql.lstrip().startswith("SELECT event_id"):
                 return FakeRows()
             if sql.lstrip().startswith("DELETE FROM sessions"):
@@ -644,6 +658,9 @@ def test_business_purge_failure_rolls_back_without_session_purged(monkeypatch):
 
         def commit(self) -> None:
             self.committed = True
+
+        def rollback(self) -> None:
+            self.rolled_back = True
 
     connection = FailingPurgeConnection()
     store = PostgresSessionStore()

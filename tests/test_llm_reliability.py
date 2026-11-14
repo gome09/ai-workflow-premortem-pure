@@ -221,7 +221,7 @@ def test_chat_returns_structured_502_on_model_timeout(monkeypatch, tmp_path):
         goal="Answer questions",
     )
     ctx.current_state = SessionState.S1_RUNNING
-    backend.save(ctx)
+    backend.create(ctx)
 
     llm = _FailingLLM(TimeoutError(_SECRET_TEXT))
     monkeypatch.setattr("stages.base.get_llm_for_stage_with_context", lambda stage, ctx: llm)
@@ -231,6 +231,9 @@ def test_chat_returns_structured_502_on_model_timeout(monkeypatch, tmp_path):
         patch("core.session_service.session_store", backend),
         patch("core.session_service.context_cache", cache),
     ):
+        from tests.auth_seed import seed_sqlite_user
+
+        seed_sqlite_user(backend, user_id="test-user", tenant_id="test-tenant", role="admin")
         from api.main import app
 
         client = TestClient(app)

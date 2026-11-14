@@ -24,7 +24,9 @@ from storage.backends.sqlite_store import SQLiteSessionStore
 
 
 def _headers(role: str, tenant_id: str = "rename-tenant") -> dict:
-    token = create_access_token({"sub": "rename-user", "tenant_id": tenant_id, "role": role})
+    token = create_access_token(
+        {"sub": f"{role}-user-{tenant_id}", "tenant_id": tenant_id, "role": role}
+    )
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -38,6 +40,10 @@ def rename_stack(tmp_path):
         patch("core.session_service.session_store", store),
         patch("core.session_service.context_cache", cache),
     ):
+        from tests.auth_seed import seed_sqlite_roles
+
+        seed_sqlite_roles(store, tenant_id="rename-tenant", roles=("viewer", "editor"))
+        seed_sqlite_roles(store, tenant_id="other-tenant", roles=("editor",))
         from api.main import app
 
         yield TestClient(app), SessionService(), store

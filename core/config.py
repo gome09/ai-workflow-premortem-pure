@@ -191,6 +191,9 @@ class Settings(BaseSettings):
     # 长评估批次：进程内有界执行器 + 持久化状态/心跳/总超时。
     eval_experiment_timeout_seconds: int = 1800
     eval_experiment_heartbeat_stale_seconds: int = 120
+    # 共享领取：租约由 DB 时钟计算，心跳间隔不得超过租约的 1/3。
+    eval_experiment_lease_seconds: int = 180
+    eval_experiment_heartbeat_interval_seconds: int = 30
     eval_experiment_workers: int = 2
 
     # T3.6 LLM Judge（spec governance-platform §5）：LLM 仅建议判分，不终裁。
@@ -262,6 +265,15 @@ class Settings(BaseSettings):
             raise ValueError("EVAL_EXPERIMENT_TIMEOUT_SECONDS must be >= 1")
         if self.eval_experiment_heartbeat_stale_seconds < 1:
             raise ValueError("EVAL_EXPERIMENT_HEARTBEAT_STALE_SECONDS must be >= 1")
+        if self.eval_experiment_lease_seconds < 3:
+            raise ValueError("EVAL_EXPERIMENT_LEASE_SECONDS must be >= 3")
+        if self.eval_experiment_heartbeat_interval_seconds < 1:
+            raise ValueError("EVAL_EXPERIMENT_HEARTBEAT_INTERVAL_SECONDS must be >= 1")
+        if 3 * self.eval_experiment_heartbeat_interval_seconds > self.eval_experiment_lease_seconds:
+            raise ValueError(
+                "EVAL_EXPERIMENT_HEARTBEAT_INTERVAL_SECONDS must be <= "
+                "EVAL_EXPERIMENT_LEASE_SECONDS / 3"
+            )
         if not 1 <= self.eval_experiment_workers <= 8:
             raise ValueError("EVAL_EXPERIMENT_WORKERS must be between 1 and 8")
 

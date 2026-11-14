@@ -8,16 +8,25 @@ import logging
 import sqlite3
 import threading
 import uuid
-from datetime import datetime, timedelta
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from core.data_protection import sanitize_purge_summary
 from core.migrations import migrate_context
 from core.models import ProjectContext
 from core.workflow_state_service import sanitize_persisted_state
 from storage.access import SystemAccess, resolve_system_access
 from storage.context_digest import compute_context_digest
-from storage.errors import StaleContextError, TenantIsolationError
+from storage.errors import (
+    EvalClaimLostError,
+    SessionAlreadyExistsError,
+    SessionNotFoundError,
+    StaleContextError,
+    TenantIsolationError,
+)
+from storage.eval_claim import EvalClaim, EvalClaimOutcome
 from storage.field_security import (
     decrypt_fields_after_load,
     decrypt_text_field,
@@ -29,6 +38,7 @@ from storage.field_security import (
 from storage.goal_backfill import GoalBackfillMode, transform_goal_context
 from storage.projection_read import build_projection_rows, get_projection_spec
 from storage.projection_state import compute_state, plan_sync
+from storage.purge import PurgeOutcome
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +60,12 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("eval_runs", "target_endpoint", "TEXT NOT NULL DEFAULT ''"),
     ("eval_runs", "target_deployment_version", "TEXT NOT NULL DEFAULT ''"),
     ("eval_runs", "case_version_digest", "TEXT NOT NULL DEFAULT ''"),
+    # V014 协调列：只由 storage 领取/心跳/终态事务写入，投影同步不得覆盖。
+    ("eval_experiments", "claim_owner", "TEXT"),
+    ("eval_experiments", "claim_attempt", "INTEGER NOT NULL DEFAULT 0"),
+    ("eval_experiments", "claim_request_key", "TEXT NOT NULL DEFAULT ''"),
+    ("eval_experiments", "claim_heartbeat_at", "TEXT"),
+    ("eval_experiments", "claim_lease_until", "TEXT"),
 )
 
 _INIT_DDL = """
@@ -338,6 +354,11 @@ CREATE TABLE IF NOT EXISTS eval_experiments (
     aggregate_metrics      TEXT NOT NULL DEFAULT '{}',
     comparison_summary     TEXT NOT NULL DEFAULT '{}',
     payload_json           TEXT NOT NULL DEFAULT '{}',
+    claim_owner            TEXT,
+    claim_attempt          INTEGER NOT NULL DEFAULT 0,
+    claim_request_key      TEXT NOT NULL DEFAULT '',
+    claim_heartbeat_at     TEXT,
+    claim_lease_until      TEXT,
     created_at             TEXT,
     started_at             TEXT,
     completed_at           TEXT
@@ -1160,12 +1181,27 @@ class SQLiteSessionStore:
         for experiment in getattr(ctx, "eval_experiments", []) or []:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO eval_experiments (
+                INSERT INTO eval_experiments (
                     experiment_id, session_id, dataset_id, name, status, run_mode, provider,
                     model, baseline_experiment_id, eval_ids, run_ids, aggregate_metrics,
                     comparison_summary, payload_json, created_at, started_at, completed_at
                 )
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(experiment_id) DO UPDATE SET
+                    dataset_id = excluded.dataset_id,
+                    name = excluded.name,
+                    status = excluded.status,
+                    run_mode = excluded.run_mode,
+                    provider = excluded.provider,
+                    model = excluded.model,
+                    baseline_experiment_id = excluded.baseline_experiment_id,
+                    eval_ids = excluded.eval_ids,
+                    run_ids = excluded.run_ids,
+                    aggregate_metrics = excluded.aggregate_metrics,
+                    comparison_summary = excluded.comparison_summary,
+                    payload_json = excluded.payload_json,
+                    started_at = excluded.started_at,
+                    completed_at = excluded.completed_at
                 """,
                 (
                     experiment.experiment_id,
@@ -1256,12 +1292,33 @@ class SQLiteSessionStore:
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def save(self, ctx: ProjectContext) -> None:
-        """Create or update a session.
+    def create(self, ctx: ProjectContext) -> None:
+        """Insert a brand-new session row (and its projections) atomically."""
+        self._persist(ctx, allow_insert=True)
 
+    def save(self, ctx: ProjectContext) -> None:
+        """Update an existing session.
+
+        只更新已存在的父行；行缺失时抛 ``SessionNotFoundError``，绝不 INSERT。
         UPSERT 而非 INSERT OR REPLACE：REPLACE 会先删除旧行并触发投影表的
         ON DELETE CASCADE，导致差分同步跳过的集合数据丢失。
         投影集合按 `projection_state` 差分同步，状态缺失或损坏时回退全量。
+        """
+        self._persist(ctx, allow_insert=False)
+
+    def _persist(self, ctx: ProjectContext, *, allow_insert: bool) -> None:
+        with self._lock:
+            with self._get_conn() as conn:
+                new_version = self._persist_with_conn(conn, ctx, allow_insert=allow_insert)
+                conn.commit()
+        ctx._storage_version = new_version
+
+    def _persist_with_conn(
+        self, conn: sqlite3.Connection, ctx: ProjectContext, *, allow_insert: bool
+    ) -> int:
+        """Write context + projections on an existing connection; caller commits.
+
+        领取/进度/恢复事务需要在同一写事务内复用它，避免嵌套事务或提前提交。
         """
         ctx.updated_at = datetime.utcnow()
         now = _dt(ctx.updated_at)
@@ -1275,125 +1332,134 @@ class SQLiteSessionStore:
         digest = compute_context_digest(data)
         context_json = self._build_context_json_for_storage(ctx, data)
         expected_version = int(getattr(ctx, "_storage_version", 0))
-        with self._lock:
-            with self._get_conn() as conn:
-                row = conn.execute(
-                    "SELECT version, tenant_id, projection_state, context_digest "
-                    "FROM sessions WHERE session_id=?",
+        row = conn.execute(
+            "SELECT version, tenant_id, projection_state, context_digest "
+            "FROM sessions WHERE session_id=?",
+            (ctx.session_id,),
+        ).fetchone()
+        previous_state = (
+            json.loads(row["projection_state"]) if row and row["projection_state"] else {}
+        )
+        plans = plan_sync(previous_state, current_state, data)
+        if row is None:
+            if not allow_insert:
+                raise SessionNotFoundError(ctx.session_id, "save")
+            cursor = conn.execute(
+                """
+                INSERT OR IGNORE INTO sessions
+                    (session_id, tenant_id, current_state, context_json,
+                     projection_state, context_digest, version, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,0,?,?)
+                """,
+                (
+                    ctx.session_id,
+                    ctx.tenant_id or None,
+                    str(data.get("current_state") or "init"),
+                    context_json,
+                    state_json,
+                    digest,
+                    created,
+                    now,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise SessionAlreadyExistsError(ctx.session_id, "create")
+            new_version = 0
+        else:
+            if allow_insert:
+                raise SessionAlreadyExistsError(ctx.session_id, "create")
+            existing_tenant = row["tenant_id"] or ""
+            if existing_tenant != (ctx.tenant_id or ""):
+                raise TenantIsolationError(ctx.session_id, "save")
+            current_version = int(row["version"] or 0)
+            if current_version != expected_version:
+                raise StaleContextError(ctx.session_id, expected_version, current_version)
+            if (row["context_digest"] or "") == digest:
+                # 内容未变化：只推进状态、版本与时间，不重写整份 context_json。
+                cursor = conn.execute(
+                    """
+                    UPDATE sessions
+                    SET current_state    = ?,
+                        projection_state = ?,
+                        updated_at       = ?,
+                        version          = version + 1
+                    WHERE session_id = ? AND version = ?
+                    """,
+                    (
+                        str(data.get("current_state") or "init"),
+                        state_json,
+                        now,
+                        ctx.session_id,
+                        expected_version,
+                    ),
+                )
+            else:
+                cursor = conn.execute(
+                    """
+                    UPDATE sessions
+                    SET current_state    = ?,
+                        context_json     = ?,
+                        projection_state = ?,
+                        context_digest   = ?,
+                        updated_at       = ?,
+                        version          = version + 1
+                    WHERE session_id = ? AND version = ?
+                    """,
+                    (
+                        str(data.get("current_state") or "init"),
+                        context_json,
+                        state_json,
+                        digest,
+                        now,
+                        ctx.session_id,
+                        expected_version,
+                    ),
+                )
+            if cursor.rowcount != 1:
+                exists = conn.execute(
+                    "SELECT 1 FROM sessions WHERE session_id = ?",
                     (ctx.session_id,),
                 ).fetchone()
-                previous_state = (
-                    json.loads(row["projection_state"]) if row and row["projection_state"] else {}
-                )
-                plans = plan_sync(previous_state, current_state, data)
-                if row is None:
-                    conn.execute(
-                        """
-                        INSERT INTO sessions
-                            (session_id, tenant_id, current_state, context_json,
-                             projection_state, context_digest, version, created_at, updated_at)
-                        VALUES (?,?,?,?,?,?,0,?,?)
-                        """,
-                        (
-                            ctx.session_id,
-                            ctx.tenant_id or None,
-                            str(data.get("current_state") or "init"),
-                            context_json,
-                            state_json,
-                            digest,
-                            created,
-                            now,
-                        ),
-                    )
-                    new_version = 0
-                else:
-                    existing_tenant = row["tenant_id"] or ""
-                    if existing_tenant != (ctx.tenant_id or ""):
-                        raise TenantIsolationError(ctx.session_id, "save")
-                    current_version = int(row["version"] or 0)
-                    if current_version != expected_version:
-                        raise StaleContextError(ctx.session_id, expected_version, current_version)
-                    if (row["context_digest"] or "") == digest:
-                        # 内容未变化：只推进状态、版本与时间，不重写整份 context_json。
-                        cursor = conn.execute(
-                            """
-                            UPDATE sessions
-                            SET current_state    = ?,
-                                projection_state = ?,
-                                updated_at       = ?,
-                                version          = version + 1
-                            WHERE session_id = ? AND version = ?
-                            """,
-                            (
-                                str(data.get("current_state") or "init"),
-                                state_json,
-                                now,
-                                ctx.session_id,
-                                expected_version,
-                            ),
-                        )
-                    else:
-                        cursor = conn.execute(
-                            """
-                            UPDATE sessions
-                            SET current_state    = ?,
-                                context_json     = ?,
-                                projection_state = ?,
-                                context_digest   = ?,
-                                updated_at       = ?,
-                                version          = version + 1
-                            WHERE session_id = ? AND version = ?
-                            """,
-                            (
-                                str(data.get("current_state") or "init"),
-                                context_json,
-                                state_json,
-                                digest,
-                                now,
-                                ctx.session_id,
-                                expected_version,
-                            ),
-                        )
-                    if cursor.rowcount != 1:
-                        raise StaleContextError(ctx.session_id, expected_version, current_version)
-                    new_version = current_version + 1
-                if not plans["human_actions"].skip:
-                    self._sync_human_actions(conn, ctx)
-                plan = plans["action_resolution_logs"]
-                if not plan.skip:
-                    self._sync_action_resolution_logs(conn, ctx, start=plan.start)
-                plan = plans["llm_traces"]
-                if not plan.skip:
-                    self._sync_llm_traces(conn, ctx, start=plan.start)
-                plan = plans["audit_events"]
-                if not plan.skip:
-                    self._sync_audit_events(conn, ctx, start=plan.start)
-                if not plans["evidence_sources"].skip:
-                    self._sync_evidence_sources(conn, ctx)
-                if not plans["safety_findings"].skip:
-                    self._sync_safety_findings(conn, ctx)
-                if not plans["report_artifacts"].skip:
-                    self._sync_report_artifacts(conn, ctx)
-                if not plans["eval_cases"].skip:
-                    self._sync_eval_cases(conn, ctx)
-                if not plans["eval_runs"].skip:
-                    self._sync_eval_runs(conn, ctx)
-                if not plans["eval_judgments"].skip:
-                    self._sync_eval_judgments(conn, ctx)
-                if not plans["human_calibrations"].skip:
-                    self._sync_human_calibrations(conn, ctx)
-                if not plans["eval_datasets"].skip:
-                    self._sync_eval_datasets(conn, ctx)
-                if not plans["eval_experiments"].skip:
-                    self._sync_eval_experiments(conn, ctx)
-                if not plans["redteam_cases"].skip:
-                    self._sync_redteam_cases(conn, ctx)
-                if not plans["interrupt_records"].skip:
-                    self._sync_interrupt_records(conn, ctx)
-                # outbox 行量很小，每次同步以保持 pending → completed 状态推进。
-                self._sync_interrupt_resume_outbox(conn, ctx)
-                conn.commit()
-        ctx._storage_version = new_version
+                if exists:
+                    raise StaleContextError(ctx.session_id, expected_version, current_version)
+                raise SessionNotFoundError(ctx.session_id, "save")
+            new_version = current_version + 1
+        if not plans["human_actions"].skip:
+            self._sync_human_actions(conn, ctx)
+        plan = plans["action_resolution_logs"]
+        if not plan.skip:
+            self._sync_action_resolution_logs(conn, ctx, start=plan.start)
+        plan = plans["llm_traces"]
+        if not plan.skip:
+            self._sync_llm_traces(conn, ctx, start=plan.start)
+        plan = plans["audit_events"]
+        if not plan.skip:
+            self._sync_audit_events(conn, ctx, start=plan.start)
+        if not plans["evidence_sources"].skip:
+            self._sync_evidence_sources(conn, ctx)
+        if not plans["safety_findings"].skip:
+            self._sync_safety_findings(conn, ctx)
+        if not plans["report_artifacts"].skip:
+            self._sync_report_artifacts(conn, ctx)
+        if not plans["eval_cases"].skip:
+            self._sync_eval_cases(conn, ctx)
+        if not plans["eval_runs"].skip:
+            self._sync_eval_runs(conn, ctx)
+        if not plans["eval_judgments"].skip:
+            self._sync_eval_judgments(conn, ctx)
+        if not plans["human_calibrations"].skip:
+            self._sync_human_calibrations(conn, ctx)
+        if not plans["eval_datasets"].skip:
+            self._sync_eval_datasets(conn, ctx)
+        if not plans["eval_experiments"].skip:
+            self._sync_eval_experiments(conn, ctx)
+        if not plans["redteam_cases"].skip:
+            self._sync_redteam_cases(conn, ctx)
+        if not plans["interrupt_records"].skip:
+            self._sync_interrupt_records(conn, ctx)
+        # outbox 行量很小，每次同步以保持 pending → completed 状态推进。
+        self._sync_interrupt_resume_outbox(conn, ctx)
+        return new_version
 
     def _sync_interrupt_resume_outbox(self, conn: sqlite3.Connection, ctx: ProjectContext) -> None:
         for record in getattr(ctx, "interrupt_records", []) or []:
@@ -1455,6 +1521,11 @@ class SQLiteSessionStore:
                     ).fetchone()
         if not row:
             return None
+        return self._ctx_from_session_row(row)
+
+    @staticmethod
+    def _ctx_from_session_row(row: sqlite3.Row) -> ProjectContext:
+        """反序列化父行上下文；领取/恢复事务复用同一形状的会话行。"""
         ctx = migrate_context(sanitize_persisted_state(json.loads(row["context_json"])))
         if ctx:
             decrypt_fields_after_load(ctx)
@@ -1468,9 +1539,11 @@ class SQLiteSessionStore:
     def archive_audit_events(self, session_id: str, purged_by: str, summary: dict) -> int:
         """Copy audit_events to audit_events_archive + write session_purged event.
 
+        The caller-provided summary is untrusted: only the purge whitelist is
+        persisted in the archive snapshot.
+
         Returns the number of events archived (including the purge event).
         """
-        import json
         import uuid
 
         archived = 0
@@ -1527,7 +1600,7 @@ class SQLiteSessionStore:
                         None,
                         None,
                         None,
-                        json.dumps(summary, default=str),
+                        json.dumps(sanitize_purge_summary(summary), default=str),
                         json.dumps({"purged_by": purged_by}, default=str),
                         datetime.utcnow().isoformat(),
                         datetime.utcnow().isoformat(),
@@ -1543,59 +1616,115 @@ class SQLiteSessionStore:
         tenant_id: str,
         purged_by: str,
         summary: dict,
-    ) -> int:
-        """Archive audit evidence and delete a session in one SQLite transaction."""
-        archived = 0
+        *,
+        retention_cutoff: datetime | None = None,
+        system_access: SystemAccess | None = None,
+    ) -> PurgeOutcome:
+        """Archive audit evidence and delete a session in one IMMEDIATE transaction.
+
+        在读取父行之前执行 ``BEGIN IMMEDIATE``，复检 cutoff 后再归档与删除；
+        ``threading.Lock`` 只做实例内串行化，不能替代跨进程写事务。
+        """
+        import uuid
+
+        system = resolve_system_access(system_access, operation="purge", session_id=session_id)
+        if not tenant_id and not system:
+            raise TenantIsolationError(session_id, "purge")
+
         with self._lock:
-            with self._get_conn() as conn:
+            conn = self._get_conn()
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                if tenant_id:
+                    row = conn.execute(
+                        "SELECT tenant_id, updated_at FROM sessions "
+                        "WHERE session_id = ? AND tenant_id = ?",
+                        (session_id, tenant_id),
+                    ).fetchone()
+                elif system:
+                    row = conn.execute(
+                        "SELECT tenant_id, updated_at FROM sessions "
+                        "WHERE session_id = ? AND tenant_id IS NULL",
+                        (session_id,),
+                    ).fetchone()
+                else:  # pragma: no cover - defensive
+                    raise TenantIsolationError(session_id, "purge")
+
+                if row is None:
+                    conn.rollback()
+                    return PurgeOutcome(False, 0, "not_found")
+                if retention_cutoff is not None:
+                    updated_at = row["updated_at"]
+                    parsed = (
+                        updated_at
+                        if isinstance(updated_at, datetime)
+                        else datetime.fromisoformat(str(updated_at))
+                    )
+                    cutoff = (
+                        retention_cutoff
+                        if retention_cutoff.tzinfo is not None
+                        else retention_cutoff.replace(tzinfo=UTC)
+                    )
+                    comparable = parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+                    if comparable >= cutoff:
+                        conn.rollback()
+                        return PurgeOutcome(False, 0, "stale")
+
+                archived = 0
                 rows = conn.execute(
                     "SELECT event_id, actor, event_type, target_type, target_id, before_hash, "
                     "after_hash, before_snapshot, after_snapshot, metadata, created_at "
                     "FROM audit_events WHERE session_id = ?",
                     (session_id,),
                 ).fetchall()
-                for row in rows:
+                for event in rows:
                     conn.execute(
                         "INSERT OR IGNORE INTO audit_events_archive "
                         "(archive_id, original_session_id, event_id, actor, event_type, target_type, "
                         "target_id, before_hash, after_hash, before_snapshot, after_snapshot, metadata, "
-                        "original_created_at, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "original_created_at, archived_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         (
-                            f"arch-{row['event_id']}",
+                            f"arch-{event['event_id']}",
                             session_id,
-                            row["event_id"],
-                            row["actor"],
-                            row["event_type"],
-                            row["target_type"],
-                            row["target_id"],
-                            row["before_hash"],
-                            row["after_hash"],
-                            row["before_snapshot"],
-                            row["after_snapshot"],
-                            row["metadata"],
-                            row["created_at"],
+                            event["event_id"],
+                            event["actor"],
+                            event["event_type"],
+                            event["target_type"],
+                            event["target_id"],
+                            event["before_hash"],
+                            event["after_hash"],
+                            event["before_snapshot"],
+                            event["after_snapshot"],
+                            event["metadata"],
+                            event["created_at"],
                             datetime.utcnow().isoformat(),
                         ),
                     )
                     archived += 1
+
+                archived_summary = sanitize_purge_summary(
+                    {**summary, "archived_audit_events": archived}
+                )
                 conn.execute(
                     "INSERT INTO audit_events_archive "
                     "(archive_id, original_session_id, event_id, actor, event_type, target_type, "
-                    "target_id, before_snapshot, after_snapshot, metadata, original_created_at, archived_at) "
-                    "VALUES (?, ?, ?, ?, 'session_purged', 'session', ?, NULL, ?, ?, ?, ?)",
+                    "target_id, before_snapshot, after_snapshot, metadata, original_created_at, "
+                    "archived_at) VALUES (?, ?, ?, ?, 'session_purged', 'session', ?, NULL, ?, ?, ?, ?)",
                     (
                         f"arch-purged-{uuid.uuid4()}",
                         session_id,
                         f"purge-{uuid.uuid4()}",
                         purged_by,
                         session_id,
-                        json.dumps(summary, default=str),
+                        json.dumps(archived_summary, default=str),
                         json.dumps({"purged_by": purged_by}, default=str),
                         datetime.utcnow().isoformat(),
                         datetime.utcnow().isoformat(),
                     ),
                 )
                 archived += 1
+
                 # 租户谓词防止同名 session_id 的跨租户残留被误删。
                 if tenant_id:
                     conn.execute(
@@ -1614,12 +1743,18 @@ class SQLiteSessionStore:
                     )
                 else:
                     cursor = conn.execute(
-                        "DELETE FROM sessions WHERE session_id = ?", (session_id,)
+                        "DELETE FROM sessions WHERE session_id = ? AND tenant_id IS NULL",
+                        (session_id,),
                     )
                 if cursor.rowcount != 1:
                     raise ValueError(f"Session not found during purge: {session_id}")
                 conn.commit()
-        return archived
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
+        return PurgeOutcome(True, archived, "deleted")
 
     def count_expired_sessions(self, cutoff: datetime) -> int:
         """Count sessions whose last update predates the retention cutoff."""
@@ -1855,6 +1990,295 @@ class SQLiteSessionStore:
                         (session_id,),
                     ).fetchone()
         return row is not None
+
+    def get_session_version(
+        self,
+        session_id: str,
+        tenant_id: str = "",
+        *,
+        system_access: SystemAccess | None = None,
+    ) -> int | None:
+        """Return the stored parent-row version; ``None`` means the row is gone.
+
+        T08 uses this on every cache hit. An empty tenant is rejected so the
+        cache cannot become a cross-tenant existence oracle; tenantless legacy
+        sessions (demo/scripts) require the explicit ``SYSTEM_ACCESS`` channel.
+        """
+        system = resolve_system_access(
+            system_access, operation="get_session_version", session_id=session_id
+        )
+        if not tenant_id and not system:
+            raise TenantIsolationError(session_id, "get_session_version")
+        with self._lock:
+            with self._get_conn() as conn:
+                if tenant_id:
+                    row = conn.execute(
+                        "SELECT version FROM sessions WHERE session_id=? AND tenant_id=?",
+                        (session_id, tenant_id),
+                    ).fetchone()
+                else:
+                    row = conn.execute(
+                        "SELECT version FROM sessions WHERE session_id=?",
+                        (session_id,),
+                    ).fetchone()
+        return int(row["version"] or 0) if row is not None else None
+
+    # ── EvalExperiment claim coordination ─────────────────────────────────────
+
+    @staticmethod
+    def _require_tenant(session_id: str, tenant_id: str, operation: str) -> None:
+        if not tenant_id:
+            raise TenantIsolationError(session_id, operation)
+
+    def claim_eval_experiment(
+        self,
+        session_id: str,
+        tenant_id: str,
+        experiment_id: str,
+        *,
+        owner: str,
+        request_key: str,
+        lease_seconds: int,
+        decide: Callable[[ProjectContext, int, datetime], Any],
+    ) -> EvalClaimOutcome:
+        """Claim one experiment under ``BEGIN IMMEDIATE``; decide() runs inside."""
+        self._require_tenant(session_id, tenant_id, "claim_eval_experiment")
+        conn = self._get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT context_json, tenant_id, version, updated_at FROM sessions "
+                "WHERE session_id=? AND tenant_id=?",
+                (session_id, tenant_id),
+            ).fetchone()
+            if row is None:
+                conn.rollback()
+                return EvalClaimOutcome(False, "not_found")
+            exp_row = conn.execute(
+                "SELECT claim_attempt FROM eval_experiments WHERE experiment_id=? AND session_id=?",
+                (experiment_id, session_id),
+            ).fetchone()
+            coordination_attempt = int(exp_row["claim_attempt"] or 0) if exp_row else 0
+            ctx = self._ctx_from_session_row(row)
+            now = datetime.utcnow()
+            decision = decide(ctx, coordination_attempt, now)
+            if not decision.claimed:
+                conn.rollback()
+                return EvalClaimOutcome(False, decision.reason)
+            new_version = self._persist_with_conn(conn, ctx, allow_insert=False)
+            lease_until = now + timedelta(seconds=lease_seconds)
+            conn.execute(
+                "UPDATE eval_experiments SET claim_owner=?, claim_attempt=?, "
+                "claim_request_key=?, claim_heartbeat_at=?, claim_lease_until=? "
+                "WHERE experiment_id=? AND session_id=?",
+                (
+                    owner,
+                    int(decision.attempt),
+                    request_key,
+                    _dt(now),
+                    _dt(lease_until),
+                    experiment_id,
+                    session_id,
+                ),
+            )
+            conn.commit()
+            ctx._storage_version = new_version
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return EvalClaimOutcome(
+            True,
+            "claimed",
+            EvalClaim(owner, int(decision.attempt), request_key, now, lease_until),
+        )
+
+    def heartbeat_eval_experiment(
+        self,
+        session_id: str,
+        tenant_id: str,
+        experiment_id: str,
+        owner: str,
+        attempt: int,
+        lease_seconds: int,
+    ) -> bool:
+        """Extend a live lease; returns False when the claim is no longer valid."""
+        self._require_tenant(session_id, tenant_id, "heartbeat_eval_experiment")
+        now = datetime.utcnow()
+        lease_until = now + timedelta(seconds=lease_seconds)
+        with self._lock:
+            with self._get_conn() as conn:
+                cursor = conn.execute(
+                    "UPDATE eval_experiments SET claim_heartbeat_at=?, claim_lease_until=? "
+                    "WHERE experiment_id=? AND session_id=? AND claim_owner=? "
+                    "AND claim_attempt=? AND status='running' "
+                    "AND claim_lease_until IS NOT NULL "
+                    "AND julianday(claim_lease_until) > julianday('now')",
+                    (_dt(now), _dt(lease_until), experiment_id, session_id, owner, attempt),
+                )
+                conn.commit()
+        return cursor.rowcount == 1
+
+    def verify_eval_experiment_owner(
+        self,
+        session_id: str,
+        tenant_id: str,
+        experiment_id: str,
+        owner: str,
+        attempt: int,
+    ) -> bool:
+        """Read-only claim check using the database clock."""
+        self._require_tenant(session_id, tenant_id, "verify_eval_experiment_owner")
+        with self._lock:
+            with self._get_conn() as conn:
+                row = conn.execute(
+                    "SELECT 1 FROM eval_experiments e "
+                    "JOIN sessions s ON s.session_id = e.session_id "
+                    "WHERE e.experiment_id=? AND e.session_id=? AND s.tenant_id=? "
+                    "AND e.claim_owner=? AND e.claim_attempt=? AND e.status='running' "
+                    "AND e.claim_lease_until IS NOT NULL "
+                    "AND julianday(e.claim_lease_until) > julianday('now')",
+                    (experiment_id, session_id, tenant_id, owner, attempt),
+                ).fetchone()
+        return row is not None
+
+    def save_eval_experiment_progress(
+        self,
+        ctx: ProjectContext,
+        experiment_id: str,
+        owner: str,
+        attempt: int,
+        *,
+        terminal: bool = False,
+    ) -> None:
+        """Conditionally persist batch progress; never overwrites a newer claim."""
+        self._require_tenant(ctx.session_id, ctx.tenant_id or "", "save_eval_experiment_progress")
+        conn = self._get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT version FROM sessions WHERE session_id=? AND tenant_id=?",
+                (ctx.session_id, ctx.tenant_id),
+            ).fetchone()
+            if row is None:
+                raise SessionNotFoundError(ctx.session_id, "save_eval_experiment_progress")
+            current_version = int(row["version"] or 0)
+            expected_version = int(getattr(ctx, "_storage_version", 0))
+            if current_version != expected_version:
+                raise StaleContextError(ctx.session_id, expected_version, current_version)
+            claim = conn.execute(
+                "SELECT claim_owner, claim_attempt, status, claim_lease_until "
+                "FROM eval_experiments WHERE experiment_id=? AND session_id=?",
+                (experiment_id, ctx.session_id),
+            ).fetchone()
+            if not self._claim_is_live(claim, owner, attempt):
+                raise EvalClaimLostError(experiment_id, "owner_or_lease_invalid")
+            new_version = self._persist_with_conn(conn, ctx, allow_insert=False)
+            if terminal:
+                conn.execute(
+                    "UPDATE eval_experiments SET claim_owner=NULL, claim_heartbeat_at=NULL, "
+                    "claim_lease_until=NULL WHERE experiment_id=? AND session_id=? "
+                    "AND claim_owner=? AND claim_attempt=?",
+                    (experiment_id, ctx.session_id, owner, attempt),
+                )
+            conn.commit()
+            ctx._storage_version = new_version
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def recover_stale_eval_experiment(
+        self, session_id: str, tenant_id: str, experiment_id: str
+    ) -> bool:
+        """Mark an expired lease ``interrupted`` in one write transaction."""
+        self._require_tenant(session_id, tenant_id, "recover_stale_eval_experiment")
+        conn = self._get_conn()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT context_json, tenant_id, version, updated_at FROM sessions "
+                "WHERE session_id=? AND tenant_id=?",
+                (session_id, tenant_id),
+            ).fetchone()
+            if row is None:
+                conn.rollback()
+                return False
+            exp_row = conn.execute(
+                "SELECT status, claim_lease_until FROM eval_experiments "
+                "WHERE experiment_id=? AND session_id=? "
+                "AND status='running' AND claim_lease_until IS NOT NULL "
+                "AND julianday(claim_lease_until) <= julianday('now')",
+                (experiment_id, session_id),
+            ).fetchone()
+            if exp_row is None:
+                conn.rollback()
+                return False
+            ctx = self._ctx_from_session_row(row)
+            from core.eval_claim import recover_lease
+
+            if not recover_lease(ctx, experiment_id, now=datetime.utcnow()):
+                conn.rollback()
+                return False
+            new_version = self._persist_with_conn(conn, ctx, allow_insert=False)
+            conn.execute(
+                "UPDATE eval_experiments SET claim_owner=NULL, claim_heartbeat_at=NULL, "
+                "claim_lease_until=NULL WHERE experiment_id=? AND session_id=?",
+                (experiment_id, session_id),
+            )
+            conn.commit()
+            ctx._storage_version = new_version
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return True
+
+    def get_eval_experiment_coordination(
+        self, session_id: str, tenant_id: str, experiment_id: str
+    ) -> EvalClaim | None:
+        """Read coordination columns without returning them to API callers directly."""
+        self._require_tenant(session_id, tenant_id, "get_eval_experiment_coordination")
+        with self._lock:
+            with self._get_conn() as conn:
+                row = conn.execute(
+                    "SELECT e.claim_owner, e.claim_attempt, e.claim_request_key, "
+                    "e.claim_heartbeat_at, e.claim_lease_until "
+                    "FROM eval_experiments e JOIN sessions s ON s.session_id = e.session_id "
+                    "WHERE e.experiment_id=? AND e.session_id=? AND s.tenant_id=?",
+                    (experiment_id, session_id, tenant_id),
+                ).fetchone()
+        if row is None:
+            return None
+        return EvalClaim(
+            owner=row["claim_owner"] or "",
+            attempt=int(row["claim_attempt"] or 0),
+            request_key=row["claim_request_key"] or "",
+            heartbeat_at=self._parse_dt(row["claim_heartbeat_at"]),
+            lease_until=self._parse_dt(row["claim_lease_until"]),
+        )
+
+    @staticmethod
+    def _parse_dt(value: Any) -> datetime | None:
+        if value is None or value == "":
+            return None
+        if isinstance(value, datetime):
+            return value
+        return datetime.fromisoformat(str(value))
+
+    @staticmethod
+    def _claim_is_live(claim: sqlite3.Row | None, owner: str, attempt: int) -> bool:
+        # 终态写入允许 status 已是 completed/failed/interrupted：判定依据是
+        # owner/attempt 未被新领取覆盖且租约仍有效。
+        if claim is None:
+            return False
+        if (claim["claim_owner"] or "") != owner or int(claim["claim_attempt"] or 0) != attempt:
+            return False
+        lease_until = SQLiteSessionStore._parse_dt(claim["claim_lease_until"])
+        return lease_until is not None and lease_until > datetime.utcnow()
 
     def list_projection(
         self,

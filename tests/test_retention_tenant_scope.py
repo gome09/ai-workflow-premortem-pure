@@ -150,12 +150,12 @@ def _archive_count(store: SQLiteSessionStore, session_id: str) -> int:
 
 def test_purge_removes_all_derived_data_and_keeps_archive(store):
     ctx_a = _build_ctx("tenant-a", "retention-a")
-    store.save(ctx_a)
+    store.create(ctx_a)
     store.log_event(ctx_a.session_id, "message", 1, {"state": "s1_review"})
     _insert_gate_row(store, ctx_a.session_id, "tenant-a")
 
     ctx_b = _build_ctx("tenant-b", "retention-b")
-    store.save(ctx_b)
+    store.create(ctx_b)
     _insert_gate_row(store, ctx_b.session_id, "tenant-b")
 
     tables = _session_tables(store)
@@ -176,13 +176,15 @@ def test_purge_removes_all_derived_data_and_keeps_archive(store):
     ):
         assert before[expected_table] >= 1, (expected_table, before)
 
-    archived = store.purge_session(
+    outcome = store.purge_session(
         ctx_a.session_id,
         "tenant-a",
         purged_by="retention",
         summary={"reason": "session_retention_days"},
     )
     # 原审计事件 + session_purged 事件都进入 archive。
+    assert outcome.deleted is True
+    archived = outcome.archived_events
     assert archived >= 2
     assert _archive_count(store, ctx_a.session_id) == archived
 
@@ -199,7 +201,7 @@ def test_purge_removes_all_derived_data_and_keeps_archive(store):
 
 def test_purge_does_not_touch_same_session_id_in_other_tenant(store):
     ctx_a = _build_ctx("tenant-a", "retention-a")
-    store.save(ctx_a)
+    store.create(ctx_a)
     _insert_gate_row(store, ctx_a.session_id, "tenant-a")
     # 历史数据里可能存在同 session_id 但 tenant 不一致的治理残留（如租户回填前）。
     _insert_gate_row(store, ctx_a.session_id, "tenant-b")

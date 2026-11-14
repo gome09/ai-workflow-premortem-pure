@@ -160,7 +160,7 @@ def test_log_event_keeps_note_for_public_demo(isolated_service):
     service, store, _ = isolated_service
     ctx = ProjectContext(tenant_id="tenant-a", session_name="demo")
     ctx.data_classification = "public_demo"
-    store.save(ctx)
+    store.create(ctx)
 
     service._log_event(
         ctx,

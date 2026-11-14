@@ -17,6 +17,8 @@ from core.data_protection import redact_payload
 from core.models import AuditEvent, LLMTrace, MessageRole, ProjectContext, SessionState
 from core.stage_advancement_coordinator import build_stage_operation_envelope
 from core.stage_advancement_decision import DecisionSource
+from storage.access import SYSTEM_ACCESS
+from storage.errors import StorageUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -79,11 +81,37 @@ class SessionAccess:
         return self._load_session_direct(session_id, tenant_id)
 
     def _load_session_direct(self, session_id: str, tenant_id: str = "") -> ProjectContext | None:
-        """获取会话（优先从 Redis，回退到 PG）"""
-        ctx = self._cache().get(session_id, tenant_id)
-        if ctx:
-            self._cache().refresh_ttl(session_id, tenant_id)
-            return ctx
+        """获取会话：缓存命中也必须先核对 DB 版本。
+
+        旧实现直接续期返回缓存，删除后回填或乱序 SET 会让旧 context 长期存活。
+        现在每次命中都用轻量版本查询确认父行仍存在且版本一致；不一致即删缓存
+        并回源。DB 不可用时 fail-closed，不把缓存当作数据库替代品。
+        """
+        cached = self._cache().get(session_id, tenant_id)
+        if cached is not None:
+            try:
+                # 无租户的历史会话（DEMO/脚本）没有租户作用域可核验，
+                # 需要显式 SYSTEM_ACCESS 通道才能读取版本；正常 API 路径始终带租户。
+                db_version = self._store().get_session_version(
+                    session_id,
+                    tenant_id,
+                    system_access=SYSTEM_ACCESS if not tenant_id else None,
+                )
+            except Exception as exc:  # noqa: BLE001 - storage unavailable must not serve cache
+                logger.warning(
+                    "Session version check failed; refusing cached context: session=%s tenant=%s",
+                    session_id,
+                    tenant_id,
+                )
+                raise StorageUnavailableError(session_id, "get_session_version") from exc
+            if db_version is None:
+                self._cache_delete(session_id, tenant_id)
+                return None
+            if db_version != int(getattr(cached, "_storage_version", -1)):
+                self._cache_delete(session_id, tenant_id)
+            else:
+                self._cache().refresh_ttl(session_id, tenant_id)
+                return cached
 
         ctx = self._store().load(session_id, tenant_id)
         if ctx:

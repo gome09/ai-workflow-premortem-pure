@@ -165,7 +165,7 @@ def test_sqlite_save_skips_unchanged_collections_and_keeps_rows(store, monkeypat
 
     monkeypatch.setattr(store, "_sync_human_actions", recording_sync)
 
-    store.save(ctx)
+    store.create(ctx)
     first = store.list_projection("human_actions", ctx.session_id, TENANT)
     store.save(ctx)
 
@@ -187,7 +187,7 @@ def test_sqlite_save_appends_only_new_audit_events(store, monkeypatch) -> None:
 
     monkeypatch.setattr(store, "_sync_audit_events", recording_sync)
 
-    store.save(ctx)
+    store.create(ctx)
     _audit(ctx, "EV-3")
     store.save(ctx)
 
@@ -201,7 +201,7 @@ def test_sqlite_save_appends_only_new_audit_events(store, monkeypatch) -> None:
 def test_sqlite_save_persists_projection_state(store) -> None:
     ctx = _ctx_with_action()
 
-    store.save(ctx)
+    store.create(ctx)
 
     assert _projection_state(store._db_path, ctx.session_id) == compute_state(
         ctx.model_dump(mode="json")

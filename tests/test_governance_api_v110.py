@@ -53,14 +53,24 @@ def client(governance_store):
     Uses yield so the patch stays active during test execution (the governance
     router looks up ``session_store`` at request time via its module global).
     """
-    with patch("api.routers.governance.session_store", governance_store):
+    with (
+        patch("api.routers.governance.session_store", governance_store),
+        patch("core.session_service.session_store", governance_store),
+    ):
+        from tests.auth_seed import seed_sqlite_roles
+
+        seed_sqlite_roles(governance_store, tenant_id="test-tenant", roles=("viewer", "admin"))
+        seed_sqlite_roles(governance_store, tenant_id="tenantA", roles=("admin",))
+        seed_sqlite_roles(governance_store, tenant_id="tenantB", roles=("admin",))
         from api.main import app
 
         yield TestClient(app)
 
 
 def _auth_headers(tenant_id: str = "test-tenant", role: str = "admin") -> dict:
-    token = create_access_token({"sub": "test-user", "tenant_id": tenant_id, "role": role})
+    token = create_access_token(
+        {"sub": f"{role}-user-{tenant_id}", "tenant_id": tenant_id, "role": role}
+    )
     return {"Authorization": f"Bearer {token}"}
 
 

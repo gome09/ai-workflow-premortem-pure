@@ -18,6 +18,15 @@ from auth.jwt import create_access_token
 
 @pytest.fixture
 def auth_headers():
+    # 请求级角色复核需要真实成员记录；隔离测试库在 client fixture 中替换
+    # core.session_service.session_store，这里按当前补丁目标幂等 seed。
+    from core import session_service as session_service_module
+    from storage.backends.sqlite_store import SQLiteSessionStore
+    from tests.auth_seed import seed_sqlite_user
+
+    store = session_service_module.session_store
+    if isinstance(store, SQLiteSessionStore):
+        seed_sqlite_user(store, user_id="test-user", tenant_id="test-tenant", role="admin")
     token = create_access_token({"sub": "test-user", "tenant_id": "test-tenant", "role": "admin"})
     return {"Authorization": f"Bearer {token}"}
 

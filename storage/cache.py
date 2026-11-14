@@ -22,6 +22,7 @@ import redis
 
 from core.config import settings
 from core.models import ProjectContext
+from storage.cache_keys import context_cache_key
 from storage.field_security import context_from_cache_payload, context_payload_for_cache
 
 logger = logging.getLogger(__name__)
@@ -52,13 +53,16 @@ def _deserialize(raw: str) -> ProjectContext | None:
         payload: Any = json.loads(raw)
     except (TypeError, ValueError):
         return None
-    if isinstance(payload, dict) and isinstance(payload.get("context"), dict):
+    if not isinstance(payload, dict):
+        return None
+    # v2 payloads always carry storage_version. Missing version means a legacy
+    # or corrupted value: treat as miss so T08 never trusts an unversioned copy.
+    if "storage_version" not in payload:
+        return None
+    if isinstance(payload.get("context"), dict):
         ctx = context_from_cache_payload(payload["context"])
         ctx._storage_version = int(payload.get("storage_version") or 0)
         return ctx
-    # Legacy payloads written before V008 have no version; treat as version 0.
-    if isinstance(payload, dict):
-        return context_from_cache_payload(payload)
     return None
 
 
@@ -76,7 +80,7 @@ class ContextCache:
         )
 
     def _key(self, session_id: str, tenant_id: str = "") -> str:
-        return f"session:ctx:{tenant_id}:{session_id}"
+        return context_cache_key(session_id, tenant_id)
 
     def set(self, ctx: ProjectContext) -> None:
         try:

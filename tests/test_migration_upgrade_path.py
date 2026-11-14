@@ -174,7 +174,7 @@ def test_downgrade_preserves_business_row_and_reload(migrated_database):
         research_target="migration restore target",
         goal="migration restore goal",
     )
-    store.save(ctx)
+    store.create(ctx)
 
     command.downgrade(config, "V008")
     with psycopg.connect(_DATABASE_URL) as conn:

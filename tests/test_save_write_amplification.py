@@ -46,7 +46,7 @@ def _raw_row(store: SQLiteSessionStore, columns: str) -> dict[str, Any]:
 
 def test_sqlite_unchanged_save_skips_context_json(sqlite_store):
     ctx = ProjectContext(session_id=SESSION, tenant_id=TENANT, session_name="demo")
-    sqlite_store.save(ctx)
+    sqlite_store.create(ctx)
     before = _raw_row(sqlite_store, "context_json, context_digest")
 
     sqlite_store.save(ctx)
@@ -59,7 +59,7 @@ def test_sqlite_unchanged_save_skips_context_json(sqlite_store):
 
 def test_sqlite_changed_content_rewrites_context_json(sqlite_store):
     ctx = ProjectContext(session_id=SESSION, tenant_id=TENANT, session_name="demo")
-    sqlite_store.save(ctx)
+    sqlite_store.create(ctx)
     before = _raw_row(sqlite_store, "context_json, context_digest")
 
     ctx.user_materials = ["new material"]
@@ -75,7 +75,7 @@ def test_sqlite_changed_content_rewrites_context_json(sqlite_store):
 
 def test_sqlite_legacy_row_without_digest_is_rewritten(sqlite_store):
     ctx = ProjectContext(session_id=SESSION, tenant_id=TENANT)
-    sqlite_store.save(ctx)
+    sqlite_store.create(ctx)
     conn = sqlite3.connect(sqlite_store._db_path)
     try:
         conn.execute("UPDATE sessions SET context_digest=NULL WHERE session_id=?", (SESSION,))
@@ -90,7 +90,7 @@ def test_sqlite_legacy_row_without_digest_is_rewritten(sqlite_store):
 
 def test_sqlite_load_reads_updated_at_from_sessions_column(sqlite_store):
     ctx = ProjectContext(session_id=SESSION, tenant_id=TENANT)
-    sqlite_store.save(ctx)
+    sqlite_store.create(ctx)
 
     loaded = sqlite_store.load(SESSION, TENANT)
 
@@ -102,8 +102,9 @@ def test_sqlite_load_reads_updated_at_from_sessions_column(sqlite_store):
 
 
 class _Result:
-    def __init__(self, row: dict[str, Any] | None = None) -> None:
+    def __init__(self, row: dict[str, Any] | None = None, rowcount: int = 0) -> None:
         self._row = row
+        self.rowcount = rowcount
 
     def fetchone(self) -> dict[str, Any] | None:
         return self._row
@@ -153,6 +154,9 @@ class _RecordingConnection:
             self._exists = True
             self._state = json.loads(str(params[4]))
             self._digest = str(params[5])
+            return _Result(None, rowcount=1)
+        if "UPDATE sessions" in sql:
+            return _Result(None, rowcount=1)
         return _Result(None)
 
     def cursor(self) -> _Cursor:
@@ -178,7 +182,7 @@ def test_postgres_unchanged_save_skips_context_json(monkeypatch):
     store, conn = _postgres_store(monkeypatch)
     ctx = ProjectContext(session_id=SESSION, tenant_id=TENANT, session_name="demo")
 
-    store.save(ctx)
+    store.create(ctx)
     store.save(ctx)
 
     updates = [sql for sql in conn.statements if "UPDATE sessions" in sql]
@@ -190,7 +194,7 @@ def test_postgres_unchanged_save_skips_context_json(monkeypatch):
 def test_postgres_changed_content_rewrites_context_json(monkeypatch):
     store, conn = _postgres_store(monkeypatch)
     ctx = ProjectContext(session_id=SESSION, tenant_id=TENANT, session_name="demo")
-    store.save(ctx)
+    store.create(ctx)
 
     ctx.user_materials = ["new material"]
     store.save(ctx)
@@ -205,7 +209,7 @@ def test_postgres_insert_persists_digest(monkeypatch):
     store, conn = _postgres_store(monkeypatch)
     ctx = ProjectContext(session_id=SESSION, tenant_id=TENANT)
 
-    store.save(ctx)
+    store.create(ctx)
 
     inserts = [sql for sql in conn.statements if "INSERT INTO sessions" in sql]
     assert inserts

@@ -62,7 +62,7 @@ def service(tmp_path):
 def test_material_change_resets_workflow_and_marks_all_stages_stale(service):
     svc, store = service
     ctx = _complete_ctx()
-    store.save(ctx)
+    store.create(ctx)
 
     result = svc.add_materials(
         ctx.session_id, ["新增需求材料：需要支持多轮追问"], tenant_id=_TENANT
@@ -96,7 +96,7 @@ def test_clearing_stale_flags_alone_does_not_restore_approvability(service):
     """手工清除 stale 也不能绕过：旧目标测试证据仍绑定旧评估版本。"""
     svc, store = service
     ctx = _complete_ctx()
-    store.save(ctx)
+    store.create(ctx)
     svc.add_materials(ctx.session_id, ["another material"], tenant_id=_TENANT)
 
     reloaded = store.load(ctx.session_id, _TENANT)

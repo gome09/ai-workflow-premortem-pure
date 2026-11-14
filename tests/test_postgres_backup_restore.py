@@ -82,7 +82,7 @@ def test_dump_restore_preserves_business_record_and_allows_save(tmp_path):
         user_materials=["restore-sensitive-sample"],
         data_classification="business_internal",
     )
-    source.save(ctx)
+    source.create(ctx)
     source.close()
 
     dump = tmp_path / "ai_workflow.dump.sql"

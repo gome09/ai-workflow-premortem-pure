@@ -140,7 +140,7 @@ def _by_key(rows: list[dict], key: str) -> list[dict]:
 )
 def test_projection_rows_match_context_dumps(store, table, collection_attr, key) -> None:
     ctx = _ctx_with_collections()
-    store.save(ctx)
+    store.create(ctx)
 
     expected = [item.model_dump(mode="json") for item in getattr(ctx, collection_attr)]
     actual = store.list_projection(table, ctx.session_id, ctx.tenant_id)
@@ -151,7 +151,7 @@ def test_projection_rows_match_context_dumps(store, table, collection_attr, key)
 
 def test_projection_returns_empty_for_existing_session(store) -> None:
     ctx = ProjectContext(session_id="s-empty", tenant_id=TENANT)
-    store.save(ctx)
+    store.create(ctx)
 
     assert store.list_projection("evidence_sources", ctx.session_id, TENANT) == []
     assert store.list_projection("audit_events", ctx.session_id, TENANT) == []
@@ -164,7 +164,7 @@ def test_projection_returns_none_for_missing_session(store) -> None:
 def test_projection_enforces_tenant_ownership(store) -> None:
     ctx = ProjectContext(session_id="s-tenant", tenant_id="tenant-a")
     ctx.evidence_sources.append(EvidenceSource(session_id=ctx.session_id, title="e"))
-    store.save(ctx)
+    store.create(ctx)
 
     assert store.list_projection("evidence_sources", ctx.session_id, "tenant-b") is None
     assert store.list_projection("evidence_sources", ctx.session_id, "tenant-a") is not None
@@ -191,7 +191,7 @@ def test_projection_filters_by_status(store) -> None:
             ),
         ]
     )
-    store.save(ctx)
+    store.create(ctx)
 
     rows = store.list_projection("human_actions", ctx.session_id, TENANT, {"status": "pending"})
     assert rows is not None
@@ -248,7 +248,7 @@ def test_service_list_uses_projection_without_loading_context(
             description="d",
         )
     )
-    backend.save(ctx)
+    backend.create(ctx)
 
     def _fail(*args, **kwargs):
         raise AssertionError("list_actions must not load the full context")
@@ -261,7 +261,7 @@ def test_service_list_uses_projection_without_loading_context(
 
 def test_service_keeps_empty_collection_contract(isolated_service, monkeypatch) -> None:
     service, backend = isolated_service
-    backend.save(ProjectContext(session_id="s-empty", tenant_id=TENANT))
+    backend.create(ProjectContext(session_id="s-empty", tenant_id=TENANT))
 
     def _fail(*args, **kwargs):
         raise AssertionError("empty projection must not fall back to context")

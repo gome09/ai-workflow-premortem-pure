@@ -21,9 +21,9 @@ from storage.backends.sqlite_store import SQLiteSessionStore
 
 
 @pytest.fixture
-def client():
+def client(tmp_path):
     """创建测试客户端，Mock 掉存储和图"""
-    store = SQLiteSessionStore(":memory:")
+    store = SQLiteSessionStore(str(tmp_path / "api.db"))
     store.initialize()
     cache = MemoryCache(ttl_seconds=3600)
     with (
@@ -31,9 +31,12 @@ def client():
         patch("core.session_service.session_store", store),
         patch("core.session_service.context_cache", cache),
     ):
+        from tests.auth_seed import seed_sqlite_user
+
+        seed_sqlite_user(store, user_id="test-user", tenant_id="test-tenant", role="admin")
         from api.main import app
 
-        return TestClient(app)
+        yield TestClient(app)
 
 
 @pytest.fixture

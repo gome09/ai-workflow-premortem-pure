@@ -23,6 +23,17 @@ def _extract_function(name: str) -> ast.FunctionDef:
     raise AssertionError(f"frontend/**/*.py 中未找到函数 {name}")
 
 
+class _State(dict):
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
+
+    def __setattr__(self, name, value):
+        self[name] = value
+
+
 def _exec_function(name: str, extra_globals: dict) -> object:
     fn = _extract_function(name)
     path = next(
@@ -35,12 +46,16 @@ def _exec_function(name: str, extra_globals: dict) -> object:
 
 
 def test_activate_blank_session_clears_previous_scenario_and_messages():
-    state = SimpleNamespace(
+    state = _State(
         selected_scenario_id="generic_rag_demo",
         messages=[{"role": "user", "content": "old"}],
     )
     activate = _exec_function(
-        "_activate_created_session", {"st": SimpleNamespace(session_state=state)}
+        "_activate_created_session",
+        {
+            "st": SimpleNamespace(session_state=state),
+            "_clear_read_errors": lambda: None,
+        },
     )
 
     activate({"session_id": "blank-1", "current_state": "init", "selected_scenario_id": None})

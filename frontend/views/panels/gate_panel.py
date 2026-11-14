@@ -12,9 +12,9 @@ from labels import (
     severity_zh,
 )
 from models.api_client import (
-    get_stage_advancement_decision,
-    get_stage_readiness,
-    get_stage_resolution,
+    get_stage_advancement_decision_checked,
+    get_stage_readiness_checked,
+    get_stage_resolution_checked,
 )
 
 
@@ -24,22 +24,36 @@ def _stage_advancement_decision(stage_id: int) -> dict:
     cached = decisions.get(f"stage_{stage_id}")
     if isinstance(cached, dict) and cached:
         return cached
-    decision = get_stage_advancement_decision(st.session_state.session_id, stage_id)
-    if decision:
-        decisions = dict(st.session_state.get("stage_advancement_decisions", {}))
-        decisions[f"stage_{stage_id}"] = decision
-        st.session_state.stage_advancement_decisions = decisions
+    ok, decision = get_stage_advancement_decision_checked(st.session_state.session_id, stage_id)
+    if not ok or not isinstance(decision, dict) or not decision:
+        st.session_state.advancement_error = "无法读取阶段推进判定，当前门禁状态不可确认。"
+        return {}
+    st.session_state.advancement_error = ""
+    decisions = dict(st.session_state.get("stage_advancement_decisions", {}))
+    decisions[f"stage_{stage_id}"] = decision
+    st.session_state.stage_advancement_decisions = decisions
     return decision
 
 
 def render_gate_panel(state: str) -> None:
     """Stage Readiness / Gate Blockers 面板。"""
-    readiness = st.session_state.stage_readiness or get_stage_readiness(st.session_state.session_id)
-    st.session_state.stage_readiness = readiness
-    stage_resolution = st.session_state.stage_resolution or get_stage_resolution(
-        st.session_state.session_id
-    )
-    st.session_state.stage_resolution = stage_resolution
+    readiness_error = st.session_state.get("readiness_error")
+    if not st.session_state.stage_readiness and not readiness_error:
+        ok, readiness = get_stage_readiness_checked(st.session_state.session_id)
+        if ok and isinstance(readiness, dict):
+            st.session_state.stage_readiness = readiness
+            st.session_state.readiness_error = ""
+        else:
+            st.session_state.readiness_error = "无法读取阶段门禁状态，当前门禁状态不可确认。"
+    readiness = st.session_state.stage_readiness or {}
+    stage_resolution = st.session_state.stage_resolution or {}
+    if not stage_resolution:
+        resolution_ok, resolution_payload = get_stage_resolution_checked(
+            st.session_state.session_id
+        )
+        if resolution_ok and isinstance(resolution_payload, dict):
+            st.session_state.stage_resolution = resolution_payload
+            stage_resolution = resolution_payload
     state_stage_map = {
         "s1_running": 1,
         "s1_review": 1,
@@ -56,14 +70,27 @@ def render_gate_panel(state: str) -> None:
         current_readiness = readiness.get(f"stage_{current_stage_id}", {})
         advancement_decision = _stage_advancement_decision(current_stage_id)
         blockers = current_readiness.get("blockers", []) or []
+        gate_unknown = bool(
+            st.session_state.get("readiness_error") or st.session_state.get("advancement_error")
+        )
         can_continue = advancement_decision.get(
             "can_advance", current_readiness.get("can_continue", False)
         )
-        gate_label = "✅ 当前阶段可推进" if can_continue else f"🧭 阶段推进阻断器 ({len(blockers)})"
-        with st.expander(gate_label, expanded=bool(blockers)):
+        if gate_unknown:
+            gate_label = "⚠️ 门禁状态暂不可用"
+        elif can_continue:
+            gate_label = "✅ 当前阶段可推进"
+        else:
+            gate_label = f"🧭 阶段推进阻断器 ({len(blockers)})"
+        with st.expander(gate_label, expanded=bool(blockers) or gate_unknown):
             st.caption(
                 f"阶段 {current_stage_id} · 输出版本 v{current_readiness.get('stage_output_version', 1)}"
             )
+            if gate_unknown:
+                st.warning(
+                    "⚠️ 门禁状态暂不可用，无法确认当前阶段是否可推进。"
+                    "请使用「🔄 刷新」重试；不要依据当前显示判断已解除阻断。"
+                )
             if advancement_decision:
                 hard_cnt = advancement_decision.get("hard_blockers_count", 0)
                 exec_cnt = advancement_decision.get("executable_operations_count", 0)
@@ -169,7 +196,8 @@ def render_gate_panel(state: str) -> None:
                         bits.append(f"required_resolution={blocker.get('required_resolution')}")
                         st.caption(" · ".join(bits))
             else:
-                st.success("当前阶段没有阻断项。")
+                if not gate_unknown:
+                    st.success("当前阶段没有阻断项。")
 
             operations = current_readiness.get("recommended_next_operations") or []
             if operations:

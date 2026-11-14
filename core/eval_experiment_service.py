@@ -10,6 +10,7 @@ from typing import Any
 
 from core.audit_service import append_audit_event
 from core.config import settings
+from core.eval_claim import actual_execution_mode, infer_execution_mode
 from core.eval_comparison_service import compare_experiments
 from core.eval_dataset_service import get_dataset
 from core.eval_experiment_events import trace_experiment_event as _trace_experiment_event
@@ -151,6 +152,7 @@ def run_experiment(
     完成，本函数只执行用例；``guard`` 在每个外部调用前核验租约。
     """
     experiment = _get_experiment(ctx, experiment_id)
+    requested_mode = actual_execution_mode(experiment, dry_run_only)
     if claim is None:
         if experiment.status == "completed":
             if request_key and experiment.run_request_key == request_key:
@@ -162,6 +164,12 @@ def run_experiment(
             raise ValueError("EvalExperiment is already running")
         if request_key and experiment.run_request_key and experiment.run_request_key != request_key:
             raise ValueError("EvalExperiment request key does not match the persisted run")
+        previous_mode, _inferred = infer_execution_mode(ctx, experiment)
+        if previous_mode and previous_mode != requested_mode:
+            raise ValueError(
+                "EvalExperiment was already executed with a different mode; "
+                "create a new experiment instead of resuming it"
+            )
 
     dataset = get_dataset(ctx, experiment.dataset_id)
     if not dataset.case_ids:
@@ -178,6 +186,7 @@ def run_experiment(
             experiment.started_at = now
         experiment.status = "running"
         experiment.run_request_key = request_key or experiment.run_request_key
+        experiment.execution_mode = requested_mode
         experiment.execution_attempt += 1
         experiment.last_heartbeat_at = now
         experiment.completed_at = None
@@ -200,6 +209,7 @@ def run_experiment(
                 "request_key": experiment.run_request_key,
                 "attempt": experiment.execution_attempt,
                 "timeout_seconds": experiment.timeout_seconds,
+                "execution_mode": experiment.execution_mode,
             },
         )
         _trace_experiment_event(ctx, experiment, "eval_experiment_started")

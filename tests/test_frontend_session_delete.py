@@ -18,6 +18,19 @@ from pathlib import Path
 from types import SimpleNamespace
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+
+
+class _State(dict):
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
+
+    def __setattr__(self, name, value):
+        self[name] = value
+
+
 FRONTEND_SOURCES = {
     path: path.read_text(encoding="utf-8") for path in sorted(FRONTEND_DIR.rglob("*.py"))
 }
@@ -54,10 +67,12 @@ def test_api_delete_exists_and_retries_on_401():
     fn, path = _extract_function("api_delete")
     src = ast.get_source_segment(FRONTEND_SOURCES[path], fn)
     assert src is not None
-    assert "_http_session.delete(" in src, "api_delete 必须通过共享连接池发起 DELETE 请求"
-    assert "r.status_code == 401 and _refresh_access_token()" in src, (
-        "api_delete 必须在 401 时用 refresh token 重试（与 api_post/api_get 同模式）"
-    )
+    assert '_request("delete"' in src, "api_delete 必须通过共享 strict 传输层发起 DELETE 请求"
+    perform_fn, _ = _extract_function("_perform")
+    perform_src = ast.get_source_segment(FRONTEND_SOURCES[path], perform_fn)
+    assert perform_src is not None
+    assert "getattr(_http_session, method)(" in perform_src, "共享传输层必须复用连接池"
+    assert "_refresh_access_token()" in perform_src, "401 刷新必须在共享传输层统一处理"
 
 
 # ── 角色解析（login 响应体不含 role，须从 JWT payload 解码）────────────────
@@ -100,9 +115,13 @@ def test_confirm_dialog_contract():
 
 def test_current_session_delete_resets_state():
     assert "这是当前正在使用的会话" in SOURCE, "删除当前会话时弹窗必须给出专门提示"
-    stub_state = SimpleNamespace()
+    stub_state = _State()
     reset_fn = _exec_function(
-        "_reset_session_state", {"st": SimpleNamespace(session_state=stub_state)}
+        "_reset_session_state",
+        {
+            "st": SimpleNamespace(session_state=stub_state),
+            "_clear_read_errors": lambda: None,
+        },
     )
     reset_fn()
     assert stub_state.session_id is None

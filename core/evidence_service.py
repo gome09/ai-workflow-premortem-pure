@@ -144,12 +144,15 @@ def verify_evidence_source(
     evidence_id: str,
     note: str = "",
     verified_by: str = "user",
+    actor_id: str = "",
+    actor_role: str = "",
 ) -> EvidenceSource:
+    reviewer_id = (actor_id or "").strip()
     for ev in ctx.evidence_sources:
         if ev.evidence_id == evidence_id:
             before = ev.model_dump(mode="json")
             ev.verified = True
-            ev.verified_by = verified_by
+            ev.verified_by = reviewer_id or verified_by
             ev.verified_at = datetime.utcnow()
             ev.verification_note = note
             append_audit_event(
@@ -160,7 +163,11 @@ def verify_evidence_source(
                 target_id=evidence_id,
                 before=before,
                 after=ev,
-                metadata={"note": note},
+                metadata={
+                    "note": note,
+                    "reviewer_id": reviewer_id,
+                    "reviewer_role": actor_role,
+                },
             )
             return ev
     raise ValueError(f"Evidence not found: {evidence_id}")

@@ -4,11 +4,13 @@ from __future__ import annotations
 import streamlit as st
 from components.redteam_panel import render_redteam_panel
 from controllers.eval_controller import (
+    _TERMINAL_EXPERIMENT_STATUSES,
     approve_redteam,
     create_dataset_from_stage3,
     create_experiment,
     create_redteam_dataset_and_refresh,
     generate_redteam,
+    refresh_experiment_status,
     reject_redteam,
     run_all_cases,
     run_case,
@@ -17,16 +19,23 @@ from controllers.eval_controller import (
     sync_redteam_case,
 )
 from controllers.governance_controller import handle_calibrate_eval_run
-from labels import execution_kind_zh, execution_outcome_zh, status_zh
+from labels import (
+    execution_kind_zh,
+    execution_outcome_zh,
+    experiment_execution_source_zh,
+    status_zh,
+)
 from models.api_client import (
     get_redteam_coverage,
     list_eval_cases,
     list_eval_datasets,
     list_eval_experiments,
-    list_eval_runs,
+    list_eval_runs_checked,
     list_human_calibrations,
     list_redteam_cases,
 )
+from models.feedback import ApiError
+from models.session_state import refresh_actions
 
 
 def _target_config_inputs(prefix: str) -> dict | None:
@@ -59,6 +68,60 @@ def _target_config_inputs(prefix: str) -> dict | None:
     }
 
 
+def _experiment_tracked_status(experiment_id: str) -> dict | None:
+    store = st.session_state.get("eval_experiment_status") or {}
+    status = store.get(experiment_id) if isinstance(store, dict) else None
+    return status if isinstance(status, dict) else None
+
+
+def _render_experiment_status(experiment_id: str) -> None:
+    status = _experiment_tracked_status(experiment_id)
+    if not status:
+        return
+    if status.get("status_error"):
+        st.warning(status["status_error"])
+        return
+    if status.get("status_warning"):
+        st.warning(status["status_warning"])
+    state = status.get("status") or "unknown"
+    st.caption(
+        f"实际执行={status.get('execution_mode') or '未知'} · "
+        f"进度 {status.get('completed_cases', 0)}/{status.get('total_cases', 0)} · "
+        f"失败 {status.get('failed_cases', 0)}"
+    )
+    if status.get("last_error_code"):
+        st.caption(f"错误码={status.get('last_error_code')}")
+    if status.get("heartbeat_stale"):
+        st.warning("检测到执行心跳陈旧，服务端已按租约恢复状态；请核对后再决定是否恢复运行。")
+    if state == "completed":
+        if status.get("failed_cases"):
+            st.warning(f"执行结束，但有 {status.get('failed_cases')} 个用例失败。")
+        else:
+            st.info("执行结束：全部用例完成。")
+    elif state in {"failed", "interrupted", "cancelled"}:
+        st.error(f"实验未完成：{state}（错误码={status.get('last_error_code') or 'unknown'}）。")
+    elif state in {"accepted", "running"}:
+        st.info("实验运行中；状态每 3 秒自动查询一次。")
+
+
+@st.fragment(run_every=3.0)
+def _poll_experiment_status(session_id: str, experiment_id: str) -> None:
+    if st.session_state.get("session_id") != session_id:
+        return
+    status = _experiment_tracked_status(experiment_id)
+    if status and (
+        status.get("status") in _TERMINAL_EXPERIMENT_STATUSES or status.get("status_error")
+    ):
+        _render_experiment_status(experiment_id)
+        return
+    refresh_experiment_status(experiment_id)
+    _render_experiment_status(experiment_id)
+    latest = _experiment_tracked_status(experiment_id)
+    if latest and latest.get("status") in _TERMINAL_EXPERIMENT_STATUSES:
+        refresh_actions()
+        st.rerun(scope="app")
+
+
 def render_redteam_section() -> None:
     with st.expander("🛡️ 红队覆盖", expanded=False):
         if not st.toggle(
@@ -69,8 +132,12 @@ def render_redteam_section() -> None:
             st.caption("红队数据默认懒加载，打开上方开关后加载。")
             return
 
-        redteam_cases = list_redteam_cases(st.session_state.session_id)
-        redteam_coverage = get_redteam_coverage(st.session_state.session_id)
+        try:
+            redteam_cases = list_redteam_cases(st.session_state.session_id)
+            redteam_coverage = get_redteam_coverage(st.session_state.session_id)
+        except ApiError:
+            st.caption("红队数据暂不可用（读取失败，不代表没有用例或覆盖充分）。")
+            return
         render_redteam_panel(cases=redteam_cases, coverage=redteam_coverage)
 
         col_generate, col_dataset = st.columns(2)
@@ -109,19 +176,57 @@ def render_redteam_section() -> None:
                     sync_redteam_case(case_id)
 
 
-def _render_eval_calibration(eval_runs: list[dict]) -> None:
+def _render_eval_calibration(eval_runs: list[dict], runs_available: bool = True) -> None:
     with st.expander("🧑‍⚖️ EvalRun 人工校准", expanded=False):
+        if not runs_available:
+            st.warning("无法读取评测运行列表，暂不能进行人工校准；请稍后刷新重试。")
+            return
         target_runs = [run for run in eval_runs if run.get("run_mode") == "target_http"]
         if not target_runs:
             st.caption("暂无 target_http 运行；真实目标测试完成后可在此做人工校准。")
             return
-        calibrations = list_human_calibrations(st.session_state.session_id)
+        try:
+            calibrations = list_human_calibrations(st.session_state.session_id)
+        except ApiError:
+            st.caption("人工校准记录暂不可用（读取失败，不代表没有校准）。")
+            return
         latest_by_run: dict[str, dict] = {}
         for calibration in calibrations:
             latest_by_run[calibration.get("eval_run_id") or ""] = calibration
 
+        experiment_ids = sorted(
+            {str(run.get("experiment_id")) for run in target_runs if run.get("experiment_id")}
+        )
+        batch_options = ["全部批次", *experiment_ids]
+        selected_batch = st.selectbox(
+            "批次（实验）筛选",
+            batch_options,
+            key="calibration_batch_filter",
+        )
+        run_keyword = (
+            st.text_input(
+                "按运行 ID 搜索",
+                key="calibration_run_keyword",
+                placeholder="输入 RUN- 前缀定位具体运行",
+            )
+            .strip()
+            .lower()
+        )
+        filtered_runs = [
+            run
+            for run in target_runs
+            if (selected_batch == "全部批次" or run.get("experiment_id") == selected_batch)
+            and (not run_keyword or run_keyword in str(run.get("run_id") or "").lower())
+        ]
+        limit = max(int(st.session_state.get("calibration_limit", 20)), 20)
+        st.caption(
+            f"显示 {min(limit, len(filtered_runs))} / {len(filtered_runs)} 个 target_http 运行"
+        )
+        if not filtered_runs:
+            st.caption("当前筛选条件下没有可校准的运行。")
+
         st.caption("passed 必须填写人工判定依据；失败的真实目标运行不可改判为 passed。")
-        for run in target_runs[-20:]:
+        for run in filtered_runs[:limit]:
             run_id = run.get("run_id") or ""
             st.markdown(
                 f"**`{run_id}`** · 用例={run.get('eval_id')} · "
@@ -161,6 +266,15 @@ def _render_eval_calibration(eval_runs: list[dict]) -> None:
                 handle_calibrate_eval_run(run_id, label, comment, disagreement)
             st.divider()
 
+        if len(filtered_runs) > limit:
+            if st.button(
+                "显示更多（+20）",
+                key="load_more_calibrations",
+                use_container_width=True,
+            ):
+                st.session_state.calibration_limit = limit + 20
+                st.rerun()
+
 
 def render_eval_panel() -> None:
     with st.expander("🧪 评测用例 / 数据集 / 实验", expanded=False):
@@ -172,14 +286,22 @@ def render_eval_panel() -> None:
             st.caption("评测数据默认懒加载，打开上方开关后加载。")
             return
 
-        eval_cases = list_eval_cases(st.session_state.session_id)
-        eval_runs = list_eval_runs(st.session_state.session_id)
-        eval_datasets = list_eval_datasets(st.session_state.session_id)
-        eval_experiments = list_eval_experiments(st.session_state.session_id)
+        try:
+            eval_cases = list_eval_cases(st.session_state.session_id)
+            eval_datasets = list_eval_datasets(st.session_state.session_id)
+            eval_experiments = list_eval_experiments(st.session_state.session_id)
+        except ApiError:
+            st.caption("评测用例 / 数据集 / 实验暂不可用（读取失败，不代表没有数据）。")
+            return
+        eval_runs_ok, eval_runs_payload = list_eval_runs_checked(st.session_state.session_id)
+        eval_runs = (
+            eval_runs_payload if eval_runs_ok and isinstance(eval_runs_payload, list) else []
+        )
 
         st.caption(
             "评测数据集 / 评测实验 / 回归门控 / 追踪回填门控均已在数据层面可用；"
-            "运行时校验仍按指令延后执行。"
+            "实验默认 dry-run：target_http 勾选真实执行后调用目标系统，"
+            "llm_node 实验仍以 dry_run 模拟、不调用真实模型。"
         )
         metric_cols = st.columns(4)
         metric_cols[0].metric("评测用例", len(eval_cases))
@@ -249,46 +371,101 @@ def render_eval_panel() -> None:
             if eval_experiments:
                 st.markdown("**实验列表**")
                 for experiment in eval_experiments:
+                    experiment_id = experiment.get("experiment_id") or ""
                     metrics = experiment.get("aggregate_metrics") or {}
                     comparison = experiment.get("comparison_summary") or {}
+                    tracked = _experiment_tracked_status(experiment_id)
                     st.markdown(
-                        f"- `{experiment.get('experiment_id')}` · {experiment.get('name')} · "
-                        f"{status_zh(experiment.get('status'))} · 模式={experiment.get('run_mode')} · "
+                        f"- `{experiment_id}` · {experiment.get('name')} · "
+                        f"{status_zh(experiment.get('status'))} · 配置模式={experiment.get('run_mode')} · "
                         f"通过率={metrics.get('pass_rate', 0):.2f}"
                     )
+                    st.caption(
+                        "实际执行来源="
+                        + experiment_execution_source_zh(
+                            eval_runs, experiment_id, runs_available=eval_runs_ok
+                        )
+                    )
+                    tracked_mode = tracked.get("execution_mode") if tracked else None
+                    if tracked_mode:
+                        st.caption(f"最近运行={tracked_mode}")
                     disagreement_rate = metrics.get("human_disagreement_rate")
                     if disagreement_rate is not None:
                         st.caption(
                             f"人工校准 {metrics.get('human_calibration_count', 0)} 次 · "
                             f"与自动评审分歧率={disagreement_rate:.2f}"
                         )
-                    if experiment.get("status") in {"created", "failed"}:
+
+                    if tracked is None and experiment.get("status") == "running":
+                        # 重入/刷新：running 实验主动查询一次服务端状态。
+                        refresh_experiment_status(experiment_id)
+                        tracked = _experiment_tracked_status(experiment_id)
+
+                    if tracked and tracked.get("status") in {"accepted", "running"}:
+                        _render_experiment_status(experiment_id)
+                        _poll_experiment_status(st.session_state.session_id, experiment_id)
+                    elif tracked and (
+                        tracked.get("status") in _TERMINAL_EXPERIMENT_STATUSES
+                        or tracked.get("status_error")
+                    ):
+                        _render_experiment_status(experiment_id)
+                    elif experiment.get("status") == "created":
                         real_run = False
                         if experiment.get("run_mode") == "target_http":
                             real_run = st.checkbox(
                                 "真实执行（会调用目标系统）",
-                                key=f"run_experiment_real_{experiment.get('experiment_id')}",
+                                key=f"run_experiment_real_{experiment_id}",
                                 help=(
                                     "默认 dry-run 不调用外部目标；勾选后按 run_config.target_config "
                                     "执行真实 target_http 请求，host 必须在 TARGET_SYSTEM_ALLOWED_HOSTS 内。"
                                 ),
                             )
+                        elif experiment.get("run_mode") == "llm_node":
+                            st.caption(
+                                "该实验为 llm_node 配置；运行仍以 dry_run 模拟，不会调用真实模型。"
+                            )
                         if st.button(
-                            f"▶️ 运行 {experiment.get('experiment_id')}",
-                            key=f"run_experiment_{experiment.get('experiment_id')}",
+                            f"▶️ 运行 {experiment_id}",
+                            key=f"run_experiment_{experiment_id}",
                             use_container_width=True,
                         ):
                             run_experiment(
-                                experiment.get("experiment_id"),
+                                experiment_id,
                                 dry_run_only=not real_run,
+                                run_mode=experiment.get("run_mode") or "",
                             )
+                    elif experiment.get("status") in {"failed", "interrupted", "cancelled"}:
+                        if tracked is None:
+                            if st.button(
+                                "🔄 查询状态",
+                                key=f"query_experiment_{experiment_id}",
+                                use_container_width=True,
+                            ):
+                                refresh_experiment_status(experiment_id)
+                                st.rerun()
+                        elif tracked.get("resumable"):
+                            resume_mode = tracked.get("execution_mode") or ""
+                            if resume_mode in {"manual", "dry_run", "llm_node", "target_http"}:
+                                if st.button(
+                                    "🔄 恢复运行（沿用原请求键与执行模式）",
+                                    key=f"resume_experiment_{experiment_id}",
+                                    use_container_width=True,
+                                ):
+                                    resume_real = resume_mode == "target_http"
+                                    run_experiment(
+                                        experiment_id,
+                                        dry_run_only=not resume_real,
+                                        run_mode=experiment.get("run_mode") or "",
+                                    )
+                            else:
+                                st.caption("执行模式未知或为混合批次，不能安全恢复；请新建实验。")
                     if comparison:
                         if comparison.get("regression_detected"):
                             st.warning(f"对比检测到回归：{comparison.get('regression_reasons')}")
                         else:
                             st.success("对比结果：未检测到回归。")
 
-        _render_eval_calibration(eval_runs)
+        _render_eval_calibration(eval_runs, runs_available=eval_runs_ok)
 
         run_mode = st.selectbox(
             "评测用例运行模式",

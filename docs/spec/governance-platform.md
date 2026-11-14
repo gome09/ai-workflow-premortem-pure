@@ -94,7 +94,7 @@ CRITICAL 档 `require_expert_review=True` 时，Stage 3 就绪评估自动创建
 
 ### 3.5 业务闭环（v1.6.0；v1.7.0 加固）
 
-1. **证据生命周期**：`EvidenceSource.lifecycle_status` 为派生字段——`submitted`（未核验）/ `verified`（已核验但未被风险结论引用）/ `adopted`（已核验且被当前 Stage 1 失败模式引用）。`link_failure_modes_to_evidence` 按当前 Stage 1 内容全量重建反向引用，Stage 1 编辑移除引用后状态自动降回 `verified`。高风险证据门禁仍要求 `verified=True`，未核验证据不能解除。
+1. **证据生命周期**：`EvidenceSource.lifecycle_status` 为派生字段——`submitted`（未核验）/ `verified`（已核验但未被风险结论引用）/ `adopted`（已核验且被当前 Stage 1 失败模式引用）。`link_failure_modes_to_evidence` 按当前 Stage 1 内容全量重建反向引用，Stage 1 编辑移除引用后状态自动降回 `verified`。高风险证据门禁仍要求 `verified=True`，未核验证据不能解除。单条证据核验只作用于路径中的 `evidence_id`；聚合 `verify_evidence` 动作只有在动作内全部来源都已分别核验后才自动关闭，显式“核验所列全部证据”才具有整组语义，且不得覆盖已核验来源的核验人/时间/备注。核验人只取 JWT `user_id`（角色取 JWT 角色），请求体不接受 `reviewer_id`；审计事件 `actor` 仍固定为枚举 `user`，真实身份写入 metadata 的 `reviewer_id` / `reviewer_role`。历史 `verified_by="user"` 是旧数据占位，前端展示为“历史未知（旧数据）”，不得伪造成具体成员。
 2. **风险处置**：`RiskTreatment` 为每个 high/critical 失败模式与开放 high/critical 安全发现记录责任人、缓解措施、执行状态（planned/in_progress/completed/accepted）与独立复核。Stage 4 新门禁规则 `risk_treatment` 要求处置为 final 状态、已复核且绑定当前评估版本；public_demo 会话豁免。v1.7.0 起，评估版本变化后即使原样重提处置也会清空旧复核，必须重新独立复核。
 3. **上线批准**：`ProjectApproval` 是独立于 `SessionState.COMPLETE` 的 admin 审批记录。前置条件包括评估完成、当前版本阻断动作/解析错误/过期阶段均为空、高风险证据已核验、风险处置已闭环、已声明目标部署、每个必测用例在同一个已完成的 `target_http` 评估批次中通过。报告生成/导出不写审批；`COMPLETE` 不等于可上线。
 4. **版本绑定**：`core/evaluation_version.py` 组合 stage 版本、输入版本（材料/目标部署）、关键内容摘要、EvalCase 定义与策略版本为 `digest`。审批、风险处置与 `EvalRun` 均存储该 digest；内容或版本变化后旧审批显示 `stale`、旧测试不再计入上线批准证据，改回原内容也不会复活旧审批。`EvalRun` 额外绑定不可变 `case_version_digest` 与 `target_deployment_version`。

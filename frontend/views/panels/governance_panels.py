@@ -16,8 +16,9 @@ from controllers.governance_controller import (
     handle_verify_evidence_item,
     handle_verify_flag,
 )
-from labels import resolution_zh, risk_type_zh, severity_zh
+from labels import resolution_zh, risk_type_zh, severity_zh, verifier_zh
 from models.api_client import list_evidence, list_safety_findings
+from models.feedback import ApiError
 from models.mappings import STRUCTURED_EDIT_SOURCE_TYPES
 
 
@@ -26,7 +27,17 @@ def render_action_queue() -> None:
     # 动作队列直接读取派生状态；pending_actions 由 select/send/mutation/刷新按钮写入，
     # 不在每次 rerun 时无条件重拉接口。
     actions = st.session_state.pending_actions
-    action_title = f"🚦 待处理人工动作 ({len(actions)})" if actions else "✅ 无待处理人工动作"
+    actions_error = st.session_state.get("actions_error") or st.session_state.get(
+        "session_read_error"
+    )
+    if actions_error:
+        st.warning(f"⚠️ {actions_error}")
+    if actions:
+        action_title = f"🚦 待处理人工动作 ({len(actions)})"
+    elif actions_error:
+        action_title = "🚦 待处理人工动作（状态未知）"
+    else:
+        action_title = "✅ 无待处理人工动作"
     st.subheader(action_title)
 
     if actions:
@@ -60,6 +71,22 @@ def render_action_queue() -> None:
                 )
 
                 if action_type == "verify_evidence":
+                    payload_before = action.get("payload_before") or {}
+                    affected_sources = list(payload_before.get("weak_sources") or []) + list(
+                        payload_before.get("unverified_sources") or []
+                    )
+                    if affected_sources:
+                        st.markdown("**本动作涉及的证据来源：**")
+                        for source in affected_sources:
+                            st.caption(
+                                f"- `{source.get('evidence_id')}` · "
+                                f"{source.get('title') or '未命名来源'} · "
+                                f"可信度={source.get('credibility_score', 0.0):.2f}"
+                            )
+                        st.caption(
+                            "「核验所列全部证据」会把这些来源全部标记为已核验；"
+                            "如只想核验其中一条，请使用下方证据列表的单条「核验证据」按钮。"
+                        )
                     st.caption(
                         "⚠️ 「忽略并留痕」只会关闭这条动作并记录留痕，"
                         "**不会**解除高风险证据门控；若要真正解除门控，"
@@ -68,7 +95,7 @@ def render_action_queue() -> None:
                     col_a, col_b = st.columns(2)
                     with col_a:
                         if st.button(
-                            "✅ 已核验",
+                            "✅ 核验所列全部证据",
                             key=f"verify_action_{action_id}",
                             use_container_width=True,
                         ):
@@ -198,7 +225,11 @@ def render_flags_panel() -> None:
 
 def render_evidence_panel() -> None:
     with st.expander("📚 证据来源", expanded=False):
-        evidence_items = list_evidence(st.session_state.session_id)
+        try:
+            evidence_items = list_evidence(st.session_state.session_id)
+        except ApiError:
+            st.caption("证据来源暂不可用（读取失败，不代表暂无证据）。")
+            return
         if evidence_items:
             verified_total = sum(1 for e in evidence_items if e.get("verified"))
             st.caption(
@@ -217,6 +248,8 @@ def render_evidence_panel() -> None:
                     f"可信度={score:.2f} · {status_text}"
                 )
                 st.caption(ev.get("title", ""))
+                if verified:
+                    st.caption(f"核验人：{verifier_zh(ev.get('verified_by'))}")
                 if ev.get("url"):
                     st.caption(ev.get("url"))
                 if ev.get("summary"):
@@ -248,7 +281,11 @@ def render_evidence_panel() -> None:
 
 def render_safety_panel() -> None:
     with st.expander("🛡️ 安全风险发现", expanded=False):
-        findings = list_safety_findings(st.session_state.session_id, status="open")
+        try:
+            findings = list_safety_findings(st.session_state.session_id, status="open")
+        except ApiError:
+            st.caption("安全风险发现暂不可用（读取失败，不代表没有未关闭风险）。")
+            return
         if findings:
             high_crit_open = sum(
                 1

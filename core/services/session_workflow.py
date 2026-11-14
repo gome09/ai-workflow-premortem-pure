@@ -529,7 +529,13 @@ class SessionWorkflowService(SessionAccess):
         ctx = self.get_session(session_id, tenant_id)
         if not ctx:
             raise ValueError(f"Session not found: {session_id}")
-        return [artifact.model_dump(mode="json") for artifact in ctx.report_artifacts]
+        # 与投影表契约一致：报告列表始终按生成时间降序，同时间用 report_id 稳定排序。
+        artifacts = sorted(
+            ctx.report_artifacts,
+            key=lambda item: (item.generated_at, item.report_id),
+            reverse=True,
+        )
+        return [artifact.model_dump(mode="json") for artifact in artifacts]
 
     def get_report_artifact(self, session_id: str, report_id: str, tenant_id: str = "") -> dict:
         ctx = self.get_session(session_id, tenant_id)

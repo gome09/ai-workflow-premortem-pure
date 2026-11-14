@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import streamlit as st
 from controllers.session_controller import add_materials, handle_send, recover_workflow
+from models.feedback import render_flash
 from models.mappings import BLOCKED_STATES, CHAT_PLACEHOLDER, RECOVERABLE_STATES, STATE_LABELS
 
 from views.live_oversight import render_message_with_oversight
@@ -10,6 +11,7 @@ from views.welcome import render_welcome
 
 
 def render_workbench() -> None:
+    render_flash()
     if not st.session_state.session_id:
         render_welcome()
     else:
@@ -34,6 +36,29 @@ def _render_chat_workspace() -> None:
         elif role == "user":
             with st.chat_message("user", avatar="👤"):
                 st.markdown(content)
+                delivery_status = metadata.get("delivery_status")
+                if delivery_status == "failed":
+                    st.caption(f"⚠️ 未发送：{metadata.get('delivery_error') or '请求失败。'}")
+                elif delivery_status == "unknown":
+                    st.caption("⏳ 结果未知：请刷新核对")
+
+    # ── 未发送草稿（仅明确失败时出现）─────────────────────────────────────────
+    retry_draft = st.session_state.get("chat_retry_draft") or ""
+    if retry_draft:
+        st.warning("上一条消息未发送；可编辑后重新发送。")
+        edited_draft = st.text_area(
+            "未发送内容（可编辑）",
+            value=retry_draft,
+            key="chat_retry_edit",
+            height=90,
+        )
+        if st.button("重新发送", key="chat_retry_send", use_container_width=True):
+            text = (edited_draft or "").strip()
+            if text:
+                st.session_state.pop("chat_retry_draft", None)
+                st.session_state.pop("chat_retry_edit", None)
+                handle_send(text)
+                st.rerun()
 
     # ── 资料上传区 ────────────────────────────────────────────────────────────
     with st.expander("📎 补充参考资料（可选）", expanded=False):

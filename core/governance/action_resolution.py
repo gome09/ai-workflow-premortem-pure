@@ -43,6 +43,7 @@ def resolve_action(
     expected_before_hash: str | None = None,
     actor_id: str = "",
     actor_role: str = "",
+    auto_closed_evidence_id: str = "",
 ) -> PendingHumanAction:
     """处理人工动作，并同步底层 FlaggedItem / reviewed_outputs / 审计记录。
 
@@ -135,6 +136,9 @@ def resolve_action(
                 note=note,
                 pre_effects=pre_effects,
                 payload_after=payload_after,
+                auto_closed_evidence_id=auto_closed_evidence_id,
+                actor_id=actor_id,
+                actor_role=actor_role,
             )
             if post_effects.skip_resolution_logging:
                 continue
@@ -205,6 +209,7 @@ def resolve_action_with_result(
     expected_before_hash: str | None = None,
     actor_id: str = "",
     actor_role: str = "",
+    auto_closed_evidence_id: str = "",
 ) -> ActionResolutionResult:
     """Resolve an action and return an ActionResolutionResult contract.
 
@@ -348,6 +353,7 @@ def resolve_action_with_result(
             expected_before_hash=expected_before_hash,
             actor_id=actor_id,
             actor_role=actor_role,
+            auto_closed_evidence_id=auto_closed_evidence_id,
         )
     except ExpertReviewAuthorizationError as exc:
         error_log = _latest_action_resolution_log(ctx, action_id, effective_idempotency_key)
@@ -459,12 +465,17 @@ def resolve_actions_for_evidence(
     evidence_id: str,
     decision: str = "verify_evidence",
     note: str = "",
+    actor_id: str = "",
+    actor_role: str = "",
 ) -> list[str]:
-    """核验证据后，自动关闭直接引用该 evidence_id 的低可信证据动作。
+    """核验单条证据后，仅关闭全部来源均已核验的低可信证据动作。
 
-    只自动关闭 source_type=evidence_low_credibility 的动作；
-    evidence_gap 表示高风险结论没有 evidence_id，不能因为某条证据被核验而误关。
+    单条核验只作用于路径中的 ``evidence_id``；聚合动作的 payload 可能包含
+    E1/E2 等多个来源，必须等它们分别被核验后才自动收口。显式处理整个动作
+    （UI 的「核验所列全部证据」）仍保留整组语义，但由 action_effects 负责，
+    且不得覆盖已经核验来源的身份与时间。
     """
+    evidence_by_id = {ev.evidence_id: ev for ev in ctx.evidence_sources}
     resolved_action_ids: list[str] = []
     for action in list(ctx.pending_actions):
         if (
@@ -479,11 +490,20 @@ def resolve_actions_for_evidence(
         sources = list(payload.get("weak_sources", []) or []) + list(
             payload.get("unverified_sources", []) or []
         )
-        matched = any(
-            isinstance(source, dict) and source.get("evidence_id") == evidence_id
-            for source in sources
+        source_ids = list(
+            dict.fromkeys(
+                str(source.get("evidence_id"))
+                for source in sources
+                if isinstance(source, dict) and source.get("evidence_id")
+            )
         )
-        if not matched:
+        if evidence_id not in source_ids:
+            continue
+        # 只有动作内全部来源都已分别核验时才允许自动收口；缺失来源按未满足处理。
+        if any(
+            (evidence := evidence_by_id.get(source_id)) is None or not evidence.verified
+            for source_id in source_ids
+        ):
             continue
 
         resolved = resolve_action(
@@ -491,6 +511,9 @@ def resolve_actions_for_evidence(
             action_id=action.action_id,
             decision=decision,
             note=note or f"Evidence {evidence_id} verified.",
+            auto_closed_evidence_id=evidence_id,
+            actor_id=actor_id,
+            actor_role=actor_role,
         )
         resolved_action_ids.append(resolved.action_id)
     return resolved_action_ids

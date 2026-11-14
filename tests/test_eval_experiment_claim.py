@@ -12,8 +12,8 @@ import pytest
 from core import eval_runner
 from core.eval_claim import EvalClaimConflictError, begin_claim, new_claim_owner
 from core.eval_dataset_service import create_dataset
-from core.eval_experiment_service import create_experiment
-from core.models import EvalCase, ProjectContext, TargetDeployment
+from core.eval_experiment_service import create_experiment, run_experiment
+from core.models import EvalCase, EvalRun, ProjectContext, TargetDeployment
 from core.session_service import SessionService
 from core.target_testing import TargetTestResponse
 from storage.backends.memory_cache import MemoryCache
@@ -363,3 +363,122 @@ def test_running_experiment_different_key_raises_conflict(tmp_path):
                 idempotency_key="req-b",
                 tenant_id=_TENANT,
             )
+
+
+def _claim_with_mode(store, session_id: str, experiment_id: str, *, dry_run_only: bool, key: str):
+    owner = new_claim_owner()
+    return store.claim_eval_experiment(
+        session_id,
+        _TENANT,
+        experiment_id,
+        owner=owner,
+        request_key=key,
+        lease_seconds=180,
+        decide=lambda ctx, coord, now: begin_claim(
+            ctx,
+            experiment_id,
+            owner=owner,
+            request_key=key,
+            timeout_seconds=None,
+            coordination_attempt=coord,
+            now=now,
+            dry_run_only=dry_run_only,
+        ),
+    )
+
+
+def test_claim_records_and_enforces_execution_mode(tmp_path):
+    store = _build_store(tmp_path)
+    ctx = ProjectContext(tenant_id=_TENANT)
+    experiment = _seed(ctx)
+    store.create(ctx)
+
+    first = _claim_with_mode(
+        store,
+        ctx.session_id,
+        experiment.experiment_id,
+        dry_run_only=False,
+        key="req-mode",
+    )
+    assert first.claimed is True
+    loaded = store.load(ctx.session_id, _TENANT)
+    assert loaded is not None
+    stored = next(
+        item for item in loaded.eval_experiments if item.experiment_id == experiment.experiment_id
+    )
+    assert stored.execution_mode == "target_http"
+
+    stored.status = "interrupted"
+    store.save(loaded)
+
+    mismatch = _claim_with_mode(
+        store,
+        ctx.session_id,
+        experiment.experiment_id,
+        dry_run_only=True,
+        key="req-mode",
+    )
+    assert mismatch.claimed is False
+    assert mismatch.reason == "execution_mode_mismatch"
+
+    resumed = _claim_with_mode(
+        store,
+        ctx.session_id,
+        experiment.experiment_id,
+        dry_run_only=False,
+        key="req-mode",
+    )
+    assert resumed.claimed is True
+
+
+def test_claim_infers_mode_from_existing_runs(tmp_path):
+    store = _build_store(tmp_path)
+    ctx = ProjectContext(tenant_id=_TENANT)
+    experiment = _seed(ctx)
+    ctx.eval_runs.append(
+        EvalRun(
+            session_id=ctx.session_id,
+            eval_id=ctx.eval_cases[0].eval_id,
+            experiment_id=experiment.experiment_id,
+            run_mode="target_http",
+            input_payload="question",
+            expected_behavior="answer",
+            status="failed",
+        )
+    )
+    store.create(ctx)
+
+    outcome = _claim_with_mode(
+        store,
+        ctx.session_id,
+        experiment.experiment_id,
+        dry_run_only=True,
+        key="req-infer",
+    )
+    assert outcome.claimed is False
+    assert outcome.reason == "execution_mode_mismatch"
+
+
+def test_sync_run_rejects_mode_change(tmp_path):
+    ctx = ProjectContext(tenant_id=_TENANT)
+    experiment = _seed(ctx)
+    experiment.status = "interrupted"
+    experiment.execution_mode = "target_http"
+
+    with pytest.raises(ValueError, match="different mode"):
+        run_experiment(ctx, experiment_id=experiment.experiment_id, dry_run_only=True)
+
+
+def test_status_exposes_execution_mode_and_resume_flags(tmp_path):
+    with _service(tmp_path) as (svc, store):
+        ctx = ProjectContext(tenant_id=_TENANT)
+        experiment = _seed(ctx)
+        experiment.status = "failed"
+        experiment.execution_mode = "target_http"
+        store.create(ctx)
+
+        status = svc.get_eval_experiment_status(ctx.session_id, experiment.experiment_id, _TENANT)
+        assert status["execution_mode"] == "target_http"
+        assert status["execution_mode_inferred"] is False
+        assert status["resumable"] is True
+        assert status["heartbeat_stale"] is False

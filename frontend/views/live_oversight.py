@@ -41,10 +41,19 @@ def render_live_oversight(stage_id: int | None) -> None:
     """按来源实时汇总某阶段的待处理人工动作与阻断器（占位标记的展开体）。"""
     actions = _pending_actions_for_stage(stage_id)
     blockers = _blockers_for_stage(stage_id)
+    actions_error = st.session_state.get("actions_error") or st.session_state.get(
+        "session_read_error"
+    )
+    readiness_error = st.session_state.get("readiness_error")
 
-    if not actions and not blockers:
+    if not actions and not blockers and not actions_error and not readiness_error:
         st.success("✅ 没有待处理的人工监督事项。")
         return
+
+    if actions_error or readiness_error:
+        st.warning(
+            "⚠️ 人工监督或门禁状态暂不可用，以下摘要可能不完整；请使用「🔄 刷新」重试后再判断。"
+        )
 
     if actions:
         grouped: dict[str, dict] = {}

@@ -7,7 +7,12 @@ import logging
 from datetime import datetime
 
 from core.config import settings
-from core.eval_claim import EvalClaimConflictError, begin_claim, new_claim_owner
+from core.eval_claim import (
+    EvalClaimConflictError,
+    begin_claim,
+    infer_execution_mode,
+    new_claim_owner,
+)
 from core.eval_dataset_service import (
     add_cases_to_dataset,
     create_dataset,
@@ -548,6 +553,7 @@ class EvaluationService(SessionAccess):
             and lease_until is not None
             and lease_until <= datetime.utcnow()
         )
+        execution_mode, execution_mode_inferred = infer_execution_mode(ctx, experiment)
         runs = [
             run
             for run in ctx.eval_runs
@@ -565,6 +571,8 @@ class EvaluationService(SessionAccess):
             "session_id": session_id,
             "status": experiment.status,
             "run_mode": experiment.run_mode,
+            "execution_mode": execution_mode,
+            "execution_mode_inferred": execution_mode_inferred,
             "total_cases": total,
             "completed_cases": len(completed),
             "failed_cases": len(failed),
@@ -585,6 +593,7 @@ class EvaluationService(SessionAccess):
             if coord and coord.lease_until
             else "",
             "lease_expired": lease_expired,
+            "heartbeat_stale": bool(reconciled or lease_expired),
             "resumable": resumable,
             "reconciled_stale_heartbeat": reconciled,
         }
@@ -738,6 +747,7 @@ class EvaluationService(SessionAccess):
                 timeout_seconds=timeout_seconds,
                 coordination_attempt=coordination_attempt,
                 now=now,
+                dry_run_only=dry_run_only,
             ),
         )
         if not outcome.claimed:

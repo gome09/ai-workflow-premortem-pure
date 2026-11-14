@@ -17,8 +17,9 @@ from models.api_client import (
     get_health,
     list_builtin_scenarios,
     list_invitations,
-    list_sessions,
+    list_sessions_checked,
 )
+from models.feedback import ApiError, show_api_error
 from models.mappings import MODEL_LABELS, STAGE_PROGRESS, STATE_LABELS
 from models.session_state import consume_session_event
 
@@ -40,7 +41,11 @@ def render_sidebar() -> None:
     with st.sidebar:
         st.title("🔬 AI 工作流工具")
         st.caption("项目立项失败模式分析")
-        st.session_state.health = get_health()
+        try:
+            st.session_state.health = get_health()
+        except ApiError:
+            st.session_state.health = {}
+            st.caption("健康状态暂不可用；执行模式与中断适配器状态未知。")
         if st.session_state.health:
             st.caption(
                 f"执行模式：{exec_mode_zh(st.session_state.health.get('workflow_execution_mode', 'unknown'))}"
@@ -65,8 +70,14 @@ def render_sidebar() -> None:
 def _render_session_management() -> None:
     st.subheader("📋 会话管理")
 
-    scenarios = list_builtin_scenarios()
-    scenario_placeholder = "选择内置场景"
+    scenarios_available = True
+    try:
+        scenarios = list_builtin_scenarios()
+    except ApiError:
+        scenarios = []
+        scenarios_available = False
+        st.warning("内置场景列表暂不可用，暂时无法选择或加载内置场景。")
+    scenario_placeholder = "选择内置场景" if scenarios_available else "内置场景暂不可用"
     scenario_options = {}
     for item in scenarios:
         scenario_options[item.get("name", "未命名场景")] = item.get("scenario_id")
@@ -94,6 +105,7 @@ def _render_session_management() -> None:
             label_visibility="collapsed",
             accept_new_options=False,
             filter_mode=None,
+            disabled=not scenarios_available,
         )
     with col_refresh:
         if st.button("🔄 刷新", use_container_width=True):
@@ -107,7 +119,11 @@ def _render_session_management() -> None:
         st.session_state.loaded_scenario_label = None
 
     if selected_scenario_id:
-        scenario_detail = get_builtin_scenario(selected_scenario_id)
+        try:
+            scenario_detail = get_builtin_scenario(selected_scenario_id)
+        except ApiError:
+            scenario_detail = None
+            st.caption("场景详情暂不可用；已暂停自动加载该场景。")
         if scenario_detail:
             st.caption(scenario_detail.get("description", ""))
             st.caption(
@@ -147,7 +163,11 @@ def _render_team_invitations() -> None:
             if not email.strip():
                 st.error("请输入受邀邮箱。")
             else:
-                invitation = create_invitation(email.strip(), role)
+                try:
+                    invitation = create_invitation(email.strip(), role)
+                except ApiError as exc:
+                    show_api_error(exc)
+                    invitation = None
                 if invitation:
                     st.session_state.created_invitation_token = invitation.get("token", "")
                     st.success("邀请已创建。")
@@ -158,7 +178,11 @@ def _render_team_invitations() -> None:
             st.warning("请立即复制邀请码；关闭后无法再次查看。")
             st.code(token)
 
-        invitations = list_invitations()
+        try:
+            invitations = list_invitations()
+        except ApiError:
+            st.caption("邀请记录暂不可用（读取失败，不代表没有邀请）。")
+            return
         if invitations:
             for item in invitations[:10]:
                 st.caption(
@@ -173,11 +197,39 @@ _SESSION_PAGE_SIZE = 20
 _SESSION_SEARCH_FIELDS = ("session_name", "research_target", "scenario_name", "domain")
 
 
+def _merge_loaded_sessions(first_page: list[dict], extra_pages: list[list[dict]]) -> list[dict]:
+    """首屏优先按 session_id 去重合并，避免翻页期间排序变化造成重复。"""
+    merged: list[dict] = []
+    seen: set[str] = set()
+    for session in [*first_page, *(item for page in extra_pages for item in page)]:
+        session_id = session.get("session_id")
+        if not session_id or session_id in seen:
+            continue
+        seen.add(session_id)
+        merged.append(session)
+    return merged
+
+
 def _render_session_list() -> None:
-    sessions = list_sessions()
+    load_error = st.session_state.get("session_load_error")
+    if load_error:
+        st.warning(load_error)
+
+    if st.session_state.get("session_pages_stale"):
+        st.session_state.session_extra_pages = []
+        st.session_state.session_list_end = False
+        st.session_state.session_pages_stale = False
+
+    first_ok, first_page = list_sessions_checked(limit=_SESSION_PAGE_SIZE, offset=0)
+    first_page = first_page if first_ok and isinstance(first_page, list) else []
+    if first_ok and len(first_page) < _SESSION_PAGE_SIZE:
+        st.session_state.session_list_end = True
+    extra_pages = st.session_state.get("session_extra_pages") or []
+    sessions = _merge_loaded_sessions(first_page, extra_pages)
     is_admin = st.session_state.get("user_role") == "admin"
+
     if not sessions:
-        st.caption("暂无历史会话")
+        st.caption("暂无历史会话" if first_ok else "会话列表暂不可用，已保留已加载页。")
         return
 
     keyword = (
@@ -201,12 +253,16 @@ def _render_session_list() -> None:
     else:
         visible_sessions = sessions
 
-    limit = max(
-        int(st.session_state.get("session_list_limit", _SESSION_PAGE_SIZE)), _SESSION_PAGE_SIZE
-    )
-    st.caption(f"显示 {min(limit, len(visible_sessions))} / {len(visible_sessions)} 个会话")
+    more_available = not st.session_state.get("session_list_end", False)
+    if keyword:
+        scope_note = "；可继续加载更早会话" if more_available else ""
+        st.caption(f"搜索范围：已加载 {len(sessions)} 个会话{scope_note}")
+    else:
+        st.caption(
+            f"已加载 {len(sessions)} 个会话" + ("（可继续加载更早会话）" if more_available else "")
+        )
 
-    for s in visible_sessions[:limit]:
+    for s in visible_sessions:
         icon, state_label = STATE_LABELS.get(s["current_state"], ("⚪", ""))
         raw_label = (
             s.get("session_name")
@@ -243,9 +299,20 @@ def _render_session_list() -> None:
         elif session_event and session_event.get("action") == "select":
             select_session(s)
 
-    if len(visible_sessions) > limit:
+    if more_available:
         if st.button("显示更多（+20）", key="load_more_sessions", use_container_width=True):
-            st.session_state.session_list_limit = limit + _SESSION_PAGE_SIZE
+            next_offset = _SESSION_PAGE_SIZE + sum(len(page) for page in extra_pages)
+            page_ok, page = list_sessions_checked(
+                limit=_SESSION_PAGE_SIZE,
+                offset=next_offset,
+            )
+            if not page_ok or not isinstance(page, list):
+                st.warning("加载更早会话失败，已保留当前已加载页。")
+            else:
+                if not page or len(page) < _SESSION_PAGE_SIZE:
+                    st.session_state.session_list_end = True
+                if page:
+                    st.session_state.session_extra_pages = [*extra_pages, page]
             st.rerun()
 
 

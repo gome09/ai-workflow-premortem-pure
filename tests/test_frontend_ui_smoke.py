@@ -34,6 +34,7 @@ _ROUTES: dict[str, object] = {
     },
     "/sessions/scenarios": [],
     "/sessions/": [],
+    "/auth/invitations": [],
     "/governance/overview": {
         "sessions_total": 0,
         "pending_actions": 0,

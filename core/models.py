@@ -766,6 +766,9 @@ class EvalExperiment(BaseModel):
     provider: str | None = None
     model: str | None = None
     run_mode: Literal["manual", "dry_run", "llm_node", "target_http"] = "manual"
+    # 本次实际执行模式（dry_run / llm_node / target_http / manual）。
+    # run_mode 是配置模式；空串表示历史记录未记录实际来源。
+    execution_mode: str = ""
     prompt_template_versions: dict[str, str] = Field(default_factory=dict)
     code_version: str | None = None
     run_config: dict[str, Any] = Field(default_factory=dict)

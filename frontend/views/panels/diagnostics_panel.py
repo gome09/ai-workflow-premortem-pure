@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import streamlit as st
 from models.api_client import get_health, list_audit_events
+from models.feedback import ApiError
 
 
 def render_interrupt_panel() -> None:
@@ -10,7 +11,13 @@ def render_interrupt_panel() -> None:
         # interrupt_records 由 select/mutation/刷新按钮写入；空列表是有效结果，
         # 不再用 falsy 判断触发第二次请求。
         records = st.session_state.interrupt_records
-        health = st.session_state.health or get_health()
+        health = st.session_state.health
+        if not health:
+            try:
+                health = get_health()
+            except ApiError:
+                health = {}
+                st.caption("健康状态暂不可用；执行模式与中断适配器状态未知。")
         st.caption(
             "默认 single_step 保持稳定；"
             "启用 WORKFLOW_EXECUTION_MODE=langgraph_interrupt 后使用 checkpoint-backed interrupt/resume；"
@@ -64,7 +71,11 @@ def render_interrupt_panel() -> None:
 
 def render_audit_panel() -> None:
     with st.expander("🧾 审计历史", expanded=False):
-        events = list_audit_events(st.session_state.session_id)
+        try:
+            events = list_audit_events(st.session_state.session_id)
+        except ApiError:
+            st.caption("审计事件暂不可用（读取失败，不代表没有审计记录）。")
+            return
         if events:
             st.caption(f"共记录 {len(events)} 条审计事件（显示最近 30 条）")
             for event in events[-30:]:

@@ -227,9 +227,17 @@ class SessionService:
         return self._evidence.get_evidence(session_id, evidence_id, tenant_id)
 
     def verify_evidence(
-        self, session_id: str, evidence_id: str, note: str = "", tenant_id: str = ""
+        self,
+        session_id: str,
+        evidence_id: str,
+        note: str = "",
+        tenant_id: str = "",
+        actor_id: str = "",
+        actor_role: str = "",
     ) -> dict:
-        return self._evidence.verify_evidence(session_id, evidence_id, note, tenant_id)
+        return self._evidence.verify_evidence(
+            session_id, evidence_id, note, tenant_id, actor_id, actor_role
+        )
 
     def list_safety_findings(
         self, session_id: str, status: str | None = None, tenant_id: str = ""

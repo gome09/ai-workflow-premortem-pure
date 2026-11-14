@@ -36,13 +36,13 @@ def _exec_function(name: str, extra_globals: dict) -> object:
     return namespace[name]
 
 
-def _cached_get_with(state: dict, api_get, clock: list[float]):
+def _cached_get_with(state: dict, get_checked, clock: list[float]):
     return _exec_function(
-        "_cached_get",
+        "_cached_get_checked",
         {
             "st": SimpleNamespace(session_state=state),
             "time": SimpleNamespace(monotonic=lambda: clock[0]),
-            "api_get": api_get,
+            "_get_checked": get_checked,
             "_API_CACHE_KEY": "_api_cache",
         },
     )
@@ -51,17 +51,18 @@ def _cached_get_with(state: dict, api_get, clock: list[float]):
 def test_cached_get_reuses_value_within_ttl():
     calls: list[str] = []
 
-    def fake_api_get(path: str) -> dict:
+    def fake_get_checked(path: str) -> tuple[bool, dict]:
         calls.append(path)
-        return {"call": len(calls)}
+        return True, {"call": len(calls)}
 
     state: dict = {}
     clock = [100.0]
-    cached_get = _cached_get_with(state, fake_api_get, clock)
+    cached_get = _cached_get_with(state, fake_get_checked, clock)
 
-    first = cached_get("k", "/x", 5.0)
-    second = cached_get("k", "/x", 5.0)
+    ok, first = cached_get("k", "/x", 5.0)
+    ok_again, second = cached_get("k", "/x", 5.0)
 
+    assert ok is True and ok_again is True
     assert calls == ["/x"], "TTL 内重复读取不应再请求后端"
     assert first == second
     assert state["_api_cache"]["k"][1] == first
@@ -70,18 +71,19 @@ def test_cached_get_reuses_value_within_ttl():
 def test_cached_get_refetches_after_ttl():
     calls: list[str] = []
 
-    def fake_api_get(path: str) -> dict:
+    def fake_get_checked(path: str) -> tuple[bool, dict]:
         calls.append(path)
-        return {"call": len(calls)}
+        return True, {"call": len(calls)}
 
     state: dict = {}
     clock = [100.0]
-    cached_get = _cached_get_with(state, fake_api_get, clock)
+    cached_get = _cached_get_with(state, fake_get_checked, clock)
 
     cached_get("k", "/x", 5.0)
     clock[0] += 6.0
-    refreshed = cached_get("k", "/x", 5.0)
+    ok, refreshed = cached_get("k", "/x", 5.0)
 
+    assert ok is True
     assert calls == ["/x", "/x"], "超过 TTL 后必须回源"
     assert refreshed == {"call": 2}
 
@@ -89,16 +91,16 @@ def test_cached_get_refetches_after_ttl():
 def test_cached_get_does_not_cache_failures():
     calls: list[str] = []
 
-    def failing_api_get(path: str) -> None:
+    def failing_get_checked(path: str) -> tuple[bool, None]:
         calls.append(path)
-        return None
+        return False, None
 
     state: dict = {}
     clock = [100.0]
-    cached_get = _cached_get_with(state, failing_api_get, clock)
+    cached_get = _cached_get_with(state, failing_get_checked, clock)
 
-    assert cached_get("k", "/x", 5.0) is None
-    assert cached_get("k", "/x", 5.0) is None
+    assert cached_get("k", "/x", 5.0) == (False, None)
+    assert cached_get("k", "/x", 5.0) == (False, None)
 
     assert calls == ["/x", "/x"], "失败结果不得缓存，否则错误会被静默保留"
     assert state["_api_cache"] == {}
@@ -127,8 +129,9 @@ def test_invalidate_api_cache_by_prefix_and_all():
 def test_api_client_uses_shared_pooled_session():
     assert "_http_session.mount(" in API_CLIENT_SOURCE, "必须挂载连接池适配器"
     assert "pool_maxsize=20" in API_CLIENT_SOURCE, "连接池上限需显式配置"
-    assert "r = _http_session.get(" in API_CLIENT_SOURCE
-    assert "r = _http_session.post(" in API_CLIENT_SOURCE
+    assert "def _perform(" in API_CLIENT_SOURCE, "五个 verb 必须共享同一传输/认证实现"
+    assert "def _request(" in API_CLIENT_SOURCE, "strict verb 必须共用 ApiError 转换入口"
+    assert "getattr(_http_session, method)(" in API_CLIENT_SOURCE
 
 
 def test_session_panel_reads_go_through_cache():
@@ -136,15 +139,20 @@ def test_session_panel_reads_go_through_cache():
         "list_evidence",
         "list_safety_findings",
         "list_audit_events",
-        "list_report_artifacts",
         "list_eval_cases",
-        "list_eval_runs",
         "list_redteam_cases",
     ):
         fn, path = _extract_function(name)
         src = ast.get_source_segment(FRONTEND_SOURCES[path], fn)
         assert src is not None
-        assert "_cached_get(" in src, f"{name} 必须走会话级缓存读取"
+        assert "_cached_request(" in src, f"{name} 必须走会话级缓存读取"
+        assert "_session_cache_key(" in src, f"{name} 的缓存键必须按会话隔离"
+    # P1 迁移到 checked 读的列表仍需按会话隔离并经过缓存层。
+    for name in ("list_report_artifacts_checked", "list_eval_runs_checked"):
+        fn, path = _extract_function(name)
+        src = ast.get_source_segment(FRONTEND_SOURCES[path], fn)
+        assert src is not None
+        assert "_cached_get_checked(" in src, f"{name} 必须走 checked 缓存读取"
         assert "_session_cache_key(" in src, f"{name} 的缓存键必须按会话隔离"
 
 
@@ -157,5 +165,5 @@ def test_governance_reads_go_through_cache():
         fn, path = _extract_function(name)
         src = ast.get_source_segment(FRONTEND_SOURCES[path], fn)
         assert src is not None
-        assert "_cached_get(" in src, f"{name} 必须走统一的读取缓存"
+        assert "_cached_request(" in src, f"{name} 必须走统一的读取缓存"
         assert "_GOVERNANCE_TTL" in src, f"{name} 必须使用 30 秒治理读缓存"

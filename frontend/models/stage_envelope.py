@@ -48,11 +48,17 @@ def apply_stage_operation_result(result: dict | None) -> dict | None:
     return result
 
 
-def stage_operation_items(result: dict | list | None) -> list[dict]:
-    """Return list-style domain items while preserving StageOperationEnvelope state."""
+def stage_operation_items(result: dict | list | None) -> list[dict] | None:
+    """Return list-style domain items while preserving StageOperationEnvelope state.
+
+    非 dict/list 输入（结果未知）返回 None；成功 envelope 无 items 时返回 []，
+    使"合法零条"与"读取失败"在调用方可以区分。
+    """
     if isinstance(result, list):
         return result
-    applied = apply_stage_operation_result(result if isinstance(result, dict) else None)
+    if not isinstance(result, dict):
+        return None
+    applied = apply_stage_operation_result(result)
     if isinstance(applied, dict):
         for key in ("items", "result"):
             value = applied.get(key)

@@ -54,6 +54,9 @@ def apply_post_resolution_effects(
     note: str,
     pre_effects: ActionPreEffects,
     payload_after: dict | None,
+    auto_closed_evidence_id: str = "",
+    actor_id: str = "",
+    actor_role: str = "",
 ) -> ActionPostEffects:
     """Apply flag/safety/evidence/redteam/trace/edit effects after resolution."""
     post = ActionPostEffects()
@@ -85,6 +88,11 @@ def apply_post_resolution_effects(
             post.skip_resolution_logging = True
             return post
 
+        if auto_closed_evidence_id:
+            # 单条证据核验触发的自动收口：目标证据已由 EvidenceService 单独
+            # 核验并写审计，这里不得再把动作内其他来源批量置为已核验。
+            return post
+
         payload = action.payload_before or {}
         sources = list(payload.get("weak_sources", []) or []) + list(
             payload.get("unverified_sources", []) or []
@@ -94,12 +102,16 @@ def apply_post_resolution_effects(
             for source in sources
             if isinstance(source, dict) and source.get("evidence_id")
         }
+        reviewer_id = (actor_id or "").strip()
         for evidence_id in evidence_ids:
             for ev in ctx.evidence_sources:
                 if ev.evidence_id == evidence_id:
+                    if ev.verified:
+                        # 显式整组核验也不得覆盖既有核验人/时间/备注。
+                        break
                     ev_before = ev.model_dump(mode="json")
                     ev.verified = True
-                    ev.verified_by = "user"
+                    ev.verified_by = reviewer_id or "user"
                     ev.verified_at = action.resolved_at
                     ev.verification_note = note or action.reviewer_note or ""
                     append_audit_event(
@@ -110,7 +122,12 @@ def apply_post_resolution_effects(
                         target_id=evidence_id,
                         before=ev_before,
                         after=ev,
-                        metadata={"note": note, "action_id": action.action_id},
+                        metadata={
+                            "note": note,
+                            "action_id": action.action_id,
+                            "reviewer_id": reviewer_id,
+                            "reviewer_role": actor_role,
+                        },
                     )
                     break
 

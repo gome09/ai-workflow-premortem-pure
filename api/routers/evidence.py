@@ -57,6 +57,8 @@ def verify_evidence(
             evidence_id=evidence_id,
             note=body.note,
             tenant_id=ctx.tenant_id,
+            actor_id=ctx.user_id,
+            actor_role=ctx.role,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

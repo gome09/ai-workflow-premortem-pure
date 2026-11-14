@@ -39,6 +39,7 @@ def render_governance_overview() -> None:
         get_governance_gate_trends,
         get_governance_overview,
     )
+    from models.feedback import ApiError
 
     st.header("治理总览")
     st.info(
@@ -46,8 +47,9 @@ def render_governance_overview() -> None:
         "public_demo 演示会话均已排除，不会进入下方指标、趋势或积压动作。"
     )
 
-    overview = get_governance_overview()
-    if overview is None:
+    try:
+        overview = get_governance_overview()
+    except ApiError:
         st.error("治理总览数据加载失败：无法获取治理接口数据，这不是正常的空数据状态。")
         return
 
@@ -178,9 +180,10 @@ def render_governance_overview() -> None:
 
     st.subheader("门禁通过率趋势（8 周）")
     trends_failed = False
-    trends = get_governance_gate_trends()
-    if trends is None:
-        st.warning("真实业务门禁趋势加载失败。")
+    try:
+        trends = get_governance_gate_trends()
+    except ApiError:
+        st.warning("真实业务门禁趋势加载失败：这不是正常的空数据状态。")
         trends = []
         trends_failed = True
 
@@ -218,9 +221,10 @@ def render_governance_overview() -> None:
 
     st.subheader("积压动作")
     backlog_failed = False
-    backlog = get_governance_actions_backlog()
-    if backlog is None:
-        st.warning("真实业务积压动作加载失败。")
+    try:
+        backlog = get_governance_actions_backlog()
+    except ApiError:
+        st.warning("真实业务积压动作加载失败：这不是正常的空数据状态。")
         backlog = []
         backlog_failed = True
     if backlog:

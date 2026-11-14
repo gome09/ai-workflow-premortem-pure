@@ -41,18 +41,32 @@ class EvidenceService(SessionAccess):
         raise ValueError(f"Evidence not found: {evidence_id}")
 
     def verify_evidence(
-        self, session_id: str, evidence_id: str, note: str = "", tenant_id: str = ""
+        self,
+        session_id: str,
+        evidence_id: str,
+        note: str = "",
+        tenant_id: str = "",
+        actor_id: str = "",
+        actor_role: str = "",
     ) -> dict:
         """人工核验证据来源，并自动关闭直接相关的低可信证据动作。"""
         ctx = self.get_session(session_id, tenant_id)
         if not ctx:
             raise ValueError(f"Session not found: {session_id}")
-        verify_evidence_source(ctx, evidence_id=evidence_id, note=note)
+        verify_evidence_source(
+            ctx,
+            evidence_id=evidence_id,
+            note=note,
+            actor_id=actor_id,
+            actor_role=actor_role,
+        )
         resolved_action_ids = resolve_actions_for_evidence(
             ctx,
             evidence_id=evidence_id,
             decision="verify_evidence",
             note=note,
+            actor_id=actor_id,
+            actor_role=actor_role,
         )
         prepare_execution_after_action_resolutions(ctx, resolved_action_ids)
         self._store().save(ctx)

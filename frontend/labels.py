@@ -228,6 +228,47 @@ def execution_kind_zh(value: object) -> str:
     return zh(EXECUTION_KIND_ZH, value)
 
 
+def experiment_execution_source_zh(
+    runs: object, experiment_id: object, runs_available: bool = True
+) -> str:
+    """实验"实际执行来源"：只汇总绑定该 experiment_id 的运行，不跨实验推断。"""
+    if not runs_available:
+        return "未知（运行列表读取失败）"
+    matched = [
+        run
+        for run in (runs if isinstance(runs, list) else [])
+        if isinstance(run, dict) and str(run.get("experiment_id") or "") == str(experiment_id)
+    ]
+    if not matched:
+        return "尚未执行"
+
+    recorded = [run for run in matched if run.get("execution_kind")]
+    kinds = {str(run.get("execution_kind")) for run in recorded}
+    if len(kinds) > 1:
+        return "混合（" + "、".join(sorted(execution_kind_zh(kind) for kind in kinds)) + "）"
+    if len(kinds) == 1 and len(recorded) == len(matched):
+        return execution_kind_zh(next(iter(kinds)))
+    if len(kinds) == 1:
+        return f"混合（{execution_kind_zh(next(iter(kinds)))} + 来源未记录）"
+
+    modes = {str(run.get("run_mode")) for run in matched if run.get("run_mode")}
+    if len(modes) == 1:
+        return f"{next(iter(modes))}（来源未记录）"
+    if len(modes) > 1:
+        return "混合（来源未记录：" + "、".join(sorted(modes)) + "）"
+    return "未知"
+
+
+def verifier_zh(value: object) -> str:
+    """证据核验人展示：历史 ``user`` 是旧数据占位，不得伪造成具体身份。"""
+    text = str(value or "").strip()
+    if not text:
+        return "未记录"
+    if text == "user":
+        return "历史未知（旧数据）"
+    return text
+
+
 def treatment_status_zh(value: object) -> str:
     return zh(TREATMENT_STATUS_ZH, value)
 

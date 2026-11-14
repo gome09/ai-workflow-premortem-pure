@@ -16,12 +16,14 @@ from labels import (
     approval_status_zh,
     evidence_lifecycle_zh,
     treatment_status_zh,
+    verifier_zh,
 )
 from models.api_client import (
     get_approval_status,
     list_evidence,
     list_risk_treatments,
 )
+from models.feedback import ApiError
 
 _TREATMENT_STATUSES = ["planned", "in_progress", "completed", "accepted"]
 
@@ -40,14 +42,25 @@ def render_closure_panel() -> None:
         st.divider()
         _render_risk_treatments(session_id)
         st.divider()
-        _render_target_deployment(session_id)
+        try:
+            status_payload = get_approval_status(session_id)
+        except ApiError:
+            st.caption(
+                "上线批准状态暂不可用（读取失败）；未显示「尚未声明目标部署」或「无阻断项」的结论。"
+            )
+            return
+        _render_target_deployment(status_payload)
         st.divider()
-        _render_release_approval(session_id)
+        _render_release_approval(status_payload)
 
 
 def _render_evidence_lifecycle(session_id: str) -> None:
     st.markdown("#### 证据生命周期")
-    evidence = list_evidence(session_id)
+    try:
+        evidence = list_evidence(session_id)
+    except ApiError:
+        st.caption("证据生命周期暂不可用（读取失败，不代表暂无证据）。")
+        return
     if not evidence:
         st.caption("暂无证据来源。")
         return
@@ -60,14 +73,18 @@ def _render_evidence_lifecycle(session_id: str) -> None:
         st.caption(
             f"- `{item.get('evidence_id')}` "
             f"{evidence_lifecycle_zh(item.get('lifecycle_status'))} · "
-            f"来源={item.get('source_type')} · 核验人={item.get('verified_by') or '-'} · "
+            f"来源={item.get('source_type')} · 核验人={verifier_zh(item.get('verified_by'))} · "
             f"关联风险={', '.join(item.get('used_by_failure_mode_ids') or []) or '-'}"
         )
 
 
 def _render_risk_treatments(session_id: str) -> None:
     st.markdown("#### 风险处置")
-    payload = list_risk_treatments(session_id)
+    try:
+        payload = list_risk_treatments(session_id)
+    except ApiError:
+        st.caption("风险处置状态暂不可用（读取失败，不代表无需处置）。")
+        return
     if not payload.get("applicable", True):
         st.info("public_demo 演示会话不适用风险处置门禁。")
         return
@@ -148,9 +165,8 @@ def _render_risk_treatments(session_id: str) -> None:
                         handle_review_treatment(treatment_id, "reject", review_note)
 
 
-def _render_target_deployment(session_id: str) -> None:
+def _render_target_deployment(status_payload: dict) -> None:
     st.markdown("#### 目标部署声明")
-    status_payload = get_approval_status(session_id)
     deployment = status_payload.get("target_deployment") or {}
     if deployment:
         st.caption(
@@ -176,9 +192,8 @@ def _render_target_deployment(session_id: str) -> None:
         handle_set_target_deployment(endpoint, version)
 
 
-def _render_release_approval(session_id: str) -> None:
+def _render_release_approval(status_payload: dict) -> None:
     st.markdown("#### 上线批准")
-    status_payload = get_approval_status(session_id)
     summary = status_payload.get("approval_summary") or {}
     readiness = status_payload.get("release_readiness") or {}
 

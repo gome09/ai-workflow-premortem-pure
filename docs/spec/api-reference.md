@@ -63,6 +63,8 @@
 
 模型失败语义：真实模型调用超时、限流、鉴权、连接或 5xx 失败统一返回 HTTP 502，响应体为 `{"detail": "Model provider call failed...", "error_code": "timeout|rate_limit|auth|connection|server_error|bad_request|provider_error", "retryable": true|false, "session_id": "...", "stage": 0-4}`。响应不包含 provider 原文、提示词、密钥或用户内容；出站 PII 守卫失败仍按 fail-closed 原路径处理，不会伪装成 502。
 
+客户端投递语义：前端聊天在请求超时、连接中断或 5xx 时把该条消息标记为“结果未知”，提示用户刷新核对，不自动重发、不按文本去重；只有 4xx 明确拒绝才标记“未发送”并保留可编辑草稿。
+
 ---
 
 ## 阶段治理
@@ -102,7 +104,7 @@
 |------|------|------|
 | GET | `/sessions/{session_id}/evidence` | 查看证据列表 |
 | GET | `/sessions/{session_id}/evidence/{evidence_id}` | 查看单条证据 |
-| POST | `/sessions/{session_id}/evidence/{evidence_id}/verify` | 核验证据 |
+| POST | `/sessions/{session_id}/evidence/{evidence_id}/verify` | 核验单条证据；核验人只取 JWT `user_id`，请求体只接受 `note`，不接受 `reviewer_id` |
 | GET | `/sessions/{session_id}/safety-findings` | 查看安全发现 |
 | POST | `/sessions/{session_id}/safety-findings/{finding_id}/resolve` | 处理安全发现 |
 
@@ -191,7 +193,8 @@
 - 运行前由存储层领取实验。不同或空 `idempotency_key` 在实验运行中返回 409；同一 `idempotency_key` 的重复请求返回当前 status（`accepted=false`）且不重复调用目标系统。
 - 已 `completed` 且同请求键返回既有结果；不同请求键返回 400，需创建新实验。
 - 同步执行丢失领取（租约过期/被新 attempt 覆盖）返回 409。
-- `status` 额外返回 `claim_attempt`、`claim_heartbeat_at`、`claim_lease_until`、`lease_expired`；不返回 `claim_owner`。租约过期的运行会在查询时恢复为 `interrupted`（`last_error_code=lease_expired`）。
+- `status` 额外返回 `claim_attempt`、`claim_heartbeat_at`、`claim_lease_until`、`lease_expired`、`heartbeat_stale`、`execution_mode`、`execution_mode_inferred`；不返回 `claim_owner`。租约过期的运行会在查询时恢复为 `interrupted`（`last_error_code=lease_expired`）。
+- 同一实验的恢复运行必须沿用原 `idempotency_key` 与原实际执行模式（`target_http` 真实执行与 `dry_run` 模拟不可混跑）；`execution_mode` 为空或 `mixed` 的历史实验需要新建实验，不能猜测来源后恢复。
 
 ---
 

@@ -39,21 +39,38 @@ def _register_demo_user() -> dict | None:
         return None
 
 
-def _refresh_access_token() -> bool:
+def _refresh_access_token() -> str:
+    """尝试刷新 access token。
+
+    返回 ``"ok"`` / ``"rejected"`` / ``"transient"``：认证明确被拒绝时调用方
+    必须清理旧凭证并回到登录页；网络/5xx 只是暂时不可用，不得清空会话。
+    """
     refresh_token = st.session_state.get("refresh_token")
     if not refresh_token:
-        return False
+        return "rejected"
     try:
         r = requests.post(
             f"{API_BASE}/auth/refresh",
             json={"refresh_token": refresh_token},
             timeout=10,
         )
-        r.raise_for_status()
-        st.session_state.access_token = r.json().get("access_token")
-        return True
     except requests.exceptions.RequestException:
-        return False
+        return "transient"
+    if r.status_code >= 500:
+        return "transient"
+    if r.status_code >= 400:
+        return "rejected"
+    try:
+        payload = r.json()
+    except ValueError:
+        return "rejected"
+    access_token = payload.get("access_token") if isinstance(payload, dict) else None
+    if not access_token:
+        return "rejected"
+    st.session_state.access_token = access_token
+    # 服务端刷新时会重读当前角色；UI 同步使用新 token 的 payload。
+    st.session_state.user_role = _role_from_token(access_token)
+    return "ok"
 
 
 def _role_from_token(token: str) -> str:

@@ -7,7 +7,7 @@
 ## 项目现状
 
 - 项目：AI Workflow Premortem，AI 工作流预验尸与人机监督平台；源于本科毕业设计，当前按长期维护的开源项目演进。
-- 当前应用版本：`1.11.0`；版本元数据必须同时保持 `core/version.py` 与 `pyproject.toml` 一致。
+- 当前应用版本：`1.11.0`；版本元数据必须同时保持 `core/version.py`、`pyproject.toml` 与 `uv.lock` 根包一致。
 - 当前数据库迁移头：Alembic `V014`（评估批次共享领取协调列；V013 发布门禁：`service_tokens` 与 `release_gate_checks`；V012 为 P1 加固：`workspace_invitations`、`eval_cases.standard_version`、`eval_runs.case_version_digest` / `target_deployment_version`；V011 为业务闭环真实目标执行元数据；V010 为 `sessions.context_digest`；V009 为 `sessions.projection_state` 与 `eval_runs.pass_criteria` / `llm_judge_suggestion`）；当前 `ProjectContext` schema 保持 `0.10.0`（新增 `target_deployment` / `input_versions` 等可选默认字段，无需 context 迁移）。`alembic/` 迁移目录不得包含 `__init__.py`，否则会遮蔽已安装的 Alembic 包，导致 `from alembic.config import Config` 失败。
 - 真实业务库 `ai_workflow` 已升级至 V008（20 会话 / 90 人工动作 / 144 审计事件保留）；V009–V014 为新增列/表迁移，部署环境需执行 `alembic upgrade head`。历史行 `tenant_id` 仍为 NULL，回填前不会进入租户作用域查询与治理统计。旧库升级顺序与备份路径见 `storage/README.md` 与 `.upgrade/backup/`。
 - Phase 0–4 代码侧已完成；`docs/archive/plan/phase-*.md` 与 `phase-*-design.md` 是历史实施/设计基线（已归档），不得把其中旧版本、旧行号或未勾选项当作当前事实。
@@ -62,7 +62,7 @@ make version-check
 ```
 
 - `make doc-check` 当前是 CI 阻断项，扫描 37 份当前项目 Markdown（排除 `.upgrade/`、archive、运行时产物和缓存）。
-- CI 中 mypy 仍处观察期（non-blocking）；`production-safety` 与 `docker-full-integration` 已是 blocking job，不得再写回 continue-on-error。`production-safety` 覆盖 V008→动态 head（当前 V013）迁移升级/回滚、production safety 测试集、PostgreSQL + Redis 业务 E2E，并设置 `PRODUCTION_SAFETY_REQUIRED=1` 使缺少服务时失败而非跳过。CI 的 head 断言必须由 `ScriptDirectory.get_current_head()` 计算，不得硬编码版本。
+- CI 中 mypy 仍处观察期（non-blocking）；`production-safety` 与 `docker-full-integration` 已是 blocking job，不得再写回 continue-on-error。`production-safety` 覆盖 V008→动态 head（当前 V014）迁移升级/回滚、production safety 测试集、PostgreSQL + Redis 业务 E2E，并设置 `PRODUCTION_SAFETY_REQUIRED=1` 使缺少服务时失败而非跳过。CI 的 head 断言必须由 `ScriptDirectory.get_current_head()` 计算，不得硬编码版本。
 - CI 单元测试步骤会把 `.env.demo` 复制为 `.env`；`core/config.py` 的 `extra="ignore"` 是共享 env 文件的必要条件（`.env.demo` / `.env.example` 含前端专用 `DEMO_*` 与容器键 `SQLITE_PATH`），移除该项会让 CI 与 `make demo-*` 在导入阶段即失败。CI 的 lint job 只阻断 Ruff（`make lint`）；`make audit` 作为独立 `continue-on-error` 观察步骤运行，本地 `make security-check`（lint + audit）仍保持严格。2026-11-01 实测外部 advisory 库共 124 条 unique advisory / 19 个包：pillow 受 streamlit `pillow<13` 上限、ecdsa 无修复、langgraph-checkpoint-postgres 被 V006 固定 `3.0.5`，其余可升级项列入 `.upgrade/STATE.md` 阻塞项分诊。
 - 离线开发优先使用 `make demo-api` + `make demo-ui`（Mock LLM + SQLite）。
 - Docker Lite 使用 `make lite-up`；完整栈使用 `make setup` + `make prod-up`。

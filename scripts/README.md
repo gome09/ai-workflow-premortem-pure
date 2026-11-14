@@ -6,7 +6,9 @@ This directory contains utility scripts for the ai-workflow project.
 
 ### version_check.py
 
-Validates that `pyproject.toml` and `core/version.py` declare the same `APP_VERSION`.
+Validates that `core/version.py`, `pyproject.toml` and the editable root package in `uv.lock`
+declare the same version. It uses only the Python standard library, so CI runs it with a bare
+interpreter before any `uv sync` / `uv run`.
 Run as part of the pre-release checklist:
 
 ```bash
@@ -37,7 +39,9 @@ This check is blocking in CI. The earlier observation-period `continue-on-error`
 ### gen_certs.sh / gen_certs.ps1
 
 Generates self-signed TLS certificates for local HTTPS development.
-Run once per environment setup. Not part of CI.
+The Bash script is invoked by `make setup` and by the `docker-full-integration` CI job (CI
+widens the one-off files to 0644 for runner-only containers). `gen_certs.ps1` is the manual
+Windows entry used by `make setup-win` and `docs/startup.md`; it is not used in CI.
 
 ```bash
 bash scripts/gen_certs.sh
@@ -46,8 +50,9 @@ bash scripts/gen_certs.sh
 ### gen_secrets.sh
 
 Populates the file-based `secrets/` directory used by `docker-compose.yml`, and keeps `.env` in
-sync where the application's config precedence requires it. Invoked by `make setup`.
-Run once per environment setup. Not part of CI.
+sync where the application's config precedence requires it. Invoked by `make setup` and by the
+`docker-full-integration` CI job (CI widens the one-off random files to 0644 for runner-only
+containers; the local default stays 0600).
 
 ```bash
 bash scripts/gen_secrets.sh

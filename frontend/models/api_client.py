@@ -292,10 +292,6 @@ def bootstrap_scenario_input(session_id: str, scenario_input: str) -> dict:
     return send_message(session_id, scenario_input)
 
 
-def create_session_id_only(scenario_id: str | None = None) -> str:
-    return create_session(scenario_id)["session_id"]
-
-
 def send_message(
     session_id: str,
     user_input: str,

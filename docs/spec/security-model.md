@@ -167,7 +167,7 @@ Phase 1（T1.1–T1.4，自 v1.0.3 起落地并沿用至今）的数据安全能
 
 ### Production Safety Gate
 
-CI 的 `production-safety` job 为 blocking，覆盖：Alembic V008→动态 head（当前 V013）升级/回滚、production safety 测试集（状态 fail-closed、HIGH/CRITICAL 阻断、事件脱敏、字段加密、retention 租户边界、ID 唯一性、发布门禁凭证/审计存储）以及 PostgreSQL + Redis 业务 E2E。job 设置 `PRODUCTION_SAFETY_REQUIRED=1`，缺少数据库、Redis 或加密密钥时测试失败而不是跳过。
+CI 的 `production-safety` job 为 blocking，覆盖：Alembic V008→动态 head（当前 V014）升级/回滚、production safety 测试集（状态 fail-closed、HIGH/CRITICAL 阻断、事件脱敏、字段加密、retention 租户边界、ID 唯一性、发布门禁凭证/审计存储）以及 PostgreSQL + Redis 业务 E2E。job 设置 `PRODUCTION_SAFETY_REQUIRED=1`，缺少数据库、Redis 或加密密钥时测试失败而不是跳过。
 
 ### What This Deployment Still Does NOT Provide
 

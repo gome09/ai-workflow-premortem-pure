@@ -30,11 +30,16 @@ jobs:
           cat scorecard-results.json
           echo "===SCORECARD_JSON_END==="
 
-      - name: Run Scorecard (default readable)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Render Scorecard summary from JSON
         run: |
-          scorecard --repo=gome09/ai-workflow-premortem-pure --show-details || true
+          python3 - <<'PY' || true
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path("scorecard-results.json").read_text(encoding="utf-8"))
+          for check in payload.get("checks", []):
+              print(f"- {check.get('name', 'unknown')}: {check.get('score', 0)}/10 — {check.get('reason', '')}")
+          PY
 
       - name: Upload Scorecard results
         uses: actions/upload-artifact@v7

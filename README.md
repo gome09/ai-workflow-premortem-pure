@@ -11,7 +11,7 @@
 
 2026 年上半年，AI agent 删除生产数据库、越权转移资金等事故屡见报端——共同根因不是模型能力不足，而是**可预见的失败模式在部署前从未被系统性测试过**。本项目将软件工程的预验尸（Pre-mortem）方法论应用于 AI 项目立项阶段：四阶段引导式分析（失败模式识别 → 人机协同工作流设计 → 压力测试 → 触发策略），配合风险自适应门禁（LOW/MEDIUM/HIGH/CRITICAL）与强制人工审核，让高风险 AI 项目在完成充分评估之前无法推进。
 
-**版本：** v1.8.0 · **协议：** Apache-2.0 · 源于本科毕业设计，现作为长期维护的开源项目演进
+**版本：** v1.11.0 · **协议：** Apache-2.0 · 源于本科毕业设计，现作为长期维护的开源项目演进
 
 ---
 
@@ -142,7 +142,7 @@ make e2e-full-test
 STORAGE_BACKEND=sqlite CHECKPOINT_BACKEND=memory LLM_MODE=mock uv run pytest tests/ -q
 ```
 
-当前实测基线：`1131 passed, 4 skipped`（2026-11-01，项目 `.venv`，`sqlite` + `memory` + `mock`）。4 个 skip 为 3 个 PostgreSQL/Redis E2E 与 1 个 PG-only 存储模块，由 CI `production-safety`（`PRODUCTION_SAFETY_REQUIRED=1`）执行；离线 skip 不等于通过。
+历史实测基线：`1131 passed, 4 skipped`（2026-11-01，项目 `.venv`，`sqlite` + `memory` + `mock`）。4 个 skip 为 3 个 PostgreSQL/Redis E2E 与 1 个 PG-only 存储模块，由 CI `production-safety`（`PRODUCTION_SAFETY_REQUIRED=1`）执行；离线 skip 不等于通过。当前基线以 `AGENTS.md` 的带日期记录为准，历史快照见 [docs/acceptance_report.md](docs/acceptance_report.md)；测试数量会随测试集合变化，不应作为永久断言。
 
 ---
 

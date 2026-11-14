@@ -207,3 +207,11 @@ def test_empty_workflow_nodes_is_stable():
     policy = build_coverage_policy(ctx)
     assert policy.selected_node_ids == []
     assert build_coverage_report(ctx)["missing_required_node_ids"] == []
+
+
+def test_coverage_report_gap_fields_are_equal_but_distinct(monkeypatch):
+    _set_coverage(monkeypatch, min_cases=2)
+    ctx = _build_ctx(_HIGH)
+    report = build_coverage_report(ctx)
+    assert report["missing_required_node_ids"] == report["min_cases_gaps"]
+    assert report["missing_required_node_ids"] is not report["min_cases_gaps"]

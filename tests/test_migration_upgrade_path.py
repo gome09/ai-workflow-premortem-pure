@@ -2,7 +2,7 @@
 """Milestone 1 P5: Alembic 迁移升级 / 回滚路径验证（CI blocking）。
 
 验收：
-- 受支持的旧版本（V008）可以升级到 head（V011），并补齐 V009/V010/V011 新增列。
+- 受支持的旧版本（V008）可以升级到动态 head，并由迁移链补齐各版本新增列。
 - downgrade 回 V008 后新增列消失，再次 upgrade head 可恢复。
 - 缺少真实 PostgreSQL 时，production-safety CI job（PRODUCTION_SAFETY_REQUIRED=1）
   必须失败而不是跳过；普通单元测试 job 允许跳过，避免离线全量测试依赖外部服务。

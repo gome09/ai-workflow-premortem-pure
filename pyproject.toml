@@ -19,9 +19,8 @@ classifiers = [
 
 dependencies = [
     "langgraph>=1.1,<2",  # add_node overload 基线在 1.1.10 测得；改动此范围需复核 graph/langgraph_interrupt_runner.py 的 type: ignore
-    "langchain>=0.3.0",
     "langchain-openai>=0.2.0",        # DeepSeek 兼容 OpenAI 接口
-    "langchain-community>=0.3.0",
+    "langchain-core>=1.3.0",          # graph/stages/core 直接导入的消息类型
     "tavily-python>=0.5.0",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
@@ -37,12 +36,12 @@ dependencies = [
     "httpx>=0.28.0",
     "python-jose[cryptography]>=3.3.0",
     "cryptography>=42.0.0",  # T1.3 字段级静态加密（python-jose[cryptography] 已传递依赖，此处显式声明便于 pip-audit 跟踪）
-    "passlib[bcrypt]>=1.7.4",
     "bcrypt>=4.0.0",
     "python-multipart>=0.0.9",
     "slowapi>=0.1.9",
     "alembic>=1.13.0",
     "prometheus-fastapi-instrumentator>=7.0.0",
+    "prometheus-client>=0.21.0",      # api/metrics.py 直接导入
 ]
 
 [project.optional-dependencies]
@@ -53,6 +52,8 @@ dev = [
     "pip-audit>=2.7.0",  # T1.8 依赖漏洞审计
     "mypy>=1.14,<3",  # 基线在 2.3.0 测得；major 升级需重新核对基线
     "pytest-cov>=6.0",  # CI 覆盖率产出（Wave E Task 16）
+    "pyyaml>=6.0",  # 前端镜像/Compose 契约测试直接 import yaml
+    "requests>=2.31.0",  # scripts/live_e2e_four_stage.py 手工 CLI
 ]
 
 # 前端镜像依赖组（PEP 735）。生产前端镜像只执行
@@ -111,8 +112,6 @@ ignore = ["E501"]
 # mock_llm 模式下硬编码的 fake API key / secret，不构成真实泄露
 "core/llm/adapters/mock.py" = ["S105", "S106"]
 "core/llm/adapters/mock_fixtures/**" = ["S105", "S106"]
-# frontend api_client 用 try/except/pass 做防御性容错（失败返回空列表），系统性模式
-"frontend/api_client.py" = ["S110"]
 
 [tool.coverage.run]
 source = ["."]

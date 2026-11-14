@@ -30,6 +30,13 @@ jobs:
         with:
           python-version: "3.11"
 
+      # 阻断：版本元数据与锁根一致性必须在任何 uv 同步 / uv run 之前检查，
+      # 避免普通 `uv run` 隐式刷新 uv.lock 掩盖漂移。
+      - name: Version metadata and lock root check (pre-sync)
+        run: |
+          python scripts/version_check.py
+          uv lock --check
+
       - name: Install dependencies
         run: uv sync --all-extras --frozen
 

@@ -195,11 +195,7 @@ def build_coverage_report(ctx: ProjectContext) -> dict:
         for node_id in policy.required_node_ids
         if node_case_counts.get(node_id, 0) < min_cases
     ]
-    min_cases_gaps = [
-        node_id
-        for node_id in policy.required_node_ids
-        if node_case_counts.get(node_id, 0) < min_cases
-    ]
+    min_cases_gaps = list(missing_required)
     covered_required = sorted(
         node_id for node_id in required if node_case_counts.get(node_id, 0) >= min_cases
     )

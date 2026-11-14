@@ -1,8 +1,8 @@
-# AI Workflow Pre-mortem 当前验收报告
+# AI Workflow Pre-mortem 验收报告（历史快照）
 
-> 本文件记录当前 v1.8.0 代码基线（2026-11-09）与回归摘要。v1.3.0（2026-10-31）基线与 v1.2.1 四阶段 E2E 快照、历史缺陷详录保留在下方历史章节；2026-07-18 四种启动方式的完整历史报告见 [`startup-methods-e2e-20260718.md`](../.upgrade/archive/reports/startup-methods-e2e-20260718.md)；v1.2.1 快照归档于 [`acceptance-history-v1.2.1.md`](archive/verification-reports/acceptance-history-v1.2.1.md)。
+> 本文件保存带日期的历史验收快照，不代表当前版本基线。最新快照为 2026-11-09（当时版本 v1.8.0）；当前应用版本为 `1.11.0`（`core/version.py` / `pyproject.toml` / `uv.lock` 根包），当前 Alembic head 为 `V014`。v1.3.0（2026-10-31）基线与 v1.2.1 四阶段 E2E 快照、历史缺陷详录保留在下方历史章节；2026-07-18 四种启动方式的完整历史报告见 [`startup-methods-e2e-20260718.md`](../.upgrade/archive/reports/startup-methods-e2e-20260718.md)；v1.2.1 快照归档于 [`acceptance-history-v1.2.1.md`](archive/verification-reports/acceptance-history-v1.2.1.md)。
 
-## 当前代码基线复核（2026-11-09）
+## 历史代码基线复核（2026-11-09，v1.8.0）
 
 本轮范围为「业务流程可重复交付与故障恢复」；每项结果注明环境与范围，未执行项明确标注。
 
@@ -61,6 +61,5 @@ v1.3.0（formal-project-uplift Wave A–E）在 v1.2.1 基础上的变更不改�
 
 ---
 
-*当前报告最近更新：2026-11-09（v1.8.0 可重复交付与故障恢复轮；本地离线验证结果见最终答复）*
-*当前架构版本：1.8.0*
-*当前测试基线：`1253 passed, 8 skipped`（2026-11-09，SQLite + memory + mock + single_step）；历史数字仅作追溯。*
+*最近快照：2026-11-09（当时版本 v1.8.0，可重复交付与故障恢复轮）*
+*历史测试基线：`1256 passed, 8 skipped`（2026-11-09，SQLite + memory + mock + single_step）；当前基线以 `AGENTS.md` 的带日期记录为准。*

@@ -308,8 +308,3 @@ def decision_reason_zh(value: object) -> str:
 def hard_blocker_zh(is_hard: object) -> str:
     """硬阻断 / 可批准豁免。"""
     return "必须处理" if is_hard else "可批准豁免"
-
-
-def friendly_error(exc: object = None, action: str = "加载") -> str:
-    """把异常 / HTTP 错误包装成面向用户的中文短句，避免暴露英文堆栈。"""
-    return f"{action}失败，请稍后重试或联系管理员。"

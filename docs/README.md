@@ -7,7 +7,7 @@
 | [startup.md](startup.md) | 启动与部署指南（四种启动方式的单一权威来源，含 SQLite 轻量模式） |
 | [local_setup.md](local_setup.md) | 环境模板、密钥职责划分、环境变量清单与仓库边界 |
 | [demo-scenarios.md](demo-scenarios.md) | 内置场景机制说明 |
-| [acceptance_report.md](acceptance_report.md) | 当前 v1.8.0 代码基线与回归验收摘要（含 2026-10-31 v1.3.0 历史基线） |
+| [acceptance_report.md](acceptance_report.md) | 带日期的验收快照与历史基线（最新快照 2026-11-09，当时 v1.8.0；当前版本 1.11.0） |
 | [../README.en.md](../README.en.md) | English project overview |
 
 ## spec/ — 系统设计与规格文档

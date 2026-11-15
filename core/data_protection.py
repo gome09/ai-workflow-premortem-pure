@@ -42,6 +42,11 @@ FREE_TEXT_KEYS: frozenset[str] = frozenset(
         "human_comment",
         "judge_reason",
         "pass_criteria",
+        # 风险处置、上线审批与证据核验的人工备注。
+        "mitigation_plan",
+        "review_note",
+        "decision_note",
+        "verification_note",
         # 会话正文与名称。
         "research_target",
         "goal",

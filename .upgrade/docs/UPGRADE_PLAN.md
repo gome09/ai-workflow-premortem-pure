@@ -1,5 +1,7 @@
 # Upgrade Plan
 
+> **历史记录（2026-11-01 升级轮）**：本文保留当时的阶段计划与 P4 状态，不代表当前执行状态；当前事实见 `.upgrade/STATE.md`。
+
 Based on `UPGRADE_REQUIREMENTS.md`.
 
 ## Phases

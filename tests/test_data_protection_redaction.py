@@ -17,7 +17,13 @@ import pytest
 
 from core.audit_service import append_audit_event, stable_hash
 from core.data_protection import MAX_PLAIN_STRING, redact_payload, redacted_envelope
-from core.models import PendingHumanAction, ProjectContext
+from core.models import (
+    EvidenceSource,
+    PendingHumanAction,
+    ProjectApproval,
+    ProjectContext,
+    RiskTreatment,
+)
 from core.session_service import SessionService
 from storage.backends.memory_cache import MemoryCache
 from storage.backends.sqlite_store import SQLiteSessionStore
@@ -187,3 +193,66 @@ def test_send_message_event_stores_only_input_fingerprint(isolated_service):
     assert payload["input_length"] == len(SENSITIVE_TEXT)
     assert "user_input" not in payload
     assert SENSITIVE_TEXT not in json.dumps(payload, ensure_ascii=False)
+
+
+# ── 4. 风险处置 / 审批 / 证据核验备注 ─────────────────────────────
+def test_redact_payload_covers_treatment_approval_and_verification_notes():
+    payload = {
+        "mitigation_plan": SENSITIVE_TEXT + " 处置",
+        "review_note": SENSITIVE_TEXT + " 复核",
+        "decision_note": SENSITIVE_TEXT + " 审批",
+        "verification_note": SENSITIVE_TEXT + " 核验",
+    }
+
+    redacted = redact_payload(payload, "business_internal")
+    serialized = json.dumps(redacted, ensure_ascii=False)
+    for key in payload:
+        assert redacted[key]["_redacted"] is True
+        assert redacted[key]["length"] == len(payload[key])
+    assert SENSITIVE_TEXT not in serialized
+    assert redact_payload(payload, "public_demo") == payload
+
+
+def test_audit_snapshots_redact_treatment_approval_and_evidence_notes():
+    ctx = ProjectContext(tenant_id="tenant-a")
+    treatment = RiskTreatment(
+        session_id=ctx.session_id,
+        source_type="failure_mode",
+        source_id="FM-1",
+        risk_level="high",
+        owner="owner-a",
+        mitigation_plan=SENSITIVE_TEXT + " 处置",
+        review_note=SENSITIVE_TEXT + " 复核",
+    )
+    approval = ProjectApproval(
+        session_id=ctx.session_id,
+        status="approved",
+        evaluation_version_digest="digest",
+        decision_note=SENSITIVE_TEXT + " 审批",
+    )
+    evidence = EvidenceSource(
+        session_id=ctx.session_id,
+        title="证据",
+        verification_note=SENSITIVE_TEXT + " 核验",
+    )
+
+    cases = [
+        ("risk_treatment", treatment.treatment_id, treatment, "mitigation_plan"),
+        ("risk_treatment", treatment.treatment_id, treatment, "review_note"),
+        ("project_approval", approval.approval_id, approval, "decision_note"),
+        ("evidence_source", evidence.evidence_id, evidence, "verification_note"),
+    ]
+    for target_type, target_id, target, field in cases:
+        event = append_audit_event(
+            ctx,
+            actor="user",
+            event_type="redaction_probe",
+            target_type=target_type,
+            target_id=target_id,
+            before=target,
+            after=target,
+        )
+        snapshot = event.after_snapshot or {}
+        assert snapshot[field]["_redacted"] is True
+        assert SENSITIVE_TEXT not in json.dumps(snapshot, ensure_ascii=False)
+        assert event.before_hash == event.after_hash == stable_hash(target)

@@ -139,6 +139,8 @@ NIST_GAI_ACTION_DESCRIPTIONS = { "MS-2.7-008": {"zh": "...", "source": "NIST AI 
 
 ## 8. 风险分级链（机制 B）的处理决策
 
+> **历史决策（已被 v1.5 六因子模型取代）**：本节保留 2026-07 阶段 2 的“关键词分级不重写”决策。`core/gates/risk_profile.py` 现为兼容 re-export；当前风险权威是 `core/risk` 六因子模型与 floor/override 规则。以下内容仅用于追溯当时的阶段边界。
+
 `core/gates/risk_profile.py` 的关键词分级**本阶段不重写**：
 - 确定性关键词匹配符合"工作流转换确定性、代码控制"的架构原则，FIXME 中的 embedding/LLM 分类方案引入不确定性，需配套人工确认机制，归入阶段 3 的 LLM Judge 设计统一考虑（见 [governance-platform.md](governance-platform.md) 第 5 节）。
 - 本阶段仅做增量：关键词表补充《指引》与 GB/T 45654 提示的智能体场景词（如"自主执行/工具调用/无人值守"→ HIGH 及以上）。

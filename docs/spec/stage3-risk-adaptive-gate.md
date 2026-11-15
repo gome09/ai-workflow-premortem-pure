@@ -1,6 +1,6 @@
 # Stage 3 Risk-Adaptive Gate
 
-> **Last updated:** 2026-07-27
+> **Last updated:** 2026-11-15
 > **Status:** Implemented and validated (including `expert review` for CRITICAL tier — T3.3)
 > **Tests:** 原风险自适应门禁验证 26 项 + 3 个 smoke；expert-review 为 T3.3 后续能力，由 `tests/test_expert_review_gate_v110.py` 单独覆盖
 
@@ -27,7 +27,7 @@ Implemented risk-adaptive Stage 3 gate that classifies projects into risk tiers 
 
 | File | Purpose |
 |------|---------|
-| `core/gates/risk_profile.py` | Risk classification logic, `ProjectGateRiskTier`, `Stage3GateProfile` |
+| `core/gates/risk_profile.py` | 兼容 re-export；风险权威为 `core/risk` 六因子确定性模型，`ProjectGateRiskTier` / `Stage3GateProfile` 仍由该模块暴露 |
 
 ### Modified Files
 
@@ -42,9 +42,9 @@ Implemented risk-adaptive Stage 3 gate that classifies projects into risk tiers 
 
 ## Risk Tiers
 
-下表关键词仅为便于理解的示例；完整且可执行的中英文关键词、场景覆盖和优先级以 `core/gates/risk_profile.py` 为准。
+风险档位由 `core/risk` 的六因子确定性模型决定，输入优先级固定为：显式 `ProjectContext.risk_profile` → 场景 manifest 六因子 → legacy 关键词推断适配器。关键词只在 legacy 适配器中使用，不直接决定档位；分数带、硬性 floor 与人工 override 由 `core/risk/rules.py` 与 `core/risk/assessment.py` 决定。下表仅用于说明典型档位与门禁 profile 的对应关系。
 
-| Tier | Domain Keyword Examples | Gate Profile |
+| Tier | 典型场景示例（非判级依据） | Gate Profile |
 |------|----------------|--------------|
 | **CRITICAL** | 药物、处方、诊断、患者、临床、医疗、手术、肿瘤、急诊, drug, medication, prescription, surgery, oncology | Strongest: all gates（含 expert_review） |
 | **HIGH** | 金融、贷款、法律、合同、儿童、学生、认证、多租户、自动发送、**心理健康**、**军事**、核电、自动驾驶, finance, legal, mental health, military | Strong: redteam + regression + trace |
@@ -142,4 +142,4 @@ Stage 3 eval runs now distinguish execution provenance explicitly:
 1. **Risk tiering is not disabling safety** — LOW risk reduces advanced gates, not safety底线
 2. **Stage 1 severity is input, not sole decision** — a reading plan's "high" failure mode should not trigger medical-grade gates
 3. **`gate_required` datasets always block** — even LOW risk, explicitly marked datasets trigger regression gates
-4. **High-risk domain keywords trigger strong gates** — medical, financial, legal projects cannot bypass
+4. **High-risk factor combinations and floors trigger strong gates** — medical, financial, legal projects cannot bypass

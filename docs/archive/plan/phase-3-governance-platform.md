@@ -1,9 +1,9 @@
 # 阶段 3 实施计划：从评估工具到组织级治理平台
 
 > 上游路线图：[improvement-roadmap.md](improvement-roadmap.md) 第 6 节「阶段 3」。
-> 配套设计规格：[../spec/governance-platform.md](../spec/governance-platform.md)。
+> 配套设计规格：[../spec/governance-platform.md](../../spec/governance-platform.md)。
 > 现状基线核实日期：2026-07-13。
-> 状态：**已完成（历史实施计划）**。本文第 2 节等内容是执行前基线，包含当时的 12 条规则/V004 等旧事实；当前实现为 13 条规则、治理聚合能力和 Alembic V005，以对应 spec、代码和 `.upgrade/STATE.md` 为准。
+> 状态：**已完成（历史实施计划）**。本文第 2 节等内容是执行前基线，包含当时的 12 条规则/V004 等旧事实；该版本落地时为 13 条规则、治理聚合能力和 Alembic V005，后续规则已增至 14 条、迁移头已到 V014，当前事实以对应 spec、代码和 `.upgrade/STATE.md` 为准。
 
 ---
 
@@ -13,7 +13,7 @@
 
 ## 2. 现状基线
 
-完整事实清单见 [../spec/governance-platform.md](../spec/governance-platform.md) 第 1 节，要点：门禁规则硬编码无版本/无变更审计；CRITICAL 档 expert_review 开关无消费方（文档已如实标注）；可观测性只有 HTTP 通用指标；全仓无按租户的业务聚合查询；eval_judge 纯规则判分。
+完整事实清单见 [../spec/governance-platform.md](../../spec/governance-platform.md) 第 1 节，要点：门禁规则硬编码无版本/无变更审计；CRITICAL 档 expert_review 开关无消费方（文档已如实标注）；可观测性只有 HTTP 通用指标；全仓无按租户的业务聚合查询；eval_judge 纯规则判分。
 
 ## 3. 任务分解
 
@@ -34,7 +34,7 @@
 ### T3.3 规则禁用显式治理 + expert_review 落地
 
 - **内容**：`GATE_RULES_DISABLED` 配置（安全底线规则不可禁用）+ CRITICAL 档自动创建 `escalate` 型专家复核动作。设计见 spec 3.3-3.4 节。
-- **验收**：禁用规则在 `/health` 与评估记录中可见；CRITICAL 会话不经专家 approve 无法通过 Stage 3（补上 [../spec/stage3-risk-adaptive-gate.md](../spec/stage3-risk-adaptive-gate.md) 标注的历史欠账，落地后同步删改该文档脚注）。
+- **验收**：禁用规则在 `/health` 与评估记录中可见；CRITICAL 会话不经专家 approve 无法通过 Stage 3（补上 [../spec/stage3-risk-adaptive-gate.md](../../spec/stage3-risk-adaptive-gate.md) 标注的历史欠账，落地后同步删改该文档脚注）。
 - 工作量：M
 
 ### T3.4 组织级聚合 API 与前端治理页

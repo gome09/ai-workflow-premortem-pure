@@ -1,7 +1,7 @@
 # 阶段 1 实施计划：安全与合规硬缺口修复
 
 > 上游路线图：[improvement-roadmap.md](improvement-roadmap.md) 第 6 节「阶段 1」。
-> 配套设计规格：[../spec/data-classification-and-privacy.md](../spec/data-classification-and-privacy.md)（子系统①-⑤）、[../spec/supply-chain-security.md](../spec/supply-chain-security.md) 第 4-5 节（SAST）。
+> 配套设计规格：[../spec/data-classification-and-privacy.md](../../spec/data-classification-and-privacy.md)（子系统①-⑤）、[../spec/supply-chain-security.md](../../spec/supply-chain-security.md) 第 4-5 节（SAST）。
 > 现状基线核实日期：2026-07-13。
 > 状态：**已完成（历史实施计划）**。本文保留执行前基线；当前实现及部署条件以对应 spec、业务代码和 `.upgrade/STATE.md` 为准。
 
@@ -13,7 +13,7 @@
 
 ## 2. 现状基线
 
-完整事实清单见 [../spec/data-classification-and-privacy.md](../spec/data-classification-and-privacy.md) 第 1 节，要点：
+完整事实清单见 [../spec/data-classification-and-privacy.md](../../spec/data-classification-and-privacy.md) 第 1 节，要点：
 
 - 用户材料明文落库，无任何加密/脱敏实现；材料随 prompt 发送到外部 LLM API（DeepSeek）。
 - 报告免责声明仅英文、位于文末（JSON 最后一个键 / Markdown 第 19 节）。
@@ -71,7 +71,7 @@
 
 ### T1.8 CI 接入 SAST 与依赖审计
 
-- **内容**：ruff 规则集加 `S`（tests 豁免 S101）+ CI 追加 `pip-audit` 步骤（先告警不阻断）；仓库公开后追加 CodeQL workflow。设计见 [../spec/supply-chain-security.md](../spec/supply-chain-security.md) 第 4-5 节。
+- **内容**：ruff 规则集加 `S`（tests 豁免 S101）+ CI 追加 `pip-audit` 步骤（先告警不阻断）；仓库公开后追加 CodeQL workflow。设计见 [../spec/supply-chain-security.md](../../spec/supply-chain-security.md) 第 4-5 节。
 - **验收**：CI 真实跑出 SAST/audit 结果（哪怕暂不 block 合并）；存量 `S` 告警清零或逐条豁免注释。
 - 工作量：M
 

@@ -1,7 +1,7 @@
 # 阶段 2 详细设计方案：AI 风险分类体系补强
 
 > 关系定位：本文档是 [phase-2-risk-taxonomy.md](phase-2-risk-taxonomy.md)（实施计划 / 任务清单 + 验收标准）的**落地设计层**——给出每个任务的具体文件改动、代码草稿、配置参数、决策依据、执行顺序与并行策略、风险。
-> 配套规格：[../spec/risk-taxonomy-engine.md](../spec/risk-taxonomy-engine.md)（设计意图层，已完整覆盖 T2.1–T2.5 的设计决策）。
+> 配套规格：[../spec/risk-taxonomy-engine.md](../../spec/risk-taxonomy-engine.md)（设计意图层，已完整覆盖 T2.1–T2.5 的设计决策）。
 > 现状核实日期：2026-07-14（全部条目经代码仓库直接实测，非估算）。
 > 状态：**已实施完成，本文作为历史设计记录保留**。其中代码行号、版本号、未勾选框和“待决策”措辞均反映执行前快照，不作为当前事实来源。
 >
@@ -42,7 +42,7 @@ spec §9 称「`ProjectContext` 新增计数字段走 `core/migrations/` 的数�
 
 #### 2.1.1 risk_type 枚举扩展（LLM05/07/10 共同前置）
 
-**改动文件**：[core/models.py](../../core/models.py)
+**改动文件**：[core/models.py](../../../core/models.py)
 
 `SafetyFinding.risk_type` Literal（line 417-425）追加 3 值：
 
@@ -65,7 +65,7 @@ risk_type: Literal[
 
 #### 2.1.2 RISK_DESCRIPTIONS 补 3 条
 
-**改动文件**：[tools/risk_taxonomy.py](../../tools/risk_taxonomy.py)
+**改动文件**：[tools/risk_taxonomy.py](../../../tools/risk_taxonomy.py)
 
 ```python
 RISK_DESCRIPTIONS = {
@@ -79,10 +79,10 @@ RISK_DESCRIPTIONS = {
 #### 2.1.3 四张标签表补 3 个 key
 
 **改动文件**：
-- [tools/taxonomies/internal.py](../../tools/taxonomies/internal.py)
-- [tools/taxonomies/owasp_llm_2025.py](../../tools/taxonomies/owasp_llm_2025.py)
-- [tools/taxonomies/nist_ai_rmf.py](../../tools/taxonomies/nist_ai_rmf.py)
-- [tools/taxonomies/microsoft_agent_failure_modes.py](../../tools/taxonomies/microsoft_agent_failure_modes.py)
+- [tools/taxonomies/internal.py](../../../tools/taxonomies/internal.py)
+- [tools/taxonomies/owasp_llm_2025.py](../../../tools/taxonomies/owasp_llm_2025.py)
+- [tools/taxonomies/nist_ai_rmf.py](../../../tools/taxonomies/nist_ai_rmf.py)
+- [tools/taxonomies/microsoft_agent_failure_modes.py](../../../tools/taxonomies/microsoft_agent_failure_modes.py)
 
 `internal.py` INTERNAL_RISK_REFS + DEFAULT_CONTROL_REFS 追加：
 ```python
@@ -127,7 +127,7 @@ LLM08 (Vector and Embedding Weaknesses) 缓办：本项目当前无 RAG/向量�
 
 #### 2.1.4 LLM07 System Prompt Leakage 判定拆分
 
-**改动文件**：[tools/prompt_injection_scanner.py](../../tools/prompt_injection_scanner.py)
+**改动文件**：[tools/prompt_injection_scanner.py](../../../tools/prompt_injection_scanner.py)
 
 从「返回 bool」升级为「返回命中类别」：
 
@@ -178,7 +178,7 @@ def has_prompt_injection(text: str) -> bool:
 
 > 向后兼容：`has_prompt_injection` 签名不变，现有调用方（如有）行为不变。规则 3 `system prompt` 从 INJECTION 移到 LEAKAGE，但 `has_prompt_injection` 仍返回 True，仅 `classify_injection` 区分类别。
 
-**改动文件**：[tools/safety_classifier.py](../../tools/safety_classifier.py)
+**改动文件**：[tools/safety_classifier.py](../../../tools/safety_classifier.py)
 
 `scan_text()`（line 172-183）的 prompt_injection 块改为按类别分流：
 
@@ -209,7 +209,7 @@ elif injection_class == "leakage":
 
 #### 2.1.5 LLM05 Improper Output Handling 判定
 
-**改动文件**：[tools/safety_classifier.py](../../tools/safety_classifier.py)
+**改动文件**：[tools/safety_classifier.py](../../../tools/safety_classifier.py)
 
 新增输出侧规则组，**仅在 AI 输出位置启用**（避免误伤用户材料中的演示代码）：
 
@@ -238,7 +238,7 @@ if "ai_output" in location:
         )
 ```
 
-**报告硬化（独立于 finding 机制，spec §3.3）**：[core/report_service.py](../../core/report_service.py) `build_markdown_report()` 对 AI 输出片段中的 `<script`/`javascript:` 做转义。由于报告中的 AI 输出已包在 ``` 代码块内，Markdown 渲染器默认不执行，**本阶段仅做最小转义**（将 `<script` 替换为 `&lt;script` 在 JSON `content_json` 层面不动，仅 Markdown 导出时转义）：
+**报告硬化（独立于 finding 机制，spec §3.3）**：[core/report_service.py](../../../core/report_service.py) `build_markdown_report()` 对 AI 输出片段中的 `<script`/`javascript:` 做转义。由于报告中的 AI 输出已包在 ``` 代码块内，Markdown 渲染器默认不执行，**本阶段仅做最小转义**（将 `<script` 替换为 `&lt;script` 在 JSON `content_json` 层面不动，仅 Markdown 导出时转义）：
 
 ```python
 # build_markdown_report 内，渲染 safety_findings / ai_generated 段落时：
@@ -256,14 +256,14 @@ def _escape_unsafe_output(text: str) -> str:
 #### 2.1.6 LLM10 Unbounded Consumption 接入
 
 **改动文件**：
-- [core/models.py](../../core/models.py)（ProjectContext 新增计数字段）
+- [core/models.py](../../../core/models.py)（ProjectContext 新增计数字段）
 - `core/migrations/v080_to_v090.py`（新建迁移）
-- [core/migrations/registry.py](../../core/migrations/registry.py)（bump 版本 + 注册）
-- [core/migrations/__init__.py](../../core/migrations/__init__.py)（导出新迁移）
-- [core/config.py](../../core/config.py)（阈值配置）
-- [core/execution_service.py](../../core/execution_service.py)（计数递增 + 阈值检查）
-- [tools/safety_classifier.py](../../tools/safety_classifier.py)（`scan_unbounded_consumption` 函数）
-- [api/main.py](../../api/main.py)（429 审计事件）
+- [core/migrations/registry.py](../../../core/migrations/registry.py)（bump 版本 + 注册）
+- [core/migrations/__init__.py](../../../core/migrations/__init__.py)（导出新迁移）
+- [core/config.py](../../../core/config.py)（阈值配置）
+- [core/execution_service.py](../../../core/execution_service.py)（计数递增 + 阈值检查）
+- [tools/safety_classifier.py](../../../tools/safety_classifier.py)（`scan_unbounded_consumption` 函数）
+- [api/main.py](../../../api/main.py)（429 审计事件）
 - [.env.example](../../.env.example)（配置项）
 
 **1. `core/models.py` ProjectContext 类**（line 838 `iteration_count` 区附近）追加：
@@ -480,7 +480,7 @@ LLM_TOKEN_ESTIMATE_THRESHOLD=500000
 
 **改动文件**：
 - `tools/taxonomies/nist_ai_600_1.py`（新建）
-- [tools/taxonomies/mapper.py](../../tools/taxonomies/mapper.py)（聚合接入——Wave 2 串行阶段做）
+- [tools/taxonomies/mapper.py](../../../tools/taxonomies/mapper.py)（聚合接入——Wave 2 串行阶段做）
 - `.upgrade/reports/nist-ai-600-1-action-summary.md`（条款摘要存档）
 - `tests/test_taxonomy_nist_ai_600_1.py`（新建）
 
@@ -581,7 +581,7 @@ def refs_for_risk_type(risk_type: str | None) -> list[str]:
 
 **改动文件**：
 - `tools/taxonomies/owasp_agentic_2026.py`（新建）
-- [tools/taxonomies/mapper.py](../../tools/taxonomies/mapper.py)（聚合接入——Wave 2 串行阶段做）
+- [tools/taxonomies/mapper.py](../../../tools/taxonomies/mapper.py)（聚合接入——Wave 2 串行阶段做）
 - `tests/test_taxonomy_owasp_agentic_2026.py`（新建）
 
 **1. `tools/taxonomies/owasp_agentic_2026.py`（新建）**：
@@ -647,7 +647,7 @@ from tools.taxonomies.owasp_agentic_2026 import ASI_ATTACK_REFS, ASI_RISK_REFS
 **改动文件**：
 - `.upgrade/reports/tc260-agent-deployment-summary.md`（条款摘要存档——前置）
 - `tools/taxonomies/tc260_agent_deployment.py`（新建）
-- [tools/taxonomies/mapper.py](../../tools/taxonomies/mapper.py)（聚合接入——Wave 2 串行阶段做）
+- [tools/taxonomies/mapper.py](../../../tools/taxonomies/mapper.py)（聚合接入——Wave 2 串行阶段做）
 - `tests/test_taxonomy_tc260_agent_deployment.py`（新建）
 
 **1. 前置：条款摘要存档** `.upgrade/reports/tc260-agent-deployment-summary.md`
@@ -720,8 +720,8 @@ from tools.taxonomies.tc260_agent_deployment import TC260_RISK_REFS
 ### T2.5 领域扩展标签接入生产链路【依赖 T2.1 + Wave 2 mapper 稳定】
 
 **改动文件**：
-- [tools/taxonomies/mapper.py](../../tools/taxonomies/mapper.py)（`apply_taxonomy_to_safety_finding` 加 domain 参数）
-- [tools/safety_classifier.py](../../tools/safety_classifier.py)（`_finding` 透传 domain）
+- [tools/taxonomies/mapper.py](../../../tools/taxonomies/mapper.py)（`apply_taxonomy_to_safety_finding` 加 domain 参数）
+- [tools/safety_classifier.py](../../../tools/safety_classifier.py)（`_finding` 透传 domain）
 - `tests/test_domain_labels_production.py`（新建）
 
 **1. `mapper.py:apply_taxonomy_to_safety_finding` 加 domain 参数**（line 74-89）：

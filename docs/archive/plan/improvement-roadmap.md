@@ -232,7 +232,7 @@ Scorecard 偏重供应链安全，中文社区（掘金/V2EX/Gitee/开源中国�
 
 ### 阶段 1：安全与合规硬缺口修复（对应"企业内部工具最低门槛"）
 
-> 详细实施计划：[phase-1-security-compliance.md](phase-1-security-compliance.md)；设计规格：[../spec/data-classification-and-privacy.md](../spec/data-classification-and-privacy.md)
+> 详细实施计划：[phase-1-security-compliance.md](phase-1-security-compliance.md)；设计规格：[../../spec/data-classification-and-privacy.md](../../spec/data-classification-and-privacy.md)
 
 **目标**：补齐前面识别出的、企业 IT/安全部门验收时**一定会问到**的硬缺口。
 
@@ -244,7 +244,7 @@ Scorecard 偏重供应链安全，中文社区（掘金/V2EX/Gitee/开源中国�
 
 ### 阶段 2：AI 风险分类体系补强（对应"避免设计方案落后"）
 
-> 详细实施计划：[phase-2-risk-taxonomy.md](phase-2-risk-taxonomy.md)；设计规格：[../spec/risk-taxonomy-engine.md](../spec/risk-taxonomy-engine.md)
+> 详细实施计划：[phase-2-risk-taxonomy.md](phase-2-risk-taxonomy.md)；设计规格：[../spec/risk-taxonomy-engine.md](../../spec/risk-taxonomy-engine.md)
 
 **目标**：把上次评估中发现的"贴标签式"风险分类，升级为有实质判定逻辑的分类体系，同时补齐已发现的具体缺口。
 
@@ -256,7 +256,7 @@ Scorecard 偏重供应链安全，中文社区（掘金/V2EX/Gitee/开源中国�
 
 ### 阶段 3：从"评估工具"到"组织级治理平台"（对应 ISO/IEC 42001 管理体系理念）
 
-> 详细实施计划：[phase-3-governance-platform.md](phase-3-governance-platform.md)；设计规格：[../spec/governance-platform.md](../spec/governance-platform.md)
+> 详细实施计划：[phase-3-governance-platform.md](phase-3-governance-platform.md)；设计规格：[../spec/governance-platform.md](../../spec/governance-platform.md)
 
 **目标**：这是最长期的一步，把当前"单次项目风险评估"的粒度，扩展为"企业内多个 AI 项目的组织级治理视图"。
 
@@ -266,7 +266,7 @@ Scorecard 偏重供应链安全，中文社区（掘金/V2EX/Gitee/开源中国�
 
 ### 阶段 4：开源社区打磨（可与前面阶段并行推进）
 
-> 详细实施计划：[phase-4-community.md](phase-4-community.md)；设计规格：[../spec/supply-chain-security.md](../spec/supply-chain-security.md)
+> 详细实施计划：[phase-4-community.md](phase-4-community.md)；设计规格：[../spec/supply-chain-security.md](../../spec/supply-chain-security.md)
 
 **目标**：如果你希望这个项目走向对外开源、吸引社区贡献者，这是持续性工作，没有终点。
 

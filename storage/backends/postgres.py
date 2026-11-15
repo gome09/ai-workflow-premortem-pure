@@ -849,7 +849,7 @@ class PostgresSessionStore:
                 ev.verified,
                 ev.verified_by,
                 ev.verified_at,
-                ev.verification_note,
+                encrypt_text_field(ev.verification_note, classification),
                 ev.retrieved_at,
             )
             for ev in ctx.evidence_sources

@@ -2,7 +2,7 @@
 
 > 评估对象：本平台（ai-workflow-premortem）处理用户上传材料这一个人信息处理活动。
 > 评估依据：PIPL 第 55 条、第 56 条；DSL 第 21 条。
-> 评估日期：2026-07-14；代码事实复核：2026-09-21。
+> 评估日期：2026-07-14；代码事实复核：2026-11-15。
 > 复评触发：重大架构变更（如更换 LLM provider、新增数据字段、新增跨境传输路径）。
 > 留存期限：3 年。
 
@@ -22,6 +22,7 @@
 |----------|------|------|------------|
 | 项目基本信息 | research_target, domain, goal | 用户输入 | 可能 |
 | 用户补充材料 | user_materials (list[str]) | 用户粘贴/上传 | 可能（文本内容任意） |
+| 搜索查询 | 由 research_target / domain 派生的查询串 | Stage 1 自动生成，发往 Tavily | 可能 |
 | 证据来源 | evidence_sources (summary, claims) | Tavily 搜索 / 用户材料资产化 | 可能 |
 | 会话审计 | audit_events | 系统自动记录 | actor 字段含角色信息 |
 | LLM 交互 | conversation_history, llm_traces | 用户消息 + DeepSeek API 返回 | 可能包含用户消息原文与 prompt 内容 |
@@ -31,8 +32,9 @@
 
 ```
 用户 → 平台 API → [四类正则 PII 检测] → [指定材料字段加密（需有效密钥）] → PostgreSQL/SQLite
+                 → [Stage 1 查询生成（research_target / domain）] → Tavily Search API → 搜索结果作为证据入库
                  → [可选：完整上下文 checkpoint，PostgreSQL 使用独立 Fernet key] → PostgreSQL checkpoint 表
-                 → [evidence/user_materials 路径可选掩码；直接消息/历史不覆盖] → DeepSeek API → 报告
+                 → [聊天正文与补充材料命中 PII 后升级 sensitive_personal 并强制掩码] → DeepSeek API → 报告
 ```
 
 ### 1.4 跨境传输披露
@@ -43,6 +45,7 @@
 - **保护措施**：聊天正文在 `send_message` 进入模型前、补充材料在加入时统一做四类正则 PII 检测；命中后会话升级为 `sensitive_personal`，所有出站 LLM 消息强制掩码。`PII_MASK_BEFORE_LLM` 仅对未被升级的 `business_internal` / `public_demo` 内容保留开关语义
 - **法律依据**：PIPL 第 38 条（需单独同意 + 评估）
 - **第三方合规**：DeepSeek 隐私政策参见其官方声明
+- **搜索服务**：Stage 1 会把由 `research_target` / `domain` 派生的查询串发送给 Tavily Search API；查询串可能包含用户提供的项目目标或领域信息，但不发送完整材料。搜索失败日志会包含 query 文本（`tools/search.py`），属日志边界；Tavily 的部署位置、合同与合规状态需按实际部署另行评估。
 
 ## 2. PIPL 第 56 条三要素评估
 
@@ -58,7 +61,8 @@
 |--------|------|--------|----------|
 | 用户材料含 PII 被存储 | 隐私泄露 | 高 | T1.3 支持字段加密（enc:v1:）；必须配置 `DATA_ENCRYPTION_KEY`，否则仍为明文 |
 | PII 通过 prompt 传到 DeepSeek | 跨境传输 | 高 | 聊天正文与补充材料进入模型前统一检测；四类 PII 命中后升级 `sensitive_personal` 并强制掩码；`PII_MASK_BEFORE_LLM` 仅保留未升级内容的开关语义 |
-| 审计日志含操作者信息 | 关联分析 | 中 | 审计事件仅记录角色（system/user/ai），不记录 PII |
+| 搜索查询外发 | 项目目标/领域信息发送到 Tavily | 中 | 只发送派生查询，不发送完整材料；错误日志含 query 文本，需按日志访问控制管理 |
+| 审计日志含操作者信息 | 关联分析 | 中 | `actor` 是固定枚举（system/user/ai），但 metadata 会记录 `reviewer_id` / `reviewer_role`；自由文本按 `FREE_TEXT_KEYS` 脱敏，2026-11-15 起已覆盖 `mitigation_plan` / `review_note` / `decision_note` / `verification_note`。修复前的历史审计行仍需单独回填，不能表述为“审计不含任何身份或 PII” |
 | 数据库泄露 | 批量泄露 | 高 | JWT 认证 + 租户隔离；Fernet 仅在 `DATA_ENCRYPTION_KEY` 有效时启用 |
 | checkpoint 或其密钥泄露 | 中断时的完整上下文副本可被读取 | 高 | PostgreSQL checkpoint 强制独立 `CHECKPOINT_ENCRYPTION_KEY` 加密、tenant-scoped thread、单 worker和 fail-closed readiness；密钥需由部署方独立备份与轮换 |
 | 会话长期留存 | 留存过度 | 中 | T1.6 DELETE 端点 + 内置留存执行器；默认 `RETENTION_DRY_RUN=true`，需显式关闭 dry-run 才实际清理 |
@@ -69,7 +73,8 @@
 |------|----------|------|------|
 | 数据分类分级（T1.1） | 适配性控制 | DSL 21 条 / PIPL 51 条 | ✅ 已实现 |
 | 字段级加密（T1.3） | 存储泄露 | PIPL 51 条 | ⚠️ 代码已实现，部署时需显式配置密钥并验证 `/health.data_encryption` |
-| PII 检测与掩码（T1.4） | 跨境传输 | PIPL 38/39 条 | ⚠️ 部分实现：四类正则 + 材料注入路径；默认关闭，直接消息/历史不覆盖 |
+| PII 检测与掩码（T1.4） | 跨境传输 | PIPL 38/39 条 | ⚠️ 部分实现：四类正则；聊天正文与补充材料命中后升级 `sensitive_personal` 并强制出站掩码；`PII_MASK_BEFORE_LLM` 只对未升级内容保留开关语义 |
+| 搜索服务外发（Stage 1） | 第三方提供/跨境 | PIPL 38 条 | ⚠️ 仅发送派生查询；接收方与部署地点需按实际评估 |
 | 加密持久 checkpoint | 中断恢复与执行快照泄露 | PIPL 51 条 | ⚠️ 仅在显式启用 `langgraph_interrupt` 时使用；PostgreSQL 强制独立 key，`make setup` 生成 `secrets/checkpoint_encryption_key`，非 Docker 部署需部署方显式配置并验证 `/health/ready` |
 | 会话删除与审计归档（T1.6） | 留存过度 | PIPL 47 条 | ✅ 已实现 |
 | 应急响应（T1.9） | 事件响应 | PIPL 57 条 | ✅ 已实现 |

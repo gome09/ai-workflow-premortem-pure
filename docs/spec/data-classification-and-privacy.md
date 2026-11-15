@@ -1,7 +1,7 @@
 # 数据分类分级与隐私保护设计规格
 
 > Status: Implemented（自 v1.0.3 起落地 T1.1–T1.9：数据分级 / 字段加密 / PII 掩码 / AI 生成标识 / PIA，沿用至今；v1.4.0 增加解密 fail-closed 与事件/审计统一脱敏。落地任务见 [../archive/plan/phase-1-security-compliance.md](../archive/plan/phase-1-security-compliance.md)）
-> Last updated: 2026-10-31
+> Last updated: 2026-11-15
 > 合规依据：PIPL 第 28/51/55/56/57 条、DSL 第 21 条、《人工智能生成合成内容标识办法》（2025-09-01 施行）、EU AI Act Art.50 透明度义务（2026-08-02 生效）、GB/T 22239-2019 日志留存要求
 
 ---
@@ -49,11 +49,13 @@
 
 - 会话创建时只按是否为内置场景设置 `public_demo` / `business_internal`；加入材料以及每轮聊天正文进入模型前都会扫描身份证号、手机号、邮箱、银行卡号四类模式，命中后升级为 `sensitive_personal`（`public_demo` 命中真实 PII 时同样升级）。当前不识别姓名、学号或“心理健康”等语义类别，部署方必须人工覆写这类敏感场景。
 - 人工覆写走新增端点 `PATCH /sessions/{id}/data-classification`（editor/admin），**只允许升级或同级修改，降级必须 admin** 且写 `AuditEvent`。
-- 分级**向上联动 AI 风险分级**：`sensitive_personal` 会话在 `core/gates/risk_profile.py:classify_project_risk` 中作为升档信号，把 MEDIUM 升为 HIGH、把 HIGH 升为 CRITICAL；该升档同时是**地板值（floor）**，后续 low-scope 降档不得把 `sensitive_personal` 会话拉回 MEDIUM/LOW。数据分级与 AI 风险分级仍是两个独立维度（一个关于"处理的数据"，一个关于"被评估的 AI 系统"），仅单向联动。
+- 分级**向上联动 AI 风险分级**：`sensitive_personal` 是确定性六因子模型（`core/risk`）的硬性 floor，至少 HIGH；与高风险结构因子组合时可升为 CRITICAL。人工 override 受 floor 约束，low-scope 降档不得把 `sensitive_personal` 会话拉回 MEDIUM/LOW。`core/gates/risk_profile.py` 仅是兼容 re-export。数据分级与 AI 风险分级仍是两个独立维度（一个关于"处理的数据"，一个关于"被评估的 AI 系统"），仅单向联动。
 
   > ✅ **缺口已修复（2026-09-01）**：修复前该升档不是地板值——low-scope 降档在升档之后执行，`sensitive_personal` + 个人/学习类关键词的会话可落到 LOW。修复引入 `_TIER_ORDER` 与 `tier_floor`（`sensitive_personal` → floor HIGH），第 4 步降档与第 5 步 LOW 覆盖分支均尊重 floor；回归测试见 `tests/test_sensitive_personal_floor.py`（6 条）。
 
-### 3.3 关键词修正（配套）
+### 3.3 关键词修正（历史配套，已被 v1.5 六因子模型取代）
+
+> 本节保留 v1.0.3 的关键词表补充记录。v1.5 起风险档位由 `core/risk` 六因子模型决定，`core/gates/risk_profile.py` 仅作为兼容 re-export，关键词只用于 legacy 推断适配器。
 
 `risk_profile.py` 关键词表补充：`_HIGH_KEYWORDS` 增加"心理|精神|抑郁|自杀|self.?harm|mental health|心理健康"与"学生|student"（与既有"儿童|未成年人"同组）。修正后 `university_mental_health` 示例输入应实测落入 HIGH 及以上（作为回归测试固化）。
 
@@ -62,9 +64,11 @@
 ### 4.1 字段级静态加密
 
 - **方案**：应用层对称加密（`cryptography.Fernet`），密钥来自环境变量 `DATA_ENCRYPTION_KEY`（走 `.env`/secrets，与 `JWT_SECRET` 同级管理）。
-- **加密范围**（`data_classification ∈ {business_internal, sensitive_personal}`；`public_demo` 保持明文）：`research_target`、`goal`、`user_materials`、`evidence_sources[*].summary/claims`（仅 `source_type=user_material`）、`conversation_history[*][*].content`、`pending_actions[*]` 的自由文本与 `payload_before/payload_after`、`report_artifacts[*].content_markdown/content_json`、`eval_cases[*]` 的输入/预期/实际输出/人工备注、`eval_runs[*]` 的输入/预期/实际输出/评审理由/错误信息/LLM 建议、`eval_judgments[*].rationale`、`human_calibrations[*].human_comment/disagreement_reason`、`redteam_cases[*]` 的提示与恶意材料、`safety_findings[*]` 的描述/建议动作/处置备注、`flagged_items[*].content/context/note`、`review_notes` 值与 `pending_input`；投影表列级加密由 `ENCRYPTED_COLUMNS` 注册（`human_actions`、`evidence_sources`、`report_artifacts`、`eval_cases`、`eval_runs`、`eval_judgments`、`human_calibrations`、`safety_findings`、`eval_datasets`、`eval_experiments`、`redteam_cases`）。权威实现见 `storage/field_security.py`。
+- **加密范围**（`data_classification ∈ {business_internal, sensitive_personal}`；`public_demo` 保持明文）：`research_target`、`goal`、`user_materials`、`evidence_sources[*].summary/claims`（仅 `source_type=user_material`）、`conversation_history[*][*].content`、`pending_actions[*]` 的自由文本与 `payload_before/payload_after`、`report_artifacts[*].content_markdown/content_json`、`eval_cases[*]` 的输入/预期/实际输出/人工备注、`eval_runs[*]` 的输入/预期/实际输出/评审理由/错误信息/LLM 建议、`eval_judgments[*].rationale`、`human_calibrations[*].human_comment/disagreement_reason`、`redteam_cases[*]` 的提示与恶意材料、`safety_findings[*]` 的描述/建议动作/处置备注、`risk_treatments[*].mitigation_plan/review_note`、`project_approvals[*].decision_note`、`flagged_items[*].content/context/note`、`review_notes` 值与 `pending_input`；投影表列级加密由 `ENCRYPTED_COLUMNS` 注册（`human_actions`、`evidence_sources`、`report_artifacts`、`eval_cases`、`eval_runs`、`eval_judgments`、`human_calibrations`、`safety_findings`、`eval_datasets`、`eval_experiments`、`redteam_cases`）。权威实现见 `storage/field_security.py`。
 - **缓存副本**：`storage/cache.py`（Redis）与 `storage/backends/memory_cache.py` 使用同一字段加密边界写入缓存，读取后解密；缓存副本不得包含敏感样本文本明文。
 - **实现位置**：上下文写入侧 `encrypt_fields_for_storage`（`_build_context_json_for_storage` 截断之后、`json.dumps` 之前）、读取侧 `decrypt_fields_after_load`（`migrate_context` 之后）；投影表用 `encrypt_row_columns` / `decrypt_row_columns`。密文带 `enc:v1:` 前缀以便识别与将来轮换；PostgreSQL 与 SQLite 两个后端行为一致。
+- **新增字段覆盖（2026-11-15）**：`evidence_sources[*].verification_note`、`stage_1–4.raw_summary`、`stage_3_output.test_results[*]` 的 `test_input` / `ai_output` / `raw_summary` 与 `error_predictions` / `correction_prompts` / `pass_criteria` 已纳入加解密；投影表 `evidence_sources.verification_note` 同步加密。`core/eval_service.py` 复制进 `eval_cases` 的输入/输出也保持密文，双载体不再出现 Stage 3 明文副本。
+- **历史数据边界**：上述修复只覆盖新写入；修复前落库的 context / 投影 / 审计行仍可能保留明文，需单独回填与影响面审计，不随本次代码修复自动完成。
 - **历史明文回填（v1.7.0）**：早期版本因字段名拼写错误只加密 `research_goal`，实际字段 `goal` 仍以明文落库。修复后新增 `scripts/encrypt_legacy_goal.py` 与两后端 `backfill_goal_encryption()`：默认 dry-run，`--apply` 才写库，`--verify` 校验密文可解密，`--decrypt --apply --allow-plaintext` 仅用于回退到旧版本代码；脚本幂等且跳过 `public_demo`。回滚旧代码前必须先解密或恢复升级前备份，否则旧代码会把 `goal` 密文当作明文展示。
 - **fail-closed（v1.4.0 起）**：`APP_ENV=production` 或 `storage_backend != sqlite` 时，检测到 `enc:v1:` 密文但无密钥、或密钥错误/密文损坏，一律抛 `FieldDecryptionError`，不会把密文当明文返回，也不会静默降级为明文读取。SQLite 离线演示允许无密钥明文。
 
@@ -75,9 +79,26 @@
 - 人工风险 override 以 append-only `RiskOverrideRecord` 记录原等级、请求等级、生效等级、floor、原因、操作者、角色与 `tenant_id`，并写入 `risk_tier_overridden` 审计事件；降级仅 admin 可执行且仍受 floor 限制。
 - LLM 仅可提供 `llm_explanation` 解释文本，不参与因子或最终等级计算。
 
-- **降级行为**：未配置密钥时——demo/lite 模式静默明文；生产模式（postgres backend）启动时打 WARNING 并在 `/health` 暴露 `data_encryption: disabled`。
+- **三层加密边界**：
+  1. **启动**：`APP_ENV=production` 缺失或非法 `DATA_ENCRYPTION_KEY` 时 `Settings` 直接拒绝启动。
+  2. **读取已有密文**：production 或非 sqlite 后端缺密钥/密钥错误/密文损坏时抛 `FieldDecryptionError`，不返回明文。
+  3. **新写入**：development + 非 sqlite 且缺密钥时加密关闭、字段按明文写入并在启动日志告警；因此“PostgreSQL 必须配置密钥”是部署要求，不是代码已自动保证。
 - **当前部署事实（2026-10-27）**：`.env.example` 的 `DATA_ENCRYPTION_KEY` 默认为空，但 `make setup` / `scripts/gen_secrets.sh` 会生成 `secrets/data_encryption_key` 并以 Docker secrets 注入；环境变量仍然优先于 secret 文件。非 Docker 部署仍需显式设置 `DATA_ENCRYPTION_KEY`，并在启动后确认 `/health` 返回 `data_encryption=enabled`。
 - **不做**：全库透明加密（TDE 属部署层，不属应用层）、可搜索加密（当前无按材料内容检索的需求）。
+
+#### 4.1.1 字段与副本矩阵（2026-11-15 核验）
+
+| 数据 | context_json | 投影表 | 缓存 | 审计/事件 | 结论 |
+|---|---|---|---|---|---|
+| `research_target` / `goal` / `user_materials` | 加密 | 部分列加密 | 同一字段加密边界 | 脱敏 | 已覆盖 |
+| 用户材料型 `evidence_sources.summary/claims` | 加密 | 加密 | 同一字段加密边界 | 脱敏 | 已覆盖 |
+| `evidence_sources.verification_note` | 加密 | 加密 | 同一字段加密边界 | 脱敏 | 新写入已覆盖 |
+| conversation / pending actions / report artifacts | 加密 | 加密 | 同一字段加密边界 | 脱敏 | 已覆盖 |
+| `eval_cases` / `eval_runs` / `eval_judgments` / `human_calibrations` / `redteam_cases` / `safety_findings` | 加密 | 加密 | 同一字段加密边界 | 脱敏 | 已覆盖 |
+| `risk_treatments.mitigation_plan/review_note`、`project_approvals.decision_note` | 加密 | 加密 | 同一字段加密边界 | 脱敏 | 已覆盖 |
+| `stage_1–4.raw_summary`、`stage_3.test_results` | 加密 | 不适用 | 同一字段加密边界 | `raw_summary` 脱敏 | 新写入已覆盖；`eval_cases` 双载体均为密文 |
+
+> 缓存仍必须使用同一字段加密边界，缓存副本不得包含敏感样本文本明文。表中“新写入已覆盖”不包含修复前的历史行；历史数据回填需另立任务。
 
 ### 4.2 PII 检测与出境前掩码
 
@@ -101,10 +122,11 @@
 事件与审计是独立的持久化路径（`session_events` / `audit_events`），不能沿用上下文加密假设，因此统一在写入层脱敏：
 
 - 入口：`core/session_service.py::_log_event` 与 `core/audit_service.py` 在落库前调用 `core/data_protection.py::redact_payload` / `snapshot`。
-- 规则：`business_internal` / `sensitive_personal` 的自由文本键（`user_input` / `summary` / `claims` / `description` / `trigger_reason` / `reviewer_note` / `content` / `payload_before` / `payload_after` / `title`、评估字段 `input_payload` / `expected_behavior` / `actual_output` / `human_comment` / `judge_reason` / `pass_criteria`、会话字段 `research_target` / `goal` / `session_name` 以及 `disagreement_reason` / `rationale` / `error_message` / `llm_judge_suggestion`，权威清单见 `FREE_TEXT_KEYS`）整值替换为确定性摘要信封 `{"_redacted": true, "sha256": ..., "length": ...}`；非敏感字符串超过 `MAX_PLAIN_STRING`（200）截断。已脱敏信封重复处理保持幂等。
+- 规则：`business_internal` / `sensitive_personal` 的自由文本键（`user_input` / `summary` / `claims` / `description` / `trigger_reason` / `reviewer_note` / `content` / `payload_before` / `payload_after` / `title`、评估字段 `input_payload` / `expected_behavior` / `actual_output` / `human_comment` / `judge_reason` / `pass_criteria`、治理字段 `mitigation_plan` / `review_note` / `decision_note` / `verification_note`、会话字段 `research_target` / `goal` / `session_name` 以及 `disagreement_reason` / `rationale` / `error_message` / `llm_judge_suggestion`，权威清单见 `FREE_TEXT_KEYS`）整值替换为确定性摘要信封 `{"_redacted": true, "sha256": ..., "length": ...}`；非敏感字符串超过 `MAX_PLAIN_STRING`（200）截断。已脱敏信封重复处理保持幂等。
 - 用户消息事件只记录 `input_sha256` / `input_length` / 状态，不落原文。
 - `public_demo` 保持可读，保住离线演示的审计可观测性。
 - 确定性：同一输入与同一分级必得同一信封，不依赖随机数或外部服务，便于测试与审计比对。
+- **治理备注脱敏（2026-11-15 修复）**：`mitigation_plan`、`review_note`、`decision_note`、`verification_note` 已纳入 `FREE_TEXT_KEYS`，会随风险处置、上线审批与证据核验的 before/after 快照写入脱敏信封。历史审计行可能仍保留原文，需单独回填，不随本次修复自动清理。
 - 删除归档边界：`purge_session` 与 `archive_audit_events` 不再信任调用方 summary，只持久化 `sanitize_purge_summary` 白名单中的会话/租户标识、状态、分类、时间、删除者、留存天数与归档条数；`research_target`、`goal`、`session_name` 与任意嵌套正文不会进入 `session_purged.after_snapshot`。
 
 ## 5. 子系统③：AI 生成内容标识（《标识办法》+ EU AI Act Art.50）
@@ -121,7 +143,7 @@
 
 ## 6. 子系统④：数据生命周期
 
-- **留存策略执行化**：`core/config.py` 提供 `audit_retention_days`（默认 **183**）与 `session_retention_days`（默认 0=永久）。`core/retention_service.py` 在应用 lifespan 启动后按 `RETENTION_SWEEP_INTERVAL_SECONDS`（默认 86400 秒）周期扫描，首次扫描在启动后一个周期执行。`RETENTION_DRY_RUN` 默认 `true`，只统计候选不写库；显式设为 `false` 才实际删除。到期会话走与管理员删除一致的链路（checkpoint → 审计归档 → 投影表级联 → 缓存失效）；到期审计事件同时删除活动表与归档表，按 `RETENTION_BATCH_SIZE`（默认 1000）分批。`/health` 暴露 `retention_enabled`、`retention_dry_run` 与 `retention_scheduler` 状态。
+- **留存策略执行化**：`core/config.py` 提供 `audit_retention_days`（默认 **183**）与 `session_retention_days`（默认 0=永久）。`core/retention_service.py` 在应用 lifespan 启动后按 `RETENTION_SWEEP_INTERVAL_SECONDS`（默认 86400 秒）周期扫描，首次扫描在启动后一个周期执行。`RETENTION_DRY_RUN` 默认 `true`，只统计候选不写库；显式设为 `false` 才实际删除。删除顺序分两套入口、数据范围一致：管理员 `DELETE /sessions/{id}` 先清理 checkpoint，再执行 `purge_session`（审计归档 + 会话行 + 投影表级联）并失效缓存，checkpoint 清理失败会保留会话；retention 先提交 `purge_session`（归档 + 删除），再清理 checkpoint 与缓存，checkpoint 失败只记录错误与指标、不回滚，下一轮继续。到期审计事件同时删除活动表与归档表，按 `RETENTION_BATCH_SIZE`（默认 1000）分批。`/health` 暴露 `retention_enabled`、`retention_dry_run` 与 `retention_scheduler` 状态。
 - **删除能力**：新增 `DELETE /sessions/{id}`（admin），级联删除各独立表记录，但**审计事件不删除**（改为写入一条 `session_purged` 审计事件保留处置痕迹）——PIPL 删除权与审计完整性的平衡点。
 - **派生数据与租户边界（v1.4.0）**：`purge_session` 除 `sessions` 外还删除 `gate_evaluation_records` 等投影/派生化数据；所有删除谓词都带 `tenant_id`（PostgreSQL 为 `session_id = %s AND tenant_id = %s::uuid`），空租户仅允许显式 `SYSTEM_ACCESS` 且只匹配 `tenant_id IS NULL` 的历史行，不再退化为跨租户无条件删除。留存执行器从 `list_expired_sessions` 逐行取 `session_id` + `tenant_id` 后调用同一删除链路，因此 retention 与管理员删除的数据覆盖范围一致，且不会跨租户删除。回归测试见 `tests/test_retention_tenant_scope.py` 与 `tests/test_retention_cutoff_recheck.py`。
 - **候选更新与事务边界（P0）**：留存候选选出后由 `purge_session` 在写事务内复检 `updated_at`。PostgreSQL 先对父行 `SELECT ... FOR UPDATE` 再读取完整活动审计，逐条归档、写入白名单化的 `session_purged` 并删除父行；SQLite 在读取前执行 `BEGIN IMMEDIATE`，同一连接完成复检、归档与删除。结果以 `PurgeOutcome(deleted, archived_events, reason)` 区分 `deleted` / `stale` / `not_found`；只有 `deleted` 才清理 checkpoint/缓存并计入 `sessions_purged`，`stale` 与 `not_found` 分别计入 `sessions_skipped` / `sessions_missing`。任何归档或 DELETE 失败都回滚整个事务。

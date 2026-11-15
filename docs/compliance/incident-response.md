@@ -58,7 +58,7 @@
 |------|------------|
 | "敏感数据存储位置" | PostgreSQL / SQLite 的 `sessions.context_json`；仅配置有效 `DATA_ENCRYPTION_KEY` 时相关字段为 `enc:v1:` 密文。启用 PostgreSQL 中断模式后，checkpoint 三表还保存独立 Fernet 加密的完整执行快照 |
 | "审计日志位置" | `audit_events` 表 + `audit_events_archive` 表（删除会话后归档） |
-| "密钥存储位置" | setup 将 `JWT_SECRET` / PostgreSQL / Redis 密码同时写入文件型 secrets 与 `.env`；`DATA_ENCRYPTION_KEY` 与 `CHECKPOINT_ENCRYPTION_KEY` 均仅由 `.env` 传入且不自动生成，两者不得复用，事件排查与轮换必须分别覆盖 |
+| "密钥存储位置" | `make setup` / `scripts/gen_secrets.sh` 生成 `jwt_secret`、`postgres_password`、`redis_password`、`grafana_password` 及两把独立 Fernet key（`data_encryption_key`、`checkpoint_encryption_key`）；Docker Full 以文件 secrets 挂载，JWT/PG/Redis 同时同步进 `.env` 以满足应用环境变量优先级。非 Docker 部署必须显式配置 `DATA_ENCRYPTION_KEY` / `CHECKPOINT_ENCRYPTION_KEY`；两把 key 不得复用，必须分别备份、授权与轮换 |
 | "外部数据流" | evidence/user_materials、直接用户消息与会话历史均可能进入 DeepSeek prompt |
 | "PII 掩码开关" | 聊天正文在进入模型前、补充材料在加入时统一检测；四类 PII 命中升级 `sensitive_personal` 并强制出站掩码；`PII_MASK_BEFORE_LLM` 仅保留未升级内容的开关语义 |
 | "会话删除端点" | `DELETE /sessions/{id}`（admin only，归档审计后级联删除） |

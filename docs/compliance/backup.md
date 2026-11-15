@@ -5,11 +5,13 @@
 | 数据 | 工具 | 频率 | 保留 |
 |------|------|------|------|
 | PostgreSQL 业务数据 | pg_dump | 每日全量 | 30 天滚动 |
-| SQLite lite 模式 | cp data/workflow.db | 每日全量 | 7 天滚动 |
+| SQLite lite 模式 | 在线 backup（`sqlite3 .backup` / `Connection.backup` / `VACUUM INTO`） | 每日全量 | 7 天滚动 |
 | DATA_ENCRYPTION_KEY | secrets manager / 离线介质 | 变更时 | 永久（密钥丢失=数据不可读） |
 | CHECKPOINT_ENCRYPTION_KEY | secrets manager / 离线介质 | 变更时 | 启用 PostgreSQL 中断模式期间及其 checkpoint 备份保留期内（丢失=checkpoint payload 不可读） |
 | JWT_SECRET | secrets manager / 离线介质 | 变更时 | 永久 |
 | Docker volumes | 宿主机/云盘快照，或临时容器将 volume 内容打包到受控备份目录 | 每周 | 4 周滚动 |
+
+> SQLite 连接启用了 WAL（`storage/backends/sqlite_store.py`）。运行中只复制 `data/workflow.db` 可能丢失已提交数据；若必须做文件级复制，先停止写入并关闭全部连接，同时复制 `.db`、`.db-wal`、`.db-shm`，并用 `PRAGMA integrity_check` 验证一致性。
 
 ## 恢复演练清单
 
@@ -20,6 +22,8 @@
 5. [ ] 模拟审计归档：DELETE /sessions/{id} 后查 audit_events_archive 含 session_purged 事件，并确认对应 tenant-scoped checkpoint 已清理
 
 ## 可执行备份/恢复命令（PostgreSQL）
+
+> **演练库边界**：`E2E_DATABASE_URL` 必须指向一次性源库——测试中的 `PostgresSessionStore()` 读取应用配置，会向该库写入会话，因此应用配置的库必须与它一致；`E2E_RESTORE_DATABASE_URL` 必须指向另一个一次性恢复库——测试会先 `DROP SCHEMA public CASCADE` 再重建。两者都不得指向生产、共享或含真实业务数据的库，且不可彼此相同。`PRODUCTION_SAFETY_REQUIRED=1` 时缺依赖会失败而非跳过。
 
 ```bash
 # 1) 全量备份（custom format，包含 alembic_version 与投影表）

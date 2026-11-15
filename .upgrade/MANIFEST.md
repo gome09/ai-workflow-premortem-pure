@@ -9,7 +9,7 @@ Defines file lifecycle rules for `.upgrade/`. Update this file whenever files ar
 - `.upgrade/archive/plans/*.md` — phase/wave planning documents（已归档，本工作区以 `plans/` 承担标准结构中 `stages/` 的角色）
 - `.upgrade/reports/FINAL_REPORT.md` — final upgrade report（当前为占位文件，未产出最终报告；交付前补齐）
 - `.upgrade/decisions/*.md` — all decision records
-- `.upgrade/reviews/*.md` — all review records（目录尚未创建；首次产出独立评审文件时创建该目录）
+- `.upgrade/reviews/*.md` — all review records（目录已创建，`.upgrade/reviews/POST_UPGRADE_REVIEW.md` 已存在）
 - `.upgrade/archive/reports/*.md` — 阶段性报告（已归档）
 
 ## Keep Until Phase Complete (Discard After)
@@ -54,7 +54,8 @@ Before cleanup, classify each file as one of:
 
 | File | Status | Lifecycle | Notes |
 |---|---|---|---|
-| `.upgrade/STATE.md` | active | permanent | 当前升级状态（Phase 4 进行中：代码侧完成，远端治理待办；当前 v1.7.0 / Alembic V012） |
+| `.upgrade/STATE.md` | active | permanent | 当前升级状态（Phase 4 进行中：代码侧完成，远端治理待办；当前应用 1.11.0 / Alembic V014） |
+| `.upgrade/plans/项目文档与源码一致性审查及修改方案.md` | active | permanent | 2026-11-15 文档—源码一致性审查报告与实施方案 |
 | `.upgrade/MANIFEST.md` | active | permanent | 本文件 |
 | `.upgrade/decisions/RELEASE_CLEANUP.md` | active | permanent | v1.0 发布前组件清理决策记录（移除/归档了哪些组件及原因），moved from project root 2026-07-13 |
 | `.upgrade/decisions/branch-protection.md` | active | permanent | Phase 4 T4.2 main 分支保护策略决策（GitHub 后台手动操作步骤） |

@@ -1163,11 +1163,11 @@
                 <div class="card">
                     <div class="card-title">📌 关于本 Demo</div>
                     <div style="font-size: 13px; color: var(--text-secondary);">
-                        <p class="mb-8">本 Demo 是 AI 工作流风险预评估系统的离线可交互版本，所有数据来自真实项目实跑快照。</p>
+                        <p class="mb-8">本 Demo 是 AI 工作流风险预评估系统的离线可交互版本，页面数据基于真实项目的 Mock 模式输出整理，作为离线演示快照，不构成真实运行验收证据。</p>
                         <ul style="margin-left: 20px; margin-bottom: 8px;">
                             <li>离线模式配置：LLM_MODE=mock · STORAGE_BACKEND=sqlite · WORKFLOW_EXECUTION_MODE=single_step；内置场景由用户显式选择</li>
                             <li>无需后端服务、无需 API Key、无需联网，使用 Mock 数据模拟真实系统的四阶段工作流</li>
-                            <li>状态机、门禁规则、部署决策引擎均与真实项目一致</li>
+                            <li>状态机与门禁规则按真实项目规则做了静态简化；本页是独立静态模拟，不能替代真实 Stage Gate、上线批准或发布门禁</li>
                         </ul>
                         <p>真实工程版本基于 FastAPI + SQLite，支持 Mock LLM、四阶段工作流、风险自适应门禁、证据核验、Eval 评估体系、Red Team、报告导出等完整能力。</p>
                     </div>
@@ -2185,12 +2185,13 @@
 
             // 部署决策引擎规则说明
             html += '<div class="gate-panel" style="margin-top:12px;">';
-            html += '<div class="section-label" style="margin-top:0;">⚙️ 部署决策引擎规则（core/deployment_decision_engine.py）</div>';
+            html += '<div class="section-label" style="margin-top:0;">⚙️ 演示用部署决策规则（静态简化，非真实门禁实现）</div>';
             html += '<div style="font-size:12px;color:var(--text-secondary);font-family:monospace;line-height:1.8;">';
             html += 'if open_critical &gt; 0 or failed_evals: → <span class="text-danger">no_go (deployment_paused)</span><br>';
             html += 'elif open_high &gt; 0 or blocking_actions or expert_review_pending: → <span class="text-warning">conditional_go (conditional_deployment)</span><br>';
             html += 'else: → <span class="text-primary">pilot_only (limited_pilot)</span> &nbsp;# Demo 默认保守';
             html += '</div></div>';
+            html += '<div style="font-size:12px;color:var(--text-secondary);margin-top:6px;">演示推进只检查待处理人工动作；真实系统还会遍历 14 条门禁规则、安全底线与风险自适应条件。</div>';
 
             html += '<div class="action-buttons">';
             html += `<button class="btn btn-secondary btn-sm btn-auto" id="s4-view-actions">🤝 查看人工动作（${s4Actions.length}）</button>`;
@@ -2576,7 +2577,7 @@
             r += `- rollback_conditions:\n`; dd.rollback_conditions.forEach(c => { r += `  - ${c}\n`; });
             r += `- prohibited_uses:\n`; dd.prohibited_uses.forEach(c => { r += `  - ${c}\n`; });
 
-            r += `\n## Demo 声明\n本报告由离线可交互 Demo 生成，所有数据来自真实项目实跑快照（LLM_MODE=mock）。\n\n`;
+            r += `\n## Demo 声明\n本报告由离线可交互 Demo 生成，页面数据基于真实项目的 Mock 模式输出整理，作为离线演示快照，不构成真实运行验收证据（LLM_MODE=mock）。\n\n`;
             r += `## Disclaimer\n本报告仅为演示用途，is_demo_recommendation=true，不构成实际部署建议。\n`;
 
             document.getElementById('report-content').textContent = r;

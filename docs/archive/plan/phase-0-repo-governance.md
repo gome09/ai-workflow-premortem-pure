@@ -1,7 +1,7 @@
 # 阶段 0 实施计划：仓库治理最小闭环
 
 > 上游路线图：[improvement-roadmap.md](improvement-roadmap.md) 第 6 节「阶段 0」。
-> 配套设计规格：[../spec/supply-chain-security.md](../spec/supply-chain-security.md)。
+> 配套设计规格：[../spec/supply-chain-security.md](../../spec/supply-chain-security.md)。
 > 现状基线核实日期：2026-07-13（下表全部条目经代码仓库直接核实，非估算）。
 > 状态：**已完成（历史实施计划）**。本文保留 2026-07-13 的执行前基线与验收设计；当前事实以对应 spec、业务代码和 `.upgrade/STATE.md` 为准。
 
@@ -51,13 +51,13 @@
 
 ### T0.4 CI 权限最小化
 
-- **内容**：`.github/workflows/ci.yml` 顶层添加 `permissions: contents: read`。具体设计见 [../spec/supply-chain-security.md](../spec/supply-chain-security.md) 第 2 节。
+- **内容**：`.github/workflows/ci.yml` 顶层添加 `permissions: contents: read`。具体设计见 [../spec/supply-chain-security.md](../../spec/supply-chain-security.md) 第 2 节。
 - **验收**：workflow 顶层有显式 `permissions` 声明；CI 全绿（权限收紧未破坏现有 job）。
 - 工作量：S
 
 ### T0.5 补充 dependabot.yml
 
-- **内容**：覆盖 `pip`（uv 项目使用 pip 生态标识）与 `github-actions` 两个生态，weekly 节奏，分组小版本更新以控制 PR 噪音。配置模板见 [../spec/supply-chain-security.md](../spec/supply-chain-security.md) 第 3 节。
+- **内容**：覆盖 `pip`（uv 项目使用 pip 生态标识）与 `github-actions` 两个生态，weekly 节奏，分组小版本更新以控制 PR 噪音。配置模板见 [../spec/supply-chain-security.md](../../spec/supply-chain-security.md) 第 3 节。
 - **验收**：`.github/dependabot.yml` 存在且推送后 GitHub 后台能看到 Dependabot 已激活。
 - 工作量：S
 

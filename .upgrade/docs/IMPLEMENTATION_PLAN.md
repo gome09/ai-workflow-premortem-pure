@@ -1,5 +1,7 @@
 # Implementation Plan
 
+> **历史记录（2026-11-01 升级轮）**：本文保留当时的任务状态（含 T9 进行中），不代表当前执行状态；当前事实见 `.upgrade/STATE.md`。
+
 Scope: `doc-ci-upgrade-alignment`（2026-11-01）
 Plan source: `.upgrade/plans/2026-11-01-doc-ci-upgrade-alignment.md`
 

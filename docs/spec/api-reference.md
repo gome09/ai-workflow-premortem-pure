@@ -1,10 +1,10 @@
 # API 接口参考
 
 > 本文档按当前源码静态提取整理。
-> 当前仓库可直接识别的 HTTP 路由总数为 `104`（`api/routers/*.py` 90 条 + `auth/router.py` 11 条 + `/health*` 3 条；`/metrics` 由监控组件在运行时挂载）。
+> 当前仓库可直接识别的 HTTP 路由总数为 `106`（`api/routers/*.py` 91 条 + `auth/router.py` 11 条 + `api/main.py` 4 条：`/metrics` 与 `/health/live`、`/health/ready`、`/health` 三个健康端点）。
 
 > Status: Implemented（HTTP 路由按当前源码静态提取）
-> 最近复核：2026-11-07（路由数与 v1.8.0 发布门禁端点核对）
+> 最近复核：2026-11-15（路由总数、会话 overview 与实验运行语义核对）
 
 ---
 
@@ -46,6 +46,7 @@
 | GET | `/sessions/scenarios/{scenario_id}` | 查看单个内置场景详情 |
 | GET | `/sessions/` | 列出会话 |
 | GET | `/sessions/{session_id}` | 获取完整会话上下文 |
+| GET | `/sessions/{session_id}/overview` | 首屏轻量概览（viewer/editor/admin；不含阶段输出与追踪明细；不存在返回 404） |
 | PATCH | `/sessions/{session_id}/name` | 修改会话名称（editor / admin；租户隔离并记录审计事件） |
 | PATCH | `/sessions/{session_id}/data-classification` | 覆写会话数据分级（editor+；降级须 admin 并写审计事件） |
 | GET | `/sessions/{session_id}/risk-profile` | 读取六因子风险画像、结构/floor/生效等级与 override 历史（viewer+） |
@@ -104,7 +105,7 @@
 |------|------|------|
 | GET | `/sessions/{session_id}/evidence` | 查看证据列表 |
 | GET | `/sessions/{session_id}/evidence/{evidence_id}` | 查看单条证据 |
-| POST | `/sessions/{session_id}/evidence/{evidence_id}/verify` | 核验单条证据；核验人只取 JWT `user_id`，请求体只接受 `note`，不接受 `reviewer_id` |
+| POST | `/sessions/{session_id}/evidence/{evidence_id}/verify` | 核验单条证据；核验人只取 JWT `user_id`，请求体只使用 `note`。额外字段（如 `reviewer_id`）按 Pydantic 默认被忽略，不会返回 422，也不会改变核验身份 |
 | GET | `/sessions/{session_id}/safety-findings` | 查看安全发现 |
 | POST | `/sessions/{session_id}/safety-findings/{finding_id}/resolve` | 处理安全发现 |
 
@@ -157,7 +158,7 @@
 | GET | `/sessions/{session_id}/human-calibrations` | 查看人工校准记录 |
 | POST | `/sessions/{session_id}/eval-runs/{run_id}/calibrate` | 对 EvalRun 做人工校准；复核人固定取 JWT 身份，执行失败的真实目标运行不可改判为 passed |
 
-`target_http` 是真实目标系统执行：请求体需带 `target_config`（endpoint / timeout_seconds / output_field），endpoint host 必须在 `TARGET_SYSTEM_ALLOWED_HOSTS` 白名单内。响应写入 `EvalRun.execution_kind`（`real_target_execution`）与 `execution_outcome`（success / failed / timeout / error）；模拟执行（manual / dry_run / mock_model_execution）不会计入上线批准证据。响应体按流式读取并受字节上限约束（由 `TARGET_SYSTEM_MAX_RESPONSE_CHARS × 4 + 4096` 推导，最低 16 KB）：声明长度或实际读取超过上限时返回 `execution_outcome=error`、`error_code=response_too_large`、`truncated=true`，不解析残缺 JSON；错误文本写入 `EvalRun.error_message` 前截断到 500 字符。
+`target_http` 是真实目标系统执行：请求体需带 `target_config`（endpoint / timeout_seconds / output_field），endpoint host 必须在 `TARGET_SYSTEM_ALLOWED_HOSTS` 白名单内。响应写入 `EvalRun.execution_kind`（`real_target_execution`）与 `execution_outcome`（success / failed / timeout / error）；模拟执行（manual / dry_run / mock_model_execution）不会计入上线批准证据。响应体按流式读取并受字节上限约束（由 `TARGET_SYSTEM_MAX_RESPONSE_CHARS × 4 + 4096` 推导，最低 16 KB）：声明长度或实际读取超过上限时返回 `execution_outcome=error`、`error_code=response_too_large`、`truncated=true`，不解析残缺 JSON；错误文本写入 `EvalRun.error_message` 前截断到 500 字符。实际超时来自请求体 `target_config.timeout_seconds`（默认 10 秒）；`TARGET_SYSTEM_TIMEOUT_SECONDS` 当前仅声明与校验，尚未接入适配器。
 
 ---
 
@@ -182,7 +183,7 @@
 | GET | `/sessions/{session_id}/eval-experiments` | 列出实验 |
 | POST | `/sessions/{session_id}/eval-experiments` | 创建实验 |
 | GET | `/sessions/{session_id}/eval-experiments/{experiment_id}` | 查看单个实验 |
-| POST | `/sessions/{session_id}/eval-experiments/{experiment_id}/run` | 运行实验；`background=true` 或 target_http 真实执行时返回 202 + `status=running`，支持 `idempotency_key` / `timeout_seconds` |
+| POST | `/sessions/{session_id}/eval-experiments/{experiment_id}/run` | 运行实验；`dry_run_only` 默认 true，真实 target_http 必须显式 false；`background=true` 或 target_http 真实执行时返回 202 + `status=running`，支持 `idempotency_key` / `timeout_seconds` |
 | GET | `/sessions/{session_id}/eval-experiments/{experiment_id}/status` | 查看后台执行状态、完成/失败用例数、心跳、领取 attempt/租约、错误码与是否可恢复 |
 | GET | `/sessions/{session_id}/eval-experiments/{experiment_id}/metrics` | 查看实验指标 |
 | GET | `/sessions/{session_id}/eval-experiments/{experiment_id}/comparison` | 查看实验对比摘要 |
@@ -190,11 +191,12 @@
 
 运行语义（v1.9.0）：
 
-- 运行前由存储层领取实验。不同或空 `idempotency_key` 在实验运行中返回 409；同一 `idempotency_key` 的重复请求返回当前 status（`accepted=false`）且不重复调用目标系统。
-- 已 `completed` 且同请求键返回既有结果；不同请求键返回 400，需创建新实验。
+- 运行前由存储层领取实验。`dry_run_only` 默认 `true`；真实 `target_http` 必须显式传 `false`。不同或空 `idempotency_key` 在实验运行中返回 409；同一 `idempotency_key` 且仍在运行/排队时返回 202 + `accepted=true`，不重复调用目标系统；同键已完成返回 200 + `accepted=false` + 当前 status。
+- 已 `completed` 且同请求键返回既有结果（200 + `accepted=false`）；不同请求键返回 400，需创建新实验。
 - 同步执行丢失领取（租约过期/被新 attempt 覆盖）返回 409。
 - `status` 额外返回 `claim_attempt`、`claim_heartbeat_at`、`claim_lease_until`、`lease_expired`、`heartbeat_stale`、`execution_mode`、`execution_mode_inferred`；不返回 `claim_owner`。租约过期的运行会在查询时恢复为 `interrupted`（`last_error_code=lease_expired`）。
 - 同一实验的恢复运行必须沿用原 `idempotency_key` 与原实际执行模式（`target_http` 真实执行与 `dry_run` 模拟不可混跑）；`execution_mode` 为空或 `mixed` 的历史实验需要新建实验，不能猜测来源后恢复。
+- 外部调用已发出但结果未落库的窗口按至少一次处理，不承诺 exactly-once；恢复时只跳过已保存结果（`completed` / `failed`）的用例。
 
 ---
 

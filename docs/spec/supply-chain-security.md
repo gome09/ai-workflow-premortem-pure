@@ -83,7 +83,7 @@ updates:
 当前形态（2026-11-01 复核）：
 - 本地 `make audit`（`make security-check` 的一部分）保持严格：`uv export` 后运行 `pip-audit --strict`，仅忽略 `Makefile` 中 `PIP_AUDIT_IGNORES` 显式登记的 advisory。
 - CI 的 lint 步骤只阻断 Ruff（`make lint`）；依赖审计作为独立 `continue-on-error` 观察步骤运行，避免外部 advisory 库更新直接卡死所有提交。
-- 当前外部 advisory 库共 124 条 unique advisory / 19 个包；其中 pillow 受 streamlit `pillow<13` 上限、ecdsa 无修复版本、`langgraph-checkpoint-postgres` 被 V006 固定 `3.0.5`，其余可升级项列入 `.upgrade/STATE.md` 阻塞项分诊。
+- 截至 2026-11-01 复核时，外部 advisory 库共 124 条 unique advisory / 19 个包；其中 pillow 受 streamlit `pillow<13` 上限、ecdsa 无修复版本、`langgraph-checkpoint-postgres` 被 V006 固定 `3.0.5`，其余可升级项列入 `.upgrade/STATE.md` 阻塞项分诊。该数字是带日期的观察值，不代表当前 advisory 数量。
 - 每次告警必须在 24h 内人工分诊：可升级则由 Dependabot PR 解决；不可升级则在 `.upgrade/decisions/` 记录豁免理由与复查日期。
 
 ## 6. Scorecard 水位管理

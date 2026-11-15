@@ -22,6 +22,10 @@ Phase 0–4 与 formal-project-uplift Wave A–E 的代码侧工作已完成；P
 
 ## Recent Completed Work
 
+- 全量 Markdown 描述漂移修正（2026-11-15，docs only，无业务代码/迁移变更）：修正 `SECURITY.md` 支持版本 `v1.3.x → v1.11.x`；`CONTRIBUTING.md` 的 CI 阻断矩阵（mypy/audit 观察，docker-lite/production-safety/docker-full 阻断）；README/AGENTS 基线保留 `1444` 为 HEAD 记录并指向 2026-11-15 工作树 `1451`；README 两个 HTML 快照声明与风险档位示例口径；`core/migrations/README.md` schema `0.9.0 → 0.10.0` 与 `0.9.0→0.10.0` 迁移链；`architecture.md` 迁移链补 V014；`risk-taxonomy-engine.md` §8 与 `data-classification-and-privacy.md` §3.3 标注为被 v1.5 六因子模型取代的历史决策；`iso42001-mapping.md` 风险能力改为 `core/risk` 六因子模型并标注初版映射边界；`demo-scenarios.md` 去除单一“毕设”定位；`docs/README.md` 说明括号版本为功能里程碑；补写 CHANGELOG `1.10.0` / `1.11.0` / 2026-11-15 维护记录；为 `.upgrade/docs/` 三份 2026-11-01 计划补充历史标注，`phase-3-governance-platform.md` 的“当前实现 13 条”改为“该版本落地时 13 条，后续增至 14 条”。验证：doc-check 37/0、version-check 1.11.0、`git diff --check`；本轮未重跑 pytest（docs-only），1451 为上一轮代码验证记录。
+
+- S03/S04 数据保护加固（2026-11-15，版本保持 `1.11.0`，无 Alembic 迁移）：S03 将 `mitigation_plan` / `review_note` / `decision_note` / `verification_note` 纳入 `core/data_protection.py::FREE_TEXT_KEYS`，风险处置、上线审批与证据核验的 before/after 审计快照不再保留原文；S04 在 `storage/field_security.py` 为 `evidence_sources[*].verification_note`、Stage 1–4 `raw_summary`、`stage_3_output.test_results[*]` 的 `test_input` / `ai_output` / `raw_summary` 与字符串列表增加加解密，`ENCRYPTED_COLUMNS["evidence_sources"]` 注册 `verification_note`，SQLite/PostgreSQL 投影写入改用 `encrypt_text_field`；历史行不自动回填。同步更新隐私规格字段/副本矩阵、安全模型、AGENTS、PIA 与文档日期；修复 `docs/archive` code/spec 深度断链 82 处（剩余 34 处非 code/spec 类保留）；两个 HTML 快照声明改为“Mock 模式输出整理，不构成真实运行验收证据”。验证：定向 31 + 20 passed；离线全量 `1451 passed, 10 skipped`（SQLite + memory + mock + single_step，200.01s；较 1444 基线 +7 为新增测试）；Ruff check 通过；doc-check（37 份 0 违规）、version-check（1.11.0）、`git diff --check` 通过。**未验证**：历史审计/context 回填、PG/Redis 实机、备份恢复与 V013→V014 演练、Docker、真实 LLM/目标、浏览器与远端 CI。
+
 - P1–P3 项目瘦身整理（2026-11-14，版本保持 `1.11.0`，无 Alembic 迁移）：V02 删除 `core/stage_readiness_service.py` 中 5 个未被引用的旧收集器（missing_output / stale_dependency / action_state / parser / safety），保留第六个 Stage 3 收集器、共享 helper 与 14 条注册规则；删除前后 `StageGateResult` 快照仅随机 UUID 不同。V04 删除 `core/llm/retry.py`；V05 删除 `frontend/labels.py::friendly_error` 与 `frontend/models/api_client.py::create_session_id_only`。V08 主依赖显式声明 `langchain-core`、`prometheus-client`，dev extra 增加 `pyyaml`、`requests`；V06 删除 `passlib[bcrypt]`；V07 依次删除 `langchain-community`（连带 14 个传递包）与 `langchain`（再减 1 个），保留 `langchain-openai` / `langchain-core` / `langgraph` / `tavily-python` 与 `langgraph-checkpoint-postgres==3.0.5`。N04 覆盖缺口改为一次计算并保留两个独立字段；N03 将第二次 Scorecard 扫描替换为从 JSON 渲染摘要（非阻断），用合成 JSON 验证；N05 实测一次 `build_stage_readiness`（`S4_RUNNING`、stage 1–3 输出齐全）触发 8 次 gate 写入：stage_1×2、stage_2×2、stage_3×3、stage_4×1，确认 Stage 4 规则与最终治理摘要会重复评估上游，按报告暂不改代码。**阻塞未执行**：V10/N02（Docker daemon 未运行）、V09（依赖分组与镜像 COPY/大小验证需要 Docker，未修改 `pyproject.toml` / `Dockerfile`）；P3 的 V03/V11/V12 按报告保留不动。验证：全量离线 `1444 passed, 10 skipped`（项目 `.venv` Python 3.12，`sqlite` + `memory` + `mock` + `single_step`，84.82s；较 `1443` 基线 +1 为新增 N04 测试）；Ruff check、`ruff format --check`（444 files）、mypy（210 files）、doc-check（37 份 0 违规）、version-check（1.11.0）、`uv lock --check`（141 packages）、`ci.yml` / `scorecard.yml` YAML 解析、`git diff --check` 通过。环境偏差：默认 uv 缓存 `D:\devcache\uv` 写入被拒，改用 `UV_CACHE_DIR=.upgrade/tmp/uv-cache`；`uv sync --all-extras --frozen` 多次因 Windows PE 资源错误失败，V07 最终以 `--no-install-project` 完成依赖同步；未执行 Docker、PG/Redis 实机与远端 CI，不以离线结果代替。
 
 - P0 项目瘦身整理（2026-11-14，版本保持 `1.11.0`，无 Alembic 迁移）：C01 删除 `pyproject.toml` 中失效的 `frontend/api_client.py` Ruff 例外；C02/N01 修正 README 版本（v1.8.0→v1.11.0）、README 测试基线标注为历史、`docs/README.md` 与 `docs/acceptance_report.md` 改为带日期的历史快照（保留 `1256 passed, 8 skipped`，删除冲突的 `1253/8` 与“当前架构版本”）、`docs/startup.md` 迁移头 V013→V014、`docs/spec/security-model.md` 与 `AGENTS.md` 的“当前 V013”→V014、`tests/test_migration_upgrade_path.py` 注释改为动态 head；C03 修正 `scripts/README.md` 中 `gen_certs.sh` / `gen_secrets.sh` 的 CI 入口说明；V01 保留 `uv.lock` 根包 `1.9.0→1.11.0` 的最小修正，`scripts/version_check.py` 改为标准库解析 `uv.lock` 并校验唯一 `source.editable="."` 根包（名字规范化 + 版本一致），CI lint job 在 `uv sync` / `uv run` 之前执行 `python scripts/version_check.py` 与 `uv lock --check`。验证：`python scripts/version_check.py`、`uv lock --check --no-cache`、`ruff check`、`ruff format --check`（445 files）、`doc-check`（37 份 0 违规）、CI YAML 解析通过；`uv sync --all-extras --frozen` 与 `uv run` 因本机 uv 缓存目录 `D:\devcache\uv` 写入被拒（`os error 5`）及 Windows PE 资源错误未执行；`tests/test_migration_upgrade_path.py` 无 `E2E_DATABASE_URL` 时 1 skipped；未跑全量 pytest/Docker/远端 CI。
@@ -112,35 +116,35 @@ Phase 4: In progress
 
 ## current_task
 
-P0/P1 database remediation implemented in the working tree (version 1.9.0, Alembic V014); local offline validation is green, real PostgreSQL concurrency/migration verification and commit/CI remain
+Documentation drift audit correction (2026-11-15, docs only); S03/S04 code hardening remains the last completed code task
 
 ## last_completed_task
 
-Database Remediation P0/P1 (2026-11-14): explicit create/save semantics, purge outcome + lock ordering, request-level role revalidation, audit redaction backfill, cache v2 namespace and DB-version cache guard (503 fail-closed), shared EvalExperiment claim/lease/heartbeat/stale recovery with Alembic V014, and PG/SQLite concurrency acceptance tests. Offline `1368 passed, 10 skipped`; version `1.9.0`.
+Documentation drift audit correction (2026-11-15): fixed the stale supported-version table, CI blocking matrix, test-baseline pointers, HTML snapshot claims, ProjectContext schema version and migration chain, V014 migration list, historical risk-model sections, ISO 42001 risk references, thesis-only positioning, docs index version semantics, CHANGELOG gaps and historical markers on active upgrade plans. No business code, test, migration or dependency change; pytest was not rerun for this docs-only correction.
 
 ## next_action
 
-Run the PG-only claim/purge tests with `E2E_DATABASE_URL` and exercise V013→V014 upgrade/downgrade, then commit the approved files explicitly and verify CI
+Run PG/Redis backup/restore, V013→V014 and projection-encryption verification in an isolated environment; plan the historical audit/context backfill and impact audit; commit the approved files explicitly and verify CI
 
 ## last_update
 
-- Date: 2026-11-14T09:30:00+08:00
-- Updated by: Database remediation P1 (T03/T06/T08)
-- Summary: Version 1.9.0 with Alembic V014. EvalExperiment runs are now claimed through DB coordination columns with lease/heartbeat, per-call ownership verification, stale-lease recovery and claim-lost rejection; projection sync cannot overwrite coordination columns, and same-key retries return the current status while different keys get 409. Cache hits verify the parent-row storage version, drop deleted/stale copies and fail closed with 503 when storage cannot be verified. Purge/save lock ordering has SQLite and PG-only acceptance tests. Changes are uncommitted in the working tree; PG-only tests and CI results must be checked after commit.
+- Date: 2026-11-15T19:15:19+08:00
+- Updated by: Documentation drift audit correction
+- Summary: Fixed stale descriptions across root docs, current specs and process documents: supported version, CI blocking matrix, test-baseline pointers, HTML snapshot claims, ProjectContext schema 0.10.0 and its migration chain, V014 in the architecture migration list, historical annotations for the pre-v1.5 risk-model sections, ISO 42001 risk references, thesis-only positioning, docs index version semantics, CHANGELOG 1.10.0/1.11.0/2026-11-15 entries, and historical markers on the 2026-11-01 upgrade plans. No business code, tests, migrations or dependencies changed; doc-check 37/0, version-check 1.11.0 and `git diff --check` passed. Changes remain uncommitted.
 
 ## last_validation
 
-- Status: partial（本地离线全量、Ruff、format、mypy、doc-check、version-check 通过；真实 PostgreSQL 领取/归档并发验收、V013→V014 升级/降级、Redis 实机缓存核验、Docker 多 worker `/metrics`、live LLM/target 冒烟未执行）
-- Check: `pytest tests/ -q`（1368 passed, 10 skipped）+ `ruff check` + `ruff format --check` + `mypy`（211 files）+ `doc-check` + `version-check`（1.9.0）
-- Environment: local SQLite/memory/mock/single_step；Windows PowerShell（GNU make 不可用，执行底层等价命令）
-- Scope: database-remediation-p1
+- Status: partial（文档漂移修正完成；doc-check、version-check 与 `git diff --check` 通过；本轮未重跑 pytest，沿用上一轮 S03/S04 的 1451 passed 记录；历史回填、PG/Redis、备份演练、Docker、live、浏览器与远端 CI 未执行）
+- Check: `python scripts/doc_consistency_check.py`（37 份 Markdown，0 违规）+ `python scripts/version_check.py`（1.11.0）+ `git diff --check`；上一轮 S03/S04：`pytest tests/ -q`（1451 passed, 10 skipped, 200.01s）+ 定向 31 + 20 passed + `ruff check` / `ruff format --check`
+- Environment: Windows PowerShell；项目 `.venv` Python 3.12；本轮仅文档
+- Scope: documentation-drift-audit-correction
 - Subject: working tree（未提交）
 - Subject digest: not_applicable
-- Recorded: 2026-11-14T09:30:00+08:00
+- Recorded: 2026-11-15T19:15:19+08:00
 
 ## unverified_items
 
-Local PostgreSQL claim/lease concurrency and purge archive-order tests (`tests/test_postgres_eval_claim.py` / `test_postgres_purge_archive_order.py` skip without `E2E_DATABASE_URL`), V013→V014 upgrade/downgrade on a real database, Redis-backed cache version verification, local PostgreSQL backup/restore drill and V008→V014 downgrade readability, Docker production stack startup and multi-worker `/metrics` aggregation, live LLM smoke (`LIVE_LLM_TESTS=1`) and live target smoke, browser-side workbench interaction, the CI result for the uncommitted working tree, and main branch protection / private vulnerability reporting / CodeQL required check / GitHub Release remain unverified. Offline skips are not passes.
+Local PostgreSQL claim/lease concurrency and purge archive-order tests (`tests/test_postgres_eval_claim.py` / `test_postgres_purge_archive_order.py` skip without `E2E_DATABASE_URL`), V013→V014 upgrade/downgrade on a real database, Redis-backed cache version verification, local PostgreSQL backup/restore drill and V008→V014 downgrade readability, Docker production stack startup and multi-worker `/metrics` aggregation, live LLM smoke (`LIVE_LLM_TESTS=1`) and live target smoke, browser-side workbench interaction, the CI result for the uncommitted working tree, and main branch protection / private vulnerability reporting / CodeQL required check / GitHub Release remain unverified. Offline skips are not passes. S03/S04 historical audit/context backfill and its impact audit remain outstanding; `docs/archive` still has 34 non-code/spec broken links by design; `.trae/documents/` local plan files remain untracked and were not treated as product docs; Docker/PG/Redis/backup/live-provider/browser and remote CI were not executed. This docs-only drift correction did not rerun pytest.
 
 ## current_blockers
 

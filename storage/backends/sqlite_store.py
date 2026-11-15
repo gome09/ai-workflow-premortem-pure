@@ -938,7 +938,7 @@ class SQLiteSessionStore:
                     int(ev.verified),
                     ev.verified_by,
                     _dt(ev.verified_at),
-                    ev.verification_note,
+                    encrypt_text_field(ev.verification_note, classification),
                     _dt(ev.retrieved_at),
                 ),
             )

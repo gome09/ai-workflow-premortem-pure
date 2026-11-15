@@ -1,7 +1,7 @@
 # 阶段 3 详细设计方案：从评估工具到组织级治理平台
 
 > 关系定位：本文档是 [phase-3-governance-platform.md](phase-3-governance-platform.md)（实施计划 / 任务清单 + 验收标准）的**落地设计层**——给出每个任务的具体文件改动、代码草稿、配置参数、决策依据、执行顺序与并行策略、风险。
-> 配套规格：[../spec/governance-platform.md](../spec/governance-platform.md)（设计意图层，已完整覆盖 T3.1–T3.7 的设计决策）。
+> 配套规格：[../../spec/governance-platform.md](../../spec/governance-platform.md)（设计意图层，已完整覆盖 T3.1–T3.7 的设计决策）。
 > 现状核实日期：2026-07-14（全部条目经代码仓库直接实测，非估算）。
 > 状态：**已实施完成，本文作为历史设计记录保留**。其中代码行号、版本号、未勾选框和“待决策”措辞均反映执行前快照，不作为当前事实来源。
 >
@@ -19,7 +19,7 @@
 | 2 | **spec §3.2 称"新增表走 alembic V004"** | ⚠️ **修正**：`alembic/versions/V004_audit_archive.py` 已被 T1.6 审计归档表占用（`audit_events_archive`）。`gate_evaluation_records` 必须用 **V005**。spec 该处表述过时，落地以本设计为准 |
 | 3 | `GateReport`/`RuleDetail` 无 rule_version | 确认。`core/gates/report.py:16-39` 两个模型均无版本字段；`_RuleEvalRecord`（line 47-66）是引擎内部载体也无版本。`build_report()`（line 99-153）从 `_RuleEvalRecord` 构造 `RuleDetail`——T3.2 挂载点：载体加版本、模型加版本、builder 透传 |
 | 4 | `evaluate_stage_gate()` 是纯计算无痕迹 | 确认。`core/gates/engine.py:62-170` 返回 `StageGateResult`，**无任何持久化写入**。`detailed=True` 分支（line 85-167）才构造 `GateReport`。T3.2 旁路落表挂载点：在 line 148 `result = StageGateResult(...)` 之后，`detailed` 分支内追加旁路写入（失败不阻断） |
-| 5 | **spec §3.4 称"expert_review 自动创建 escalate 动作"** | 确认历史欠账。`core/gates/risk_profile.py:294` CRITICAL 档 `require_expert_review=True`，但 `registered_rules()` 12 条中**无任何规则消费该字段**（[stage3-risk-adaptive-gate.md](../spec/stage3-risk-adaptive-gate.md) line 72-74 已如实标注 "not implemented"）。T3.3 需新增一条 gate rule 消费此字段 |
+| 5 | **spec §3.4 称"expert_review 自动创建 escalate 动作"** | 确认历史欠账。`core/gates/risk_profile.py:294` CRITICAL 档 `require_expert_review=True`，但 `registered_rules()` 12 条中**无任何规则消费该字段**（[stage3-risk-adaptive-gate.md](../../spec/stage3-risk-adaptive-gate.md) line 72-74 已如实标注 "not implemented"）。T3.3 需新增一条 gate rule 消费此字段 |
 | 6 | `PendingHumanAction.action_type` 支持 escalate | 确认。`core/models.py:239` Literal 含 `"escalate"`；`source_type`（line 237）是自由字符串，可加 `"expert_review"`。幂等键机制在 `core/stage_readiness_service.py` 的 `_find_pending_action_id` 已就绪——T3.3 复用 |
 | 7 | 全仓无按 tenant 聚合查询 | 确认。`storage/backends/postgres.py:1035-1060` `list_sessions()` 是唯一带 tenant 过滤的查询，仅返回会话列表无聚合。`sqlite_store` 同构。T3.4 两后端各增聚合方法，强制 `WHERE tenant_id = ?` |
 | 8 | 可观测性只有 HTTP 通用指标 | 确认。`api/main.py:74,94` 仅 `Instrumentator()` 自动指标；`/metrics` 端点在 lifespan（line 80）暴露。无 `api/metrics.py` 文件。T3.5 新建该文件，在 instrumentator 之上注册自定义 Counter/Gauge |
@@ -227,7 +227,7 @@ def is_safety_bottom_line(rule_id: str) -> bool:
 
 #### 2.1.2 registered_rules() 启动完整性校验
 
-**改动文件**：[core/gates/rules/__init__.py](../../core/gates/rules/__init__.py)
+**改动文件**：[core/gates/rules/__init__.py](../../../core/gates/rules/__init__.py)
 
 ```python
 # core/gates/rules/__init__.py
@@ -314,7 +314,7 @@ def _verify_manifest_integrity(rules: list[GateRule]) -> None:
 
 #### 2.2.1 GateReport/RuleDetail 增加 rule_version
 
-**改动文件**：[core/gates/report.py](../../core/gates/report.py)
+**改动文件**：[core/gates/report.py](../../../core/gates/report.py)
 
 `RuleDetail`（line 16-22）增加字段：
 ```python
@@ -333,7 +333,7 @@ class RuleDetail(BaseModel):
 
 #### 2.2.2 引擎填充版本 + 旁路落表
 
-**改动文件**：[core/gates/engine.py](../../core/gates/engine.py)
+**改动文件**：[core/gates/engine.py](../../../core/gates/engine.py)
 
 `detailed=True` 分支内，构造 `_RuleEvalRecord` 时从 manifest 取版本：
 ```python
@@ -391,8 +391,8 @@ def _try_persist_gate_evaluation(ctx, stage, result, blockers) -> None:
 
 **改动文件**：
 - `alembic/versions/V005_gate_evaluation_records.py`（新建）
-- [storage/backends/postgres.py](../../storage/backends/postgres.py)（新增 `record_gate_evaluation` + 聚合查询方法）
-- [storage/backends/sqlite_store.py](../../storage/backends/sqlite_store.py)（同构 SQLite DDL + 方法）
+- [storage/backends/postgres.py](../../../storage/backends/postgres.py)（新增 `record_gate_evaluation` + 聚合查询方法）
+- [storage/backends/sqlite_store.py](../../../storage/backends/sqlite_store.py)（同构 SQLite DDL + 方法）
 
 **V005 迁移**（新建，down_revision="V004"）：
 ```python
@@ -486,7 +486,7 @@ def actions_backlog(self, tenant_id: str, limit: int = 50) -> list[dict]:
 
 #### 2.3.1 GATE_RULES_DISABLED 配置
 
-**改动文件**：[core/config.py](../../core/config.py) Settings 类追加：
+**改动文件**：[core/config.py](../../../core/config.py) Settings 类追加：
 ```python
 # T3.3 门禁规则禁用治理：显式禁用规则需配置；安全底线规则不可禁用（配置也忽略+告警）
 gate_rules_disabled: str = ""  # 逗号分隔 rule_id，如 "redteam_coverage,eval_regression"
@@ -502,7 +502,7 @@ def gate_rules_disabled_set(self) -> set[str]:
 
 #### 2.3.2 引擎消费 disabled 配置 + /health 暴露
 
-**改动文件**：[core/gates/engine.py](../../core/gates/engine.py)
+**改动文件**：[core/gates/engine.py](../../../core/gates/engine.py)
 
 `evaluate_stage_gate` 循环内（line 98），跳过被禁用规则：
 ```python
@@ -535,7 +535,7 @@ for rule in registered_rules():
 
 > 评估记录的 `rule_versions` 标注 disabled：`_try_persist_gate_evaluation` 内对被禁用规则在 rule_versions 加 `"<rule_id>": "disabled"` 标记。
 
-**/health 暴露**：[api/main.py](../../api/main.py) `health()` 返回追加：
+**/health 暴露**：[api/main.py](../../../api/main.py) `health()` 返回追加：
 ```python
 "gate_rules_disabled": sorted(settings.gate_rules_disabled_set) if settings.gate_rules_disabled_set else [],
 ```
@@ -636,10 +636,10 @@ rule = ExpertReviewRule()
 #### 2.3.4 注册新规则 + 更新 stage3 spec 脚注
 
 **改动文件**：
-- [core/gates/rules/__init__.py](../../core/gates/rules/__init__.py)（注册 expert_review.rule + manifest 追加条目）
-- [core/gates/rules/manifest.py](../../core/gates/rules/manifest.py)（追加 expert_review 条目）
-- [docs/spec/stage3-risk-adaptive-gate.md](../spec/stage3-risk-adaptive-gate.md)（line 72 `⚠️ not implemented` → `✅ implemented (T3.3)`，line 74 脚注改写为"已由 expert_review 规则消费"）
-- [docs/spec/governance-platform.md](../spec/governance-platform.md) §1 第 3 行"无消费方"更新为"已落地"
+- [core/gates/rules/__init__.py](../../../core/gates/rules/__init__.py)（注册 expert_review.rule + manifest 追加条目）
+- [core/gates/rules/manifest.py](../../../core/gates/rules/manifest.py)（追加 expert_review 条目）
+- [docs/spec/stage3-risk-adaptive-gate.md](../../spec/stage3-risk-adaptive-gate.md)（line 72 `⚠️ not implemented` → `✅ implemented (T3.3)`，line 74 脚注改写为"已由 expert_review 规则消费"）
+- [docs/spec/governance-platform.md](../../spec/governance-platform.md) §1 第 3 行"无消费方"更新为"已落地"
 
 manifest 追加：
 ```python
@@ -725,7 +725,7 @@ def actions_backlog(
     return session_store.actions_backlog(tenant_id=tenant.tenant_id, limit=limit)
 ```
 
-**改动文件**：[api/main.py](../../api/main.py) 注册路由：
+**改动文件**：[api/main.py](../../../api/main.py) 注册路由：
 ```python
 from api.routers import (
     ..., governance,
@@ -735,7 +735,7 @@ app.include_router(governance.router)
 
 #### 2.4.2 存储层聚合查询（两后端）
 
-**改动文件**：[storage/backends/postgres.py](../../storage/backends/postgres.py)、[storage/backends/sqlite_store.py](../../storage/backends/sqlite_store.py)
+**改动文件**：[storage/backends/postgres.py](../../../storage/backends/postgres.py)、[storage/backends/sqlite_store.py](../../../storage/backends/sqlite_store.py)
 
 `governance_overview`（postgres 示例，sqlite 同构换占位符与函数）：
 ```python
@@ -773,7 +773,7 @@ def governance_overview(self, tenant_id: str) -> dict:
 
 **改动文件**：
 - `frontend/components/governance_overview.py`（新建）
-- [frontend/app.py](../../frontend/app.py)（侧边栏新增"治理总览"导航项）
+- [frontend/app.py](../../../frontend/app.py)（侧边栏新增"治理总览"导航项）
 
 `governance_overview.py`：
 ```python
@@ -901,14 +901,14 @@ def refresh_gauge_metrics(tenant_name: str = "default") -> None:
         pass  # 指标刷新失败不影响主路径
 ```
 
-**改动文件**：[api/main.py](../../api/main.py) lifespan 内启动时注册 + 暴露：
+**改动文件**：[api/main.py](../../../api/main.py) lifespan 内启动时注册 + 暴露：
 ```python
 from api.metrics import refresh_gauge_metrics
 # lifespan 内 _instrumentator.expose(...) 之后：
 # prometheus_client 默认指标在 /metrics 由 instrumentator 合并暴露
 ```
 
-**改动文件**：[core/gates/engine.py](../../core/gates/engine.py) `_try_persist_gate_evaluation` 内追加：
+**改动文件**：[core/gates/engine.py](../../../core/gates/engine.py) `_try_persist_gate_evaluation` 内追加：
 ```python
 from api.metrics import record_gate_evaluation_metrics
 record_gate_evaluation_metrics(passed=not blockers, blocking_rule_ids=[...])
@@ -948,9 +948,9 @@ provisioning 已配置自动加载目录（实测发现 #9），新增 JSON 即�
 #### 2.6.1 设计要点（确认后落地）
 
 **改动文件**：
-- [core/config.py](../../core/config.py)（`eval_llm_judge: bool = False` + `eval_llm_judge_autofinal: bool = False`）
-- [core/models.py](../../core/models.py)（EvalRun 新增 `llm_judge_suggestion: dict | None`）
-- [core/eval_judge.py](../../core/eval_judge.py)（第二层建议判分）
+- [core/config.py](../../../core/config.py)（`eval_llm_judge: bool = False` + `eval_llm_judge_autofinal: bool = False`）
+- [core/models.py](../../../core/models.py)（EvalRun 新增 `llm_judge_suggestion: dict | None`）
+- [core/eval_judge.py](../../../core/eval_judge.py)（第二层建议判分）
 - `alembic/versions/V006_eval_llm_judge.py`（EvalRun 建议字段，down_revision="V005"）
 
 **核心约束**（spec §5）：
@@ -970,7 +970,7 @@ provisioning 已配置自动加载目录（实测发现 #9），新增 JSON 即�
 展开 spec §6 表格为完整条款映射：条款 ↔ 平台能力 ↔ 证据端点/表/文档。如实标注未覆盖条款（如"停用阶段"产品缺口沿用阶段 2 TC260 记录）。
 
 **同时修正 spec 两处过时表述**（实测发现 #2、#5）：
-- [docs/spec/governance-platform.md](../spec/governance-platform.md) §3.2 "alembic V004" → "alembic V005"
+- [docs/spec/governance-platform.md](../../spec/governance-platform.md) §3.2 "alembic V004" → "alembic V005"
 - §1 第 3 行 expert_review 状态更新（T3.3 落地后同步）
 
 **验收**：映射表存在且每条能力可指到具体端点/表/文档。
@@ -1080,7 +1080,7 @@ Wave 6（全部完成后收尾）：
 - [ ] CRITICAL 会话强制专家复核动作（expert_review 规则 + escalate 动作）
 - [ ] `GATE_RULES_DISABLED` 配置生效：非底线规则跳过、底线规则忽略+WARNING
 - [ ] `/health` 暴露 `gate_rules_disabled` 字段
-- [ ] [stage3-risk-adaptive-gate.md](../spec/stage3-risk-adaptive-gate.md) line 72 脚注更新为 implemented
+- [ ] [stage3-risk-adaptive-gate.md](../../spec/stage3-risk-adaptive-gate.md) line 72 脚注更新为 implemented
 - [ ] 治理总览页可看到租户内项目数/风险分布/通过率趋势/积压动作
 - [ ] 三个治理端点 tenant 隔离（权限测试：A 看不到 B）
 - [ ] `/metrics` 有 `premortem_*` 业务指标

@@ -4,6 +4,29 @@
 > 远程 `origin`（github.com/gome09/ai-workflow-premortem-pure）与本地共享同一根提交，**不包含更早的历史**，无法用于追溯 v1.0 之前的开发过程。
 > 截至 2026-09-01，本地 `main` 已与 `origin/main` 同步（当日推送 10 次提交，至 `08f8a99`）。
 
+## 未发布维护记录 (2026-11-15)
+
+- **数据保护加固（S03/S04）**：`core/data_protection.py::FREE_TEXT_KEYS` 新增 `mitigation_plan` / `review_note` / `decision_note` / `verification_note`，风险处置、上线审批与证据核验的审计快照不再保留原文；`storage/field_security.py` 为 `evidence_sources[*].verification_note`、Stage 1–4 `raw_summary`、Stage 3 `test_results` 增加新写入加密，SQLite/PostgreSQL 投影写入同步覆盖。历史行不自动回填。
+- **文档同步**：更新隐私字段/副本矩阵、安全模型、AGENTS、PIA 与相关日期；修复 `docs/archive` 中 82 处 code/spec 层级断链；两个 HTML 快照声明改为“Mock 模式输出整理，不构成真实运行验收证据”。
+- **测试**：离线全量 `1451 passed, 10 skipped`（SQLite + memory + mock + single_step，200.01s；较 1444 基线 +7 为新增测试）；Ruff、doc-check、version-check 通过。
+
+## 1.11.0 — P2 前后端错误语义 / P1–P3 瘦身维护 (2026-11-14)
+
+- **前端错误与投递契约**：新增 `frontend/models/feedback.py::ApiError`，传输层统一结构化错误；聊天发送区分 `sending` / `confirmed` / `failed` / `unknown`，4xx 保留可编辑草稿、超时/5xx 不自动重发。
+- **证据核验身份**：核验人只取 JWT `user_id`，`AuditEvent.actor` 保持 `user`，真实身份写入审计 metadata；历史 `verified_by="user"` 保留为“历史未知（旧数据）”。
+- **实验与红队展示**：实验行显示配置模式与实际执行来源；红队生成失败不再显示“已生成 0 条”。
+- **P1–P3 瘦身维护**：删除未引用收集器与未使用依赖，补主依赖声明；保留 14 条门禁规则与兼容 facade。
+- **测试**：P2 轮 `1443 passed, 10 skipped`（51.9s）；P1–P3 瘦身轮 `1444 passed, 10 skipped`（84.82s）；SQLite + memory + mock + single_step；Ruff、format、mypy、doc-check、version-check 通过。
+- **版本**：`1.11.0`（`core/version.py` / `pyproject.toml` / `uv.lock` 同步）。
+
+## 1.10.0 — P0/P1 前后端一致性修复 (2026-11-14)
+
+- **证据核验范围**：单条核验只作用于路径 `evidence_id`；聚合动作只有全部来源分别核验后才自动关闭，显式整组核验不覆盖既有 `verified_by` / `verified_at` / note。
+- **会话与列表**：会话列表按 `limit/offset` 真分页；切换会话先成功 GET 再原子提交；refresh 明确拒绝时清凭证，5xx/网络保留凭证。
+- **Eval 与报告**：`EvalExperiment.execution_mode` 校验同模式恢复，status 增加 `execution_mode` / `execution_mode_inferred` / `heartbeat_stale`；校准面板按批次与运行筛选分页；报告列表统一 `generated_at DESC`。
+- **测试**：离线全量 `1405 passed, 10 skipped`（SQLite + memory + mock + single_step，37.3s）；Ruff、format、mypy、doc-check、version-check 通过。
+- **版本**：`1.10.0`（`core/version.py` / `pyproject.toml` / `uv.lock` 同步）。
+
 ## 1.9.0 — Database Remediation P0/P1 (2026-11-14)
 
 - **显式创建/仅更新**：双后端拆分 `create(ctx)` / `save(ctx)`；更新缺失父行抛 `SessionNotFoundError`、显式创建命中已存在 ID 抛 `SessionAlreadyExistsError`，API 统一映射 409，删除后的旧上下文写入不再复活会话。

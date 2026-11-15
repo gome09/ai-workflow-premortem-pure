@@ -3,6 +3,7 @@
 > 对标：ISO/IEC 42001:2023《信息技术—人工智能—管理体系》
 > 建立日期：2026-07-14（Phase 3 收尾，T3.7）
 > 状态：初版映射，如实标注未覆盖条款
+> 2026-11-15 复核：本表为 2026-07-14 初版映射；风险分级已改为 `core/risk` 六因子模型，v1.8–v1.11 的发布门禁、服务凭证、上线批准等能力未纳入本表。当前事实以 `docs/spec/` 与业务代码为准。
 
 ## 1. 概述
 
@@ -20,7 +21,7 @@
 
 | 条款 | 要求摘要 | 平台能力 | 证据 | 状态 |
 |------|----------|----------|------|------|
-| 4.1 理解组织及其环境 | 确定影响 AI 管理体系的内外部因素 | 项目风险评估：domain/automation/sensitivity 关键词分级 | `core/gates/risk_profile.py` classify_project_risk | ⚠️ |
+| 4.1 理解组织及其环境 | 确定影响 AI 管理体系的内外部因素 | 项目风险评估：六因子确定性模型（impact / autonomy / data_sensitivity / reversibility / scale / external_exposure） | `core/risk/assessment.py` | ⚠️ |
 | 4.2 理解相关方需求 | 确定相关方对 AI 系统的要求 | ProjectContext.goal/research_target 字段 | `core/models.py` ProjectContext | ⚠️ |
 | 4.3 确定 AI 管理体系范围 | 界定管理体系边界 | 多租户 tenant 隔离；会话级项目边界 | `storage/backends/` tenant 过滤 | ✅ |
 | 4.4 AI 管理体系及其过程 | 建立、实施、保持、持续改进过程 | 四阶段工作流（Stage1-4）+ 门禁规则版本化 | `core/gates/rules/manifest.py` RULE_MANIFEST | ✅ |
@@ -37,7 +38,7 @@
 
 | 条款 | 要求摘要 | 平台能力 | 证据 | 状态 |
 |------|----------|----------|------|------|
-| 6.1 应对风险和机遇的措施 | 识别 AI 风险并策划措施 | 风险分级 + 安全发现 + 门禁规则 | `core/gates/risk_profile.py` + `core/models.py` SafetyFinding | ✅ |
+| 6.1 应对风险和机遇的措施 | 识别 AI 风险并策划措施 | 六因子风险分级 + 安全发现 + 门禁规则 | `core/risk/assessment.py` + `core/models.py` SafetyFinding | ✅ |
 | 6.2 AI 风险评估 | 评估 AI 风险并处置 | Stage1 失败模式识别 + Stage3 红队/评测 | `stages/stage_1_failure_mode.py` + `core/redteam_service.py` | ✅ |
 | 6.3 AI 风险处置 | 实施风险处置措施 | 人工动作 + 安全发现处置 + 门禁阻断 | `core/models.py` PendingHumanAction | ✅ |
 

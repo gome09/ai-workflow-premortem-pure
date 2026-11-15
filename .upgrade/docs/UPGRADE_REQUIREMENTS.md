@@ -1,5 +1,7 @@
 # Upgrade Requirements
 
+> **历史记录（2026-11-01 升级轮）**：本文是当时的需求快照，版本、迁移头与路由数等已过时；当前事实见 `AGENTS.md` 与 `.upgrade/STATE.md`。
+
 ## Context
 
 AI Workflow Premortem 的代码侧已推进到 v1.7.0（Alembic V012 / ProjectContext `0.10.0`），但根文档、`docs/`、GitHub Actions 与 `.upgrade/` 仍混有旧版本、旧迁移头和未经验证的完成声明。远端 `main` 最新提交 `16624b9` 的 CI（run 41281614067）四个 job 全部失败，且本地 v1.7.0 改动尚未提交推送。

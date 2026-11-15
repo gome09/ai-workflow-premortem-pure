@@ -1,7 +1,7 @@
 # 组织级治理平台设计规格
 
 > Status: Implemented（v1.2.0 落地 T3.1–T3.5 与 T3.7、v1.3.0 落地 T3.6（flag 默认关）、v1.6.0–v1.7.0 落地业务闭环、v1.8.0 落地发布门禁接入）。落地任务见 [../archive/plan/phase-3-governance-platform.md](../archive/plan/phase-3-governance-platform.md)）
-> Last updated: 2026-11-07
+> Last updated: 2026-11-15
 > 对标依据：ISO/IEC 42001:2023（AI 管理体系）——从"单次评估工具"升级为"可审计的组织级 AI 治理台账"
 
 ---
@@ -154,16 +154,17 @@ Streamlit 新增"治理总览"页：指标卡片（项目数/积压动作/安全
   - `premortem_release_approvals_total{decision="granted|rejected|denied"}`（Counter，上线审批决策）
   - `premortem_release_gate_checks_total{decision,reason_code}`（Counter，发布门禁机器检查；reason_code 为固定枚举）
 - Grafana 新增 `governance-overview.json` 面板（与现有 fastapi-overview.json 并列，provisioning 自动加载）。
-- 注意基数控制：tenant 标签用 tenant 名而非 UUID，且内部工具租户数有限，无高基数风险。
+- 基数控制：`premortem_sessions_total` 的 `tenant` 标签当前固定为 `all`，表示跨租户聚合，不是租户名或 UUID；积压动作 Gauge 只按 `risk_level` 聚合。
 
 ## 5. 子系统②：LLM Judge（可选增强）
 
-> **Status: Implemented (v1.3.0)** — `EVAL_LLM_JUDGE` / `EVAL_LLM_JUDGE_AUTOFINAL` 默认均为 off；实现见 `core/eval_llm_judge.py` 与 `core/eval_runner.py`，测试见 `tests/test_llm_judge_v130.py`。manual run（人工评分外壳，无输出可判）不在建议范围内。
+> **Status: Implemented (v1.3.0)** — `EVAL_LLM_JUDGE` / `EVAL_LLM_JUDGE_AUTOFINAL` 默认均为 off；实现见 `core/eval_llm_judge.py` 与 `core/eval_runner.py`，测试见 `tests/test_llm_judge_v130.py`。manual run（人工评分外壳，无输出可判）与 `target_http` 真实目标运行不在建议范围内；只有 `judge_result=needs_review` 的运行会进入建议路径。
 
 设计原则：LLM 只提供**建议判分**，最终裁决权始终在人工或确定性规则——与全局架构原则一致。
 
-- 新增 `judge_mode="llm"`：`core/eval_judge.py` 保持现有规则分支为第一层；新增第二层——配置 `EVAL_LLM_JUDGE=on`（默认 off）时，对规则层判为 `needs_review` 的 run 调用 LLM（走 `core/llm/provider.py` 现有工厂，mock 模式天然可测）生成结构化建议：`{"suggested_result": "passed|failed", "rationale": str, "confidence": float}`，写入 `EvalRun.llm_judge_suggestion`（`core/models.py:522` 的 Pydantic 字段）。**该字段没有独立的数据库列**：它随 `ProjectContext` 序列化进 `context_json` 落库，并镜像一份到 `eval_judgments` 的 `metadata`（`core/eval_runner.py:190-193`）。因此无法直接对它做 SQL 聚合查询。
+- 新增 `judge_mode="llm"`：`core/eval_judge.py` 保持现有规则分支为第一层；新增第二层——配置 `EVAL_LLM_JUDGE=on`（默认 off）时，对规则层判为 `needs_review` 的 run 调用 LLM（走 `core/llm/provider.py` 现有工厂，mock 模式天然可测）生成结构化建议：`{"suggested_result": "passed|failed", "rationale": str, "confidence": float}`，写入 `EvalRun.llm_judge_suggestion`。Alembic V009 起 `eval_runs` 已有 `pass_criteria` / `llm_judge_suggestion` 列，双后端投影写入；启用字段加密时该列可为 `enc:v1:` 密文，因此不适合直接做 SQL 文本聚合。
 - **judge_result 本身不被 LLM 直接改写**：HIGH/CRITICAL 风险会话的 run 永远保持 `needs_review` 待人工；LOW/MEDIUM 会话允许配置 `EVAL_LLM_JUDGE_AUTOFINAL=on` 后采纳 LLM 建议为终值（该开关的启用属于 3.3 同级的显式治理决策）。
+- **模式矩阵**：`EVAL_LLM_JUDGE` 默认 off；仅 `needs_review` 且非 manual/target_http 的运行进入建议路径；HIGH/CRITICAL 永不采纳 AUTOFINAL；LOW/MEDIUM 仅在 `EVAL_LLM_JUDGE_AUTOFINAL=on` 时采纳建议为终值；人工校准以 approve/reject 关闭对应 `eval_run` 阻断动作。
 - **校准闭环**：人工最终判定与 LLM 建议的一致率通过 `human_calibrations` 累计，并在 Eval 实验/报告链路展示。人工校准即该运行的正式复核结论：`passed → approve`、`failed → reject` 关闭对应 `eval_run` 的 `PendingHumanAction`（escalate 类型保留人工升级）；校准记录同时保存实际输出摘要、pass_criteria 与复核人。当前治理总览的三个 `/governance/*` 端点尚未聚合该一致率；它仍是决定是否扩大 AUTOFINAL 范围的量化依据。
 - Prompt 注入面：eval 输入本身可能含对抗内容，judge prompt 采用防注入模板（材料置于明确分隔的引用块、指令置后），且 judge 输出仅结构化字段入库。
 
@@ -183,6 +184,6 @@ Streamlit 新增"治理总览"页：指标卡片（项目数/积压动作/安全
 
 ## 7. 兼容性与验证
 
-- alembic V005 只创建 `gate_evaluation_records` 一张表；SQLite 内联 DDL 同步。**`eval_runs` 表没有 `llm_judge_suggestion` 列**——V005 不含任何 `ALTER TABLE eval_runs`，两个后端的 `_sync_eval_runs` INSERT 列清单也不含该列。
-- 现有 `evaluate_stage_gate` 签名不变，落表为旁路写入（失败不阻断评估主路径，只打日志）。
+- alembic V005 只创建 `gate_evaluation_records` 一张表；V009 为 `eval_runs` 增加 `pass_criteria` 与 `llm_judge_suggestion`，SQLite 内联 DDL 同步，双后端投影写入。
+- 现有 `evaluate_stage_gate` 签名不变，落表为旁路写入；非 strict 会话失败只打日志，strict 会话（HIGH/CRITICAL 或 `sensitive_personal`，`public_demo` 豁免）失败抛 `GateDataError`，由 readiness 转为 critical blocker 并阻断推进。
 - 验收口径（对应路线图阶段 3）：一个界面看到"几个项目在评估、各处于什么风险等级、通过率如何"；任一规则能回答版本与变更历史；LLM Judge 若启用，有一致率数据支撑。

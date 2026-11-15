@@ -1,5 +1,7 @@
 # 文档目录
 
+> 表中括号内的 `vX.Y.Z` 表示对应功能的落地里程碑，不代表当前应用版本；当前应用版本为 `1.11.0`，当前基线以 `AGENTS.md` 与 `.upgrade/STATE.md` 的带日期记录为准。
+
 ## 使用指南
 
 | 文档 | 说明 |
@@ -7,7 +9,7 @@
 | [startup.md](startup.md) | 启动与部署指南（四种启动方式的单一权威来源，含 SQLite 轻量模式） |
 | [local_setup.md](local_setup.md) | 环境模板、密钥职责划分、环境变量清单与仓库边界 |
 | [demo-scenarios.md](demo-scenarios.md) | 内置场景机制说明 |
-| [acceptance_report.md](acceptance_report.md) | 带日期的验收快照与历史基线（最新快照 2026-11-09，当时 v1.8.0；当前版本 1.11.0） |
+| [acceptance_report.md](acceptance_report.md) | 带日期的验收快照与历史基线（最新快照 2026-11-09，当时 v1.8.0；当前版本 1.11.0，当前基线见 `AGENTS.md` / `.upgrade/STATE.md`） |
 | [../README.en.md](../README.en.md) | English project overview |
 
 ## spec/ — 系统设计与规格文档

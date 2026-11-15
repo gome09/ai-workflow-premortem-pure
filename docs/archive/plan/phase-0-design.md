@@ -1,7 +1,7 @@
 # 阶段 0 详细设计方案：仓库治理最小闭环
 
 > 关系定位：本文档是 [phase-0-repo-governance.md](phase-0-repo-governance.md)（实施计划 / 任务清单 + 验收标准）的**落地设计层**——给出每个任务的具体文件内容草稿、配置参数、决策依据、执行顺序与并行策略、风险。
-> 配套规格：[../spec/supply-chain-security.md](../spec/supply-chain-security.md)（第 2、3 节为本方案 T0.4 / T0.5 的设计源头）。
+> 配套规格：[../spec/supply-chain-security.md](../../spec/supply-chain-security.md)（第 2、3 节为本方案 T0.4 / T0.5 的设计源头）。
 > 现状核实日期：2026-07-13（全部条目经代码仓库直接实测，非估算）。
 > 状态：**已实施完成，本文作为历史设计记录保留**。其中代码行号、版本号、未勾选框和“待决策”措辞均反映执行前快照，不作为当前事实来源。
 
@@ -17,7 +17,7 @@
 | 远程仓库 | 未提及 | `origin = git@github.com:gome09/ai-workflow-premortem-pure.git`，**已推送 GitHub**，T0.7 Scorecard CLI 具备执行前提（需确认仓库是否 public） |
 | `.upgrade/reports/` | 未提及 | **已存在**（含 `release_manifest_v1.0.md`），T0.7 基线报告目标路径 `.upgrade/archive/scorecard-baseline-20260713.md`（原 `reports/`，2026-07-17 归档）无需新建目录 |
 | CHANGELOG 版本覆盖 | 描述为「v0.1 / v0.5」 | 实际已含 `v1.0 (2026-06-10)` / `v1.0.2` / `v1.0.1` / `v0.5` / `v0.1`；T0.6 追溯说明需覆盖 v0.1–v0.7 早期「无 commit 证据」缺口，而非仅 v0.1/v0.5 |
-| **版本元数据一致性（关键）** | 未识别 | ⚠️ `CHANGELOG.md` 最新 = `v1.0.2`，但 [core/version.py](../../core/version.py) `APP_VERSION="1.0.0"` / `PACKAGE_STAGE="v1.0.0"` 与 [pyproject.toml](../../pyproject.toml) `version="1.0.0"` 均为 1.0.0；[scripts/version_check.py](../../scripts/version_check.py) 只校验 version.py↔pyproject.toml 一致（当前均 1.0.0 → 通过），**不校验 CHANGELOG**；README 首屏版本声明 `v1.0`。三方漂移 |
+| **版本元数据一致性（关键）** | 未识别 | ⚠️ `CHANGELOG.md` 最新 = `v1.0.2`，但 [core/version.py](../../../core/version.py) `APP_VERSION="1.0.0"` / `PACKAGE_STAGE="v1.0.0"` 与 [pyproject.toml](../../pyproject.toml) `version="1.0.0"` 均为 1.0.0；[scripts/version_check.py](../../scripts/version_check.py) 只校验 version.py↔pyproject.toml 一致（当前均 1.0.0 → 通过），**不校验 CHANGELOG**；README 首屏版本声明 `v1.0`。三方漂移 |
 
 ### 关键发现影响：T0.8 设计需修正
 
@@ -290,8 +290,8 @@ scorecard --repo=gome09/ai-workflow-premortem-pure \
 
 | 文件 | 现值 | 改为 |
 |---|---|---|
-| [core/version.py](../../core/version.py) `APP_VERSION` | `"1.0.0"` | `"1.0.2"` |
-| [core/version.py](../../core/version.py) `PACKAGE_STAGE` | `"v1.0.0"` | `"v1.0.2"` |
+| [core/version.py](../../../core/version.py) `APP_VERSION` | `"1.0.0"` | `"1.0.2"` |
+| [core/version.py](../../../core/version.py) `PACKAGE_STAGE` | `"v1.0.0"` | `"v1.0.2"` |
 | [pyproject.toml](../../pyproject.toml) `version` | `"1.0.0"` | `"1.0.2"` |
 | [README.md](../../README.md) 首屏 `**版本：**` | `v1.0` | `v1.0.2` |
 

@@ -23,7 +23,7 @@ make doc-check       # Markdown 链接、命令与仓库路径一致性
 make version-check   # pyproject.toml 与 core/version.py 版本一致性
 ```
 
-CI 还会运行覆盖率测试与 docker-lite 集成；mypy、pip-audit 和 docker-full 当前处于 non-blocking 观察期。涉及离线流程时可额外运行 `make e2e-mock`。
+CI 还会运行覆盖率测试、docker-lite、production-safety 与 docker-full 集成；mypy、pip-audit 仍为 non-blocking 观察项，docker-lite、production-safety 与 docker-full 均为 blocking。涉及离线流程时可额外运行 `make e2e-mock`。
 
 ## 分支与提交约定
 
@@ -37,7 +37,7 @@ CI 还会运行覆盖率测试与 docker-lite 集成；mypy、pip-audit 和 dock
 
 本地仓库无法证明 GitHub 后台状态；按当前项目状态记录，`main` 分支保护仍待维护者在仓库 Settings 中开启。目标策略为：
 - 所有改动通过 PR 合并，不直接 push main
-- PR 必须通过 CI（lint + unit tests + docker-lite integration）
+- PR 必须通过 CI（lint + unit tests、docker-lite、production-safety、docker-full integration）
 - 个人项目暂不强制第二人 review，但鼓励自我 review 后再合
 
 远端启用后，应同步更新 `.upgrade/STATE.md` 与供应链安全规格，避免状态再次分叉。
@@ -52,7 +52,7 @@ CI 还会运行覆盖率测试与 docker-lite 集成；mypy、pip-audit 和 dock
 
 1. 确保上述本地检查全绿。
 2. PR 描述说明：动机、改动点、测试方式。
-3. 等待 CI（lint + 单测 + docker-lite 集成冒烟）通过后合并。
+3. 等待 CI（lint + 单测、docker-lite、production-safety、docker-full 集成）通过后合并。
 4. 个人项目无强制第二人 review，但鼓励自我 review 后再合。
 
 ## 社区响应约定

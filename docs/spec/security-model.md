@@ -1,6 +1,6 @@
 # Security Model
 
-> **Last updated:** 2026-11-01
+> **Last updated:** 2026-11-15
 
 > Status: Implemented
 
@@ -119,6 +119,10 @@ Nginx 配置来自：
 - `deepseek_api_key`
 - `tavily_api_key`
 - `grafana_password`
+- `data_encryption_key`（字段级加密 Fernet key）
+- `checkpoint_encryption_key`（LangGraph checkpoint 独立 Fernet key）
+
+两把 Fernet key 不得复用；环境变量优先于 secret 文件，非 Docker 部署必须显式配置。
 
 `scripts/gen_secrets.sh` 会把 JWT、PostgreSQL、Redis 三项同时同步到 `.env`，因为应用环境变量优先级高于 `/run/secrets`；Grafana 密码只读 secret，API key 的 `.env` 占位行会被注释以便读取 secret。因而不能笼统宣称完整栈完全不在 `.env` 保存敏感值。`.env.demo` 仍是脱敏离线模板，不包含真实 API Key、数据库密码或证书私钥。
 
@@ -147,6 +151,8 @@ Phase 1（T1.1–T1.4，自 v1.0.3 起落地并沿用至今）的数据安全能
 | PII 掩码 | 聊天正文在 `send_message` 进入模型前、补充材料在加入时做四类正则检测；命中升级为 `sensitive_personal` 并强制出站掩码。`PII_MASK_BEFORE_LLM` 仅对仍为 `business_internal` / `public_demo` 的内容保留开关语义 | `tools/safety_classifier.py`（`PII_PATTERNS` / `scan_user_message_pii`）；`core/llm/outbound_guard.py`；`core/evidence_service.py` |
 | 中断 checkpoint | `langgraph_interrupt` + PostgreSQL 使用独立 Fernet key 加密完整 `ProjectContext` checkpoint；要求持久 PostgreSQL 后端、单 worker，并在初始化或健康异常时 fail closed。SQLite 的 memory checkpoint 仅供本地调试且进程重启即丢失 | `graph/checkpoint_manager.py`；Alembic V006/V007；`/health/ready` |
 | AI 生成标识 | 报告导出首屏中文免责声明，对齐《生成合成内容标识办法》 | `core/report_service.py` |
+
+> 完整字段/副本矩阵见 [data-classification-and-privacy.md](data-classification-and-privacy.md) §4.1/§4.1.1/§4.4：`evidence_sources.verification_note`、Stage 1–4 `raw_summary` 与 Stage 3 `test_results` 已在新写入中加密；`mitigation_plan`、`review_note`、`decision_note`、`verification_note` 已纳入审计脱敏。修复前的历史行仍可能为明文，需单独回填。
 
 ### Identity, Workspace and Approval Integrity（v1.7.0）
 
@@ -177,9 +183,9 @@ CI 的 `production-safety` job 为 blocking，覆盖：Alembic V008→动态 hea
 - 专业 secrets manager 集成（如 Vault / KMS）
 - 非 Docker 部署的字段加密密钥自动生成与托管（Docker 部署由 `make setup` 生成；裸机部署需运维者在 `.env` 显式设置 `DATA_ENCRYPTION_KEY`）
 - checkpoint 密钥自动生成、托管或轮换（启用 PostgreSQL 中断模式时，运维者须另行配置并备份 `CHECKPOINT_ENCRYPTION_KEY`，且不得复用 `DATA_ENCRYPTION_KEY`）
-- Streamlit 端的完整登录门户界面
+- 企业级身份能力：前端已有交互式登录、注册新工作区与邀请码加入（`frontend/controllers/auth_controller.py`），但仍不提供 SSO/OIDC/SAML、MFA、密码重置、邀请邮件投递或完整账户管理门户
 
-当前前端更像内部工作台，认证能力主要在 API 层完成。
+当前前端是内部工作台形态，认证协议仍由 API 层承载；交互式登录与邀请加入已可用。
 
 ---
 

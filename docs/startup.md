@@ -1,6 +1,6 @@
 # Startup Guide
 
-> **Last updated:** 2026-11-14
+> **Last updated:** 2026-11-15
 
 本文只保留当前仓库内可直接验证的启动方式与文件名，是**启动与部署步骤的单一权威来源**。环境模板说明、环境变量清单与仓库边界见 [local_setup.md](local_setup.md)。
 
@@ -52,9 +52,12 @@ uv run uvicorn api.main:app --reload --port 8000
 uv run streamlit run frontend/app.py --server.port 8501
 ```
 
-`postgres` / `redis` compose 服务读取 `secrets/postgres_password` 与 `secrets/redis_password`，因此仅复制 `.env.example` 不足以启动它们。`make setup` 会创建文件型 secrets，并把 PostgreSQL、Redis 和 JWT 的同值配置同步进 `.env`；本机运行 API 时仍需在 `.env` 设置真实 DeepSeek/Tavily key。
+启动前需确认：
 
-`POSTGRES_PORT` 表示"应用连接数据库的端口"，需按运行位置取值：API 容器内与本机原生 PostgreSQL 都是 `5432`；宿主进程连 Docker 提供的数据库时必须改为 `5433`（`docker-compose.override.yml` 的 `5433:5432` 映射）。同一份 `.env` 无法同时满足这两种宿主机场景，切换时只改这一行。
+- `postgres` / `redis` compose 服务读取 `secrets/postgres_password` 与 `secrets/redis_password`，因此仅复制 `.env.example` 不足以启动它们。`make setup` 会创建文件型 secrets，并把 PostgreSQL、Redis 和 JWT 的同值配置同步进 `.env`；本机运行 API 时仍需在 `.env` 设置真实 DeepSeek/Tavily key。
+- 宿主进程只读 `.env` / 环境变量，默认不读 `./secrets`（`Settings` 仅在 `/run/secrets` 存在时读取）。真实使用 PostgreSQL 时须显式设置 `DATA_ENCRYPTION_KEY`、`POSTGRES_PASSWORD`、`JWT_SECRET`、`REDIS_PASSWORD`，或设置 `SECRETS_DIR=./secrets` 读取文件型 secrets。
+- development 宿主缺 `DATA_ENCRYPTION_KEY` 时新字段按明文写入并告警；已有 `enc:v1:` 密文仍 fail-closed；`APP_ENV=production` 启动直接拒绝。
+- `POSTGRES_PORT` 表示"应用连接数据库的端口"：API 容器内与本机原生 PostgreSQL 都是 `5432`；宿主进程连 Docker 提供的数据库时必须改为 `5433`（`docker-compose.override.yml` 的 `5433:5432` 映射）。同一份 `.env` 无法同时满足这两种宿主机场景，切换时只改这一行。
 
 ---
 
@@ -67,13 +70,15 @@ make setup    # 自动生成 .env、8 个 secrets（含两把独立 Fernet key�
 make prod-up  # 启动前自动做前置检查（secrets/ 八文件 + 证书存在性；示例占位值仅警告）
 ```
 
+> `make setup` 只在 `.env` 不存在时复制模板，`gen_secrets.sh` 只替换 `CHANGE_ME` 占位行；它不会把 demo 的 `.env` 切换为 production。跑过 `make demo-*` / `make e2e-*` 后，需先恢复 `APP_ENV=production`、`LLM_MODE=real`、`STORAGE_BACKEND=postgres`，再执行 `make prod-up`。
+
 说明：
 - `make setup` 会调用 `scripts/gen_secrets.sh`：`jwt_secret` / `postgres_password` / `redis_password` / `grafana_password` 使用随机十六进制值；其中前三者会同步 `.env` 中对应的 `CHANGE_ME` 占位行，`grafana_password` 由 Grafana 容器直接读取。
 - `data_encryption_key` 与 `checkpoint_encryption_key` 会生成为两把独立 Fernet key，并以 Docker secrets 挂入 API；环境变量仍具有更高优先级，非 Docker 部署可按 `.env.example` 显式设置。启动后必须确认 `/health.data_encryption=enabled`；启用中断模式还需确认 adapter 显示 persistent/encrypted/healthy。
 - `deepseek_api_key` / `tavily_api_key` 无法生成，保留占位文件，`LLM_MODE=real` 时需手动填入真实值。
 - `make prod-up` 前置检查失败（缺 secrets 文件或证书）会直接报错并提示先跑 `make setup`，不会进入晦涩的 compose 挂载错误。
 - `gen_secrets.sh` 默认将 secret 文件设为 `0600`。Linux 主机若宿主用户与容器内非 root UID 不同，需由部署方用受控 ACL/属主映射确保容器可读；不要在生产环境把长期密钥直接改成全局可读。
-- API 启动时 `PostgresSessionStore.initialize()` 会自动执行 `alembic upgrade head`；手工迁移可用 `docker compose run --rm api python -m alembic upgrade head`。当前迁移链为 V001→V014，升级早于 Alembic 的旧库前先按 [storage/README.md](../storage/README.md) 备份并补齐 V001 基线列。
+- API 启动时 `PostgresSessionStore.initialize()` 会自动执行 `alembic upgrade head`；手工迁移可用 `docker compose -f docker-compose.yml run --rm api python -m alembic upgrade head`。Full 操作中的每条 Compose 命令都必须显式 `-f docker-compose.yml`，省略时会自动叠加 `docker-compose.override.yml`（reload、源码挂载、`DEMO_AUTO_AUTH=true`、HTTP 80），不适用于生产。当前迁移链为 V001→V014，升级早于 Alembic 的旧库前先按 [storage/README.md](../storage/README.md) 备份并补齐 V001 基线列。
 
 若只需开发证书而不做完整 setup：
 
@@ -108,6 +113,7 @@ curl -k https://localhost/api/health/live
 - `target_http` 真实实验默认后台执行：`POST /sessions/{id}/eval-experiments/{experiment_id}/run` 立即返回 202，前端轮询 `GET /sessions/{id}/eval-experiments/{experiment_id}/status`。逐项结果在每次完成后落库；进程重启后状态查询会把 stale `running` 标记为 `interrupted`，再次运行会跳过已保存结果（`completed` / `failed`）的用例，不重复调用外部模型或目标。
 - 超时参数：`EVAL_EXPERIMENT_TIMEOUT_SECONDS`（默认 1800，批次总 deadline）、`EVAL_EXPERIMENT_HEARTBEAT_STALE_SECONDS`（默认 120，保留兼容、不再作为租约判断依据）、`EVAL_EXPERIMENT_LEASE_SECONDS`（默认 180，数据库租约）、`EVAL_EXPERIMENT_HEARTBEAT_INTERVAL_SECONDS`（默认 30，需 ≤ 租约的 1/3）、`EVAL_EXPERIMENT_WORKERS`（默认 2，进程内执行器）。请求体 `timeout_seconds` 可按批次覆盖。
 - 幂等：同一 `idempotency_key` 重试不会重复执行已保存的用例；不同请求键在同一实验 `running` 时返回 409。
+- 默认 dry-run：`POST .../eval-experiments/{experiment_id}/run` 的 `dry_run_only` 默认 `true`；真实 `target_http` 必须显式传 `dry_run_only=false`。同键已完成不会重跑，但“外部调用已发出、结果未落库”的窗口按至少一次处理，不承诺 exactly-once。
 - Docker API 已设置 `PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus-multiproc`，多 worker 的 Counter/Histogram 由 `MultiProcessCollector` 聚合；`premortem_sessions_total` / `premortem_pending_actions` 由 DB-backed collector 每次抓取时读取共享存储，积压清零后自动归零。
 - 告警规则位于 `monitoring/alert_rules.yml`，由 `monitoring/prometheus.yml` 的 `rule_files` 加载；未配置 Alertmanager 时告警只在 Prometheus `/alerts` 可见。
 
@@ -135,9 +141,9 @@ uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_
 Docker Full 的开启顺序（先由一次性容器迁移，再创建 API）：
 
 ```bash
-docker compose up -d postgres
-docker compose run --rm api python -m alembic upgrade head
-docker compose up -d --build api frontend nginx redis prometheus grafana
+docker compose -f docker-compose.yml up -d postgres
+docker compose -f docker-compose.yml run --rm api python -m alembic upgrade head
+docker compose -f docker-compose.yml up -d --build api frontend nginx redis prometheus grafana
 curl -k https://localhost/api/health/ready
 ```
 
@@ -211,12 +217,7 @@ docker compose -f docker-compose.lite.yml up --build
 
 该 compose 文件会默认以 `mock + sqlite` 启动，并将前端 API 地址指向容器内 `http://api:8000`。内置场景由工作台显式选择并加载。
 
-如需在 SQLite 上使用真实 API Key，从 `.env.example` 派生并手工加入：
-
-```bash
-STORAGE_BACKEND=sqlite
-UVICORN_WORKERS=1
-```
+Lite compose 强制 `LLM_MODE=mock`、`STORAGE_BACKEND=sqlite`、`CHECKPOINT_BACKEND=memory` 与 `DEMO_AUTO_AUTH=true`；在 `.env` 填真实 Key 不会切换为真实模型。需要真实模型时改用“本地开发模式”在宿主运行（保持 `APP_ENV=development`，按需选择 `STORAGE_BACKEND=sqlite` 或 `postgres`），或使用 Full 栈；`APP_ENV=production` 会拒绝 sqlite 与 mock 组合。
 
 ### 适用边界
 

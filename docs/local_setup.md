@@ -1,6 +1,6 @@
 # Local Environment Setup Guide
 
-> **Last updated:** 2026-11-01
+> **Last updated:** 2026-11-15
 
 **所有启动命令与验证步骤见 [startup.md](startup.md)**，本页不重复。这里只覆盖 startup.md 不含的三件事：环境模板、环境变量清单、仓库边界。
 
@@ -23,6 +23,8 @@
 | 本地真实使用（本机 API + Docker DB） | `.env.example` + `make setup` 生成的 secrets | 本地开发模式 |
 | Docker Lite（`make lite-up`） | `.env.demo`（仅 `.env` 不存在时复制） | 轻量 Docker 模式 |
 | Docker Full（`make setup` + `make prod-up`） | `.env.example` + `secrets/` | Docker 生产样式启动 |
+
+> 表中的 `secrets/` 仅 Docker 容器自动读取；宿主进程需使用 `.env` / 环境变量，或显式设置 `SECRETS_DIR=./secrets`。
 
 ---
 
@@ -60,7 +62,7 @@
 | `CORS_ALLOW_ORIGINS` | CORS 白名单 | 使用中 |
 | `DEMO_AUTO_AUTH` | 固定演示账号自动认证 | 生产必须为 `false`；仅本地 demo/开发 override 可启用 |
 | `UVICORN_WORKERS` | worker 数 | 使用中；`langgraph_interrupt` 当前必须为 `1` |
-| `DATA_ENCRYPTION_KEY` | 字段级加密 Fernet key | PostgreSQL 或 `APP_ENV=production` 下缺失密钥时解密 fail-closed（`FieldDecryptionError`）；仅 SQLite 开发模式允许明文并告警 |
+| `DATA_ENCRYPTION_KEY` | 字段级加密 Fernet key | 分三层：production 启动缺失/非法 key 直接拒绝；已有 `enc:v1:` 密文在 production 或非 sqlite 后端缺 key 时抛 `FieldDecryptionError`；development + 非 sqlite 缺 key 时新写入按明文并告警（部署要求，不是已自动保证） |
 | `PII_MASK_BEFORE_LLM` | 送 LLM 前掩码 PII | 默认 `false`；聊天正文与补充材料命中四类 PII 会先升级 `sensitive_personal` 并强制掩码，本开关仅对未升级内容生效 |
 | `AUDIT_RETENTION_DAYS` / `SESSION_RETENTION_DAYS` | 留存天数 | 使用中；到期数据由内置留存执行器按周期清理，`0` 表示永久保留 |
 | `RETENTION_ENABLED` / `RETENTION_DRY_RUN` | 留存执行器开关 | `RETENTION_ENABLED` 默认 `true`；`RETENTION_DRY_RUN` 默认 `true`，只统计候选不删除，生产需显式改为 `false` |
@@ -69,7 +71,7 @@
 | `EVAL_LLM_JUDGE` / `EVAL_LLM_JUDGE_AUTOFINAL` | LLM 建议判分 | 使用中，**默认均为 off** |
 | `TARGET_SYSTEM_ALLOWED_HOSTS` | 真实目标系统 host 白名单 | 使用中；逗号分隔（`host` 或 `host:port`），**空值表示拒绝所有外部目标调用** |
 | `TARGET_SYSTEM_TOKEN` | 真实目标系统 Bearer token | 可选；仅注入请求头，不写入上下文或审计 |
-| `TARGET_SYSTEM_TIMEOUT_SECONDS` / `TARGET_SYSTEM_MAX_RESPONSE_CHARS` | 目标调用超时与响应截断 | 默认 10 秒、4000 字符 |
+| `TARGET_SYSTEM_TIMEOUT_SECONDS` / `TARGET_SYSTEM_MAX_RESPONSE_CHARS` | 目标调用超时与响应截断 | 实际超时来自请求体 `target_config.timeout_seconds`（默认 10 秒，适配器使用）；`TARGET_SYSTEM_TIMEOUT_SECONDS` 当前仅声明与校验，尚未接入调用；响应上限由适配器使用 |
 
 完整清单与默认值以 `core/config.py` 为准。
 
@@ -80,5 +82,5 @@
 - `sqlite` 模式适合本地演示或轻量开发，不适合多进程高并发。
 - `CHECKPOINT_BACKEND=memory` 不是持久化方案，API 进程重启后不能恢复已中断执行，不得用于生产。
 - 不能只复制 `.env.example` 就启动数据库：compose 的 PostgreSQL / Redis 服务实际读取文件型 secrets，必须先跑 `make setup`。
-- 当前与历史测试基线统一记录在 `docs/acceptance_report.md`。录制基线必须用 `uv run pytest` / `make test`；用系统 Python 直接跑会因缺主依赖产生虚假 skip 计数。
+- 当前基线以 `AGENTS.md` 的带日期记录为准；`docs/acceptance_report.md` 保存历史验收快照，不代表当前版本。录制基线必须用 `uv run pytest` / `make test`；用系统 Python 直接跑会因缺主依赖产生虚假 skip 计数。
 - `/health/ready` 在 `sqlite` 模式下会跳过 Redis 检查。

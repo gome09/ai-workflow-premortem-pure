@@ -44,6 +44,8 @@
 - **HIGH**（金融/法律/儿童/心理健康/军事）：在上述基础上追加红队覆盖 + 回归评估 + 追踪补齐
 - **CRITICAL**（医疗/药物/诊断）：在 HIGH 基础上追加专家评审，强制阻断
 
+> 上表括号内为典型场景示例；实际档位由 `core/risk` 六因子模型（impact / autonomy / data_sensitivity / reversibility / scale / external_exposure）与硬性 floor 决定，关键词只用于 legacy 推断适配器。
+
 高风险项目的 Stage 3 安全阻断**不是产品缺陷，是设计意图**——系统拒绝让高风险 AI 项目在未完成充分评估的情况下推进。
 
 ---
@@ -104,7 +106,7 @@ make demo-ui
 
 “治理总览”采用真实业务口径：只统计 `business_internal` / `sensitive_personal` 会话，不把四个内置场景或其他 `public_demo` 演示数据计入项目数、风险分布、门禁趋势和积压动作。页面会显示已隔离的演示会话数量；真实业务数据为零时显示空数据提示，接口异常则显示加载失败。
 
-Docker 入口：`make lite-up` 启动 SQLite + Mock 轻量模式；`make setup` 后执行 `make prod-up` 启动 PostgreSQL + Redis 生产栈。请按启动指南完成 secrets、证书和生产健康检查配置。
+Docker 入口：`make lite-up` 启动 SQLite + Mock 轻量模式；`make setup` 后执行 `make prod-up` 启动 PostgreSQL + Redis 生产栈。请按启动指南完成 secrets、证书和生产健康检查配置。`make setup` 保留已有 `.env`，不会把 demo 配置切换为 production；跑过 demo/e2e 后先恢复生产配置再 `make prod-up`。
 
 ---
 
@@ -114,7 +116,7 @@ Docker 入口：`make lite-up` 启动 SQLite + Mock 轻量模式；`make setup` 
 
 ### 零依赖单文件 Demo（浏览器直接打开）
 
-仓库根目录提供两份自包含的单文件 HTML Demo，无需启动后端/前端，双击用浏览器打开即可交互演示，数据取自真实项目实跑快照（`LLM_MODE=mock` / `STORAGE_BACKEND=sqlite` / `WORKFLOW_EXECUTION_MODE=single_step`）：
+仓库根目录提供两份自包含的单文件 HTML Demo，无需启动后端/前端，双击用浏览器打开即可交互演示。页面数据基于真实项目的 Mock 模式输出整理，作为离线演示快照，不构成真实运行验收证据（`LLM_MODE=mock` / `STORAGE_BACKEND=sqlite` / `WORKFLOW_EXECUTION_MODE=single_step`）：
 
 | 文件 | 说明 |
 |------|------|
@@ -131,6 +133,8 @@ make e2e-mock
 make e2e-full-test
 ```
 
+> 两个 target 都会 `cp -f .env.demo .env`，覆盖现有 `.env`；执行前先备份。
+
 ---
 
 ## 测试
@@ -138,11 +142,13 @@ make e2e-full-test
 离线基线使用 `.env.demo` 的 `sqlite` + `memory` checkpoint + `mock` LLM。直接运行前先确认 `.env` 的后端；若它仍指向未启动的 PostgreSQL，pytest 会因连接等待长时间无输出。
 
 ```bash
-# 不覆盖现有 .env：在当前 shell 覆盖后端后再跑
-STORAGE_BACKEND=sqlite CHECKPOINT_BACKEND=memory LLM_MODE=mock uv run pytest tests/ -q
+# 不覆盖现有 .env：在当前 shell 覆盖后端与运行环境后再跑
+APP_ENV=development STORAGE_BACKEND=sqlite CHECKPOINT_BACKEND=memory LLM_MODE=mock WORKFLOW_EXECUTION_MODE=single_step uv run pytest tests/ -q
 ```
 
-历史实测基线：`1131 passed, 4 skipped`（2026-11-01，项目 `.venv`，`sqlite` + `memory` + `mock`）。4 个 skip 为 3 个 PostgreSQL/Redis E2E 与 1 个 PG-only 存储模块，由 CI `production-safety`（`PRODUCTION_SAFETY_REQUIRED=1`）执行；离线 skip 不等于通过。当前基线以 `AGENTS.md` 的带日期记录为准，历史快照见 [docs/acceptance_report.md](docs/acceptance_report.md)；测试数量会随测试集合变化，不应作为永久断言。
+若 `.env` 是 production，仅覆盖三个后端变量仍会被 `APP_ENV=production` 拒绝，必须同时覆盖 `APP_ENV=development`。
+
+历史实测基线：`1131 passed, 4 skipped`（2026-11-01，项目 `.venv`，`sqlite` + `memory` + `mock`）。4 个 skip 为 3 个 PostgreSQL/Redis E2E 与 1 个 PG-only 存储模块，由 CI `production-safety`（`PRODUCTION_SAFETY_REQUIRED=1`）执行；离线 skip 不等于通过。最近 HEAD 轮次记录为 2026-11-14 `1444 passed, 10 skipped`；2026-11-15 工作树完成 S03/S04 数据保护修复后为 `1451 passed, 10 skipped`，见 `.upgrade/STATE.md`。历史列表见 `AGENTS.md`；本页 `1131` 仅为历史快照，[docs/acceptance_report.md](docs/acceptance_report.md) 保存更早的验收快照。测试数量会随测试集合变化，不应作为永久断言。
 
 ---
 

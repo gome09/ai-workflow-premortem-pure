@@ -41,7 +41,7 @@ ENCRYPTED_COLUMNS: dict[str, tuple[str, ...]] = {
         "payload_after",
         "reviewer_note",
     ),
-    "evidence_sources": ("summary", "claims"),
+    "evidence_sources": ("summary", "claims", "verification_note"),
     "report_artifacts": ("content_json", "content_markdown"),
     "eval_cases": (
         "input_payload",
@@ -227,6 +227,13 @@ def encrypt_fields_for_storage(data: dict[str, Any], classification: str) -> dic
         if ev.get("claims"):
             ev["claims"] = [_encrypt_value(c) for c in ev["claims"]]
 
+    # evidence_sources[*].verification_note：人工核验备注可能包含敏感正文，
+    # 与 source_type 无关，单独循环处理。
+    for ev in sources:
+        note = ev.get("verification_note")
+        if isinstance(note, str) and note:
+            ev["verification_note"] = _encrypt_value(note)
+
     # research_target / goal（ProjectContext 实际字段名为 goal）
     for field in ("research_target", "goal"):
         value = data.get(field)
@@ -240,6 +247,28 @@ def encrypt_fields_for_storage(data: dict[str, Any], classification: str) -> dic
             content = message.get("content") if isinstance(message, dict) else None
             if content:
                 message["content"] = _encrypt_value(content)
+
+    # Stage 1–4 原始输出与 Stage 3 压测样本 / 实际输出。
+    for stage_key in ("stage_1_output", "stage_2_output", "stage_3_output", "stage_4_output"):
+        stage = data.get(stage_key)
+        if isinstance(stage, dict) and stage.get("raw_summary"):
+            stage["raw_summary"] = _encrypt_value(stage["raw_summary"])
+    stage_3 = data.get("stage_3_output")
+    if isinstance(stage_3, dict):
+        for result in stage_3.get("test_results") or []:
+            if not isinstance(result, dict):
+                continue
+            for field in ("test_input", "ai_output", "raw_summary"):
+                value = result.get(field)
+                if isinstance(value, str) and value:
+                    result[field] = _encrypt_value(value)
+            for field in ("error_predictions", "correction_prompts", "pass_criteria"):
+                values = result.get(field)
+                if isinstance(values, list):
+                    result[field] = [
+                        _encrypt_value(item) if isinstance(item, str) and item else item
+                        for item in values
+                    ]
 
     # pending_actions[*] 自由文本与 payload 结构
     for action in data.get("pending_actions") or []:
@@ -400,6 +429,14 @@ def decrypt_fields_after_load(ctx) -> None:
                 for c in ev.claims
             ]
 
+    # evidence_sources[*].verification_note：所有 source_type 均可能被加密。
+    for ev in ctx.evidence_sources:
+        if ev.verification_note:
+            ev.verification_note = _decrypt_value(
+                ev.verification_note,
+                field=f"evidence_sources[{ev.evidence_id}].verification_note",
+            )
+
     # research_target / goal（ProjectContext 实际字段名为 goal）
     if ctx.research_target:
         ctx.research_target = _decrypt_value(ctx.research_target, field="research_target")
@@ -414,6 +451,43 @@ def decrypt_fields_after_load(ctx) -> None:
                     message.content,
                     field=f"conversation_history[{message.role}].content",
                 )
+
+    # Stage 1–4 原始输出与 Stage 3 压测结果
+    for stage_key, stage in (
+        ("stage_1_output", ctx.stage_1_output),
+        ("stage_2_output", ctx.stage_2_output),
+        ("stage_3_output", ctx.stage_3_output),
+        ("stage_4_output", ctx.stage_4_output),
+    ):
+        if stage is not None and stage.raw_summary:
+            stage.raw_summary = _decrypt_value(stage.raw_summary, field=f"{stage_key}.raw_summary")
+    if ctx.stage_3_output is not None:
+        for index, result in enumerate(ctx.stage_3_output.test_results):
+            for field in ("test_input", "ai_output", "raw_summary"):
+                value = getattr(result, field, "")
+                if value:
+                    setattr(
+                        result,
+                        field,
+                        _decrypt_value(
+                            value,
+                            field=f"stage_3_output.test_results[{index}].{field}",
+                        ),
+                    )
+            for field in ("error_predictions", "correction_prompts", "pass_criteria"):
+                values = getattr(result, field, [])
+                if values:
+                    setattr(
+                        result,
+                        field,
+                        [
+                            _decrypt_value(
+                                item,
+                                field=f"stage_3_output.test_results[{index}].{field}[{item_index}]",
+                            )
+                            for item_index, item in enumerate(values)
+                        ],
+                    )
 
     # pending_actions
     for action in ctx.pending_actions:

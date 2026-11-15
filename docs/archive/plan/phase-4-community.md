@@ -1,7 +1,7 @@
 # 阶段 4 实施计划：开源社区打磨（持续性工作）
 
 > 上游路线图：[improvement-roadmap.md](improvement-roadmap.md) 第 6 节「阶段 4」。
-> 配套设计规格：[../spec/supply-chain-security.md](../spec/supply-chain-security.md) 第 6-8 节。
+> 配套设计规格：[../spec/supply-chain-security.md](../../spec/supply-chain-security.md) 第 6-8 节。
 > 状态：**代码侧已完成，外部治理动作待维护者执行（历史实施计划 + 持续清单）**。分支保护等 GitHub 后台状态以 `.upgrade/STATE.md` 为权威记录。
 
 ---
@@ -12,7 +12,7 @@ Scorecard 分数相对阶段 0 基线持续爬升、文档与代码不再靠事�
 
 ## 2. 现状基线
 
-- Scorecard 预估：18 项中明确达标约 4-5 项（详表见 [../spec/supply-chain-security.md](../spec/supply-chain-security.md) 第 6 节），量化基线待阶段 0 实测。
+- Scorecard 预估：18 项中明确达标约 4-5 项（详表见 [../spec/supply-chain-security.md](../../spec/supply-chain-security.md) 第 6 节），量化基线待阶段 0 实测。
 - 已知文档腐烂样本：`docs/spec/stage3-risk-adaptive-gate.md` 中存在指向 `../archive/verification-reports/` 的悬空引用（`.upgrade/MANIFEST.md` 已记录为既有问题）；`.upgrade/decisions/RELEASE_CLEANUP.md` 记录过一整轮文档-代码不一致修复。
 - CONTRIBUTING.md 将由阶段 0 产出初版，本阶段负责随项目演进维护。
 
@@ -20,7 +20,7 @@ Scorecard 分数相对阶段 0 基线持续爬升、文档与代码不再靠事�
 
 ### T4.1 文档-代码一致性检查 CI 化
 
-- **内容**：`scripts/doc_consistency_check.py` + `make doc-check` + CI 步骤（链接存在性 / make 目标存在性 / 仓库路径存在性三类规则）。设计见 [../spec/supply-chain-security.md](../spec/supply-chain-security.md) 第 7 节。
+- **内容**：`scripts/doc_consistency_check.py` + `make doc-check` + CI 步骤（链接存在性 / make 目标存在性 / 仓库路径存在性三类规则）。设计见 [../spec/supply-chain-security.md](../../spec/supply-chain-security.md) 第 7 节。
 - **第一批修复对象**：stage3 文档的悬空 archive 引用（修链或补档，二选一并记录决策）。
 - **验收**：CI 真实拦截过至少一次坏链（可用故意引入的测试 PR 验证）；存量坏链清零后转为强制（非 `continue-on-error`）。
 - 工作量：M

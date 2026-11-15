@@ -1,7 +1,7 @@
 # 阶段 1 详细设计方案：安全与合规硬缺口修复
 
 > 关系定位：本文档是 [phase-1-security-compliance.md](phase-1-security-compliance.md)（实施计划 / 任务清单 + 验收标准）的**落地设计层**——给出每个任务的具体文件改动、代码草稿、配置参数、决策依据、执行顺序与并行策略、风险。
-> 配套规格：[../spec/data-classification-and-privacy.md](../spec/data-classification-and-privacy.md)（子系统①-⑤）、[../spec/supply-chain-security.md](../spec/supply-chain-security.md) 第 4-5 节（SAST）。
+> 配套规格：[../../spec/data-classification-and-privacy.md](../../spec/data-classification-and-privacy.md)（子系统①-⑤）、[../../spec/supply-chain-security.md](../../spec/supply-chain-security.md) 第 4-5 节（SAST）。
 > 现状核实日期：2026-07-14（全部条目经代码仓库直接实测，非估算）。
 > 状态：**已实施完成，本文作为历史设计记录保留**。其中代码行号、版本号、未勾选框和“待决策”措辞均反映执行前快照，不作为当前事实来源。
 >
@@ -41,7 +41,7 @@
 ### T1.2 敏感场景风险升档修正【最小最优先，独立】
 
 **改动文件**：
-- [core/gates/risk_profile.py](../../core/gates/risk_profile.py)（`_HIGH_KEYWORDS` 表 + `classify_project_risk` 函数）
+- [core/gates/risk_profile.py](../../../core/gates/risk_profile.py)（`_HIGH_KEYWORDS` 表 + `classify_project_risk` 函数）
 - `tests/test_risk_profile_mental_health.py`（新建回归测试）
 
 **具体改动**：
@@ -123,12 +123,12 @@ def test_non_mental_health_session_stays_medium():
 ### T1.1 数据分类分级【基础，T1.3/T1.4/T1.6/T1.7 依赖】
 
 **改动文件**：
-- [core/models.py](../../core/models.py)（ProjectContext 新增字段）
+- [core/models.py](../../../core/models.py)（ProjectContext 新增字段）
 - `core/migrations/v070_to_v080.py`（新建应用层迁移）
 - `core/migrations/registry.py`（注册迁移 + bump CURRENT_CONTEXT_SCHEMA_VERSION）
 - `core/migrations/__init__.py`（导出新迁移模块）
-- [core/session_service.py](../../core/session_service.py)（`create_session` 设默认分级）
-- [api/routers/session.py](../../api/routers/session.py)（新增 PATCH 端点）
+- [core/session_service.py](../../../core/session_service.py)（`create_session` 设默认分级）
+- [api/routers/session.py](../../../api/routers/session.py)（新增 PATCH 端点）
 - `api/schemas.py`（新增 request/response schema）
 - `tests/test_data_classification.py`（新建）
 
@@ -283,9 +283,9 @@ def update_data_classification(
 
 **改动文件**：
 - `storage/field_security.py`（新建共享模块）
-- [storage/backends/postgres.py](../../storage/backends/postgres.py)（`_build_context_json_for_storage` + `load`）
-- [storage/backends/sqlite_store.py](../../storage/backends/sqlite_store.py)（同上）
-- [core/config.py](../../core/config.py)（新增 `data_encryption_key` 字段）
+- [storage/backends/postgres.py](../../../storage/backends/postgres.py)（`_build_context_json_for_storage` + `load`）
+- [storage/backends/sqlite_store.py](../../../storage/backends/sqlite_store.py)（同上）
+- [core/config.py](../../../core/config.py)（新增 `data_encryption_key` 字段）
 - [pyproject.toml](../../pyproject.toml)（显式声明 `cryptography` 依赖）
 - [.env.example](../../.env.example) / `.env.demo`（新增配置项）
 - `tests/test_field_encryption.py`（新建）
@@ -495,9 +495,9 @@ DATA_ENCRYPTION_KEY=
 ### T1.4 PII 检测与出境前掩码【依赖 T1.1】
 
 **改动文件**：
-- [tools/safety_classifier.py](../../tools/safety_classifier.py)（新增 `PII_PATTERNS` + `scan_pii` 函数 + 在 `scan_text` 中调用）
-- [core/evidence_service.py](../../core/evidence_service.py)（`format_evidence_for_prompt` 加掩码）
-- [core/config.py](../../core/config.py)（新增 `pii_mask_before_llm` 字段）
+- [tools/safety_classifier.py](../../../tools/safety_classifier.py)（新增 `PII_PATTERNS` + `scan_pii` 函数 + 在 `scan_text` 中调用）
+- [core/evidence_service.py](../../../core/evidence_service.py)（`format_evidence_for_prompt` 加掩码）
+- [core/config.py](../../../core/config.py)（新增 `pii_mask_before_llm` 字段）
 - [.env.example](../../.env.example)（新增配置项）
 - `tests/test_pii_detection.py`（新建）
 
@@ -671,7 +671,7 @@ PII_MASK_BEFORE_LLM=false
 ### T1.5 报告 AI 生成内容标识补强【独立】
 
 **改动文件**：
-- [core/report_service.py](../../core/report_service.py)（`build_report_dict` + `build_markdown_report`）
+- [core/report_service.py](../../../core/report_service.py)（`build_report_dict` + `build_markdown_report`）
 - `tests/test_report_ai_notice.py`（新建）
 
 **具体改动**：
@@ -731,11 +731,11 @@ lines: list[str] = [
 
 **改动文件**：
 - `alembic/versions/V004_audit_archive.py`（新建迁移：audit_events_archive 表）
-- [core/config.py](../../core/config.py)（新增 `audit_retention_days` / `session_retention_days`）
-- [api/routers/session.py](../../api/routers/session.py)（新增 DELETE 端点）
-- [core/session_service.py](../../core/session_service.py)（新增 `delete_session` 方法）
+- [core/config.py](../../../core/config.py)（新增 `audit_retention_days` / `session_retention_days`）
+- [api/routers/session.py](../../../api/routers/session.py)（新增 DELETE 端点）
+- [core/session_service.py](../../../core/session_service.py)（新增 `delete_session` 方法）
 - `storage/backends/postgres.py` + `storage/backends/sqlite_store.py`（新增 `archive_audit_events` + `delete_session_cascade` 方法）
-- [api/main.py](../../api/main.py)（`/health` 暴露留存配置）
+- [api/main.py](../../../api/main.py)（`/health` 暴露留存配置）
 - `docs/compliance/backup.md`（新建备份指引文档）
 - [.env.example](../../.env.example)（新增配置项）
 - `tests/test_session_lifecycle.py`（新建）

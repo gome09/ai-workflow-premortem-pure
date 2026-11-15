@@ -8,6 +8,8 @@ English | [简体中文](README.md)
 
 > Before an AI system ships, answer one question systematically: **where will it fail?**
 
+**Current release:** v1.11.0 · Apache-2.0 · originated as an undergraduate thesis and now maintained as a long-term open-source project.
+
 ## Why
 
 In early 2026 alone, AI agents deleted production databases and moved millions of dollars without human approval. The common root cause was not model capability — it was that **foreseeable failure modes were never tested before deployment**. AI Workflow Premortem applies the software-engineering *pre-mortem* methodology to the inception phase of AI projects: assume the system has failed, then work backwards to find out how.
@@ -26,6 +28,8 @@ A guided four-stage analysis pipeline with risk-adaptive gates and mandatory hum
 **Risk-adaptive stage gates** (LOW / MEDIUM / HIGH / CRITICAL) tighten pass conditions as project risk rises — a CRITICAL-tier project (e.g. medical diagnosis) cannot pass Stage 3 without red-team tests, regression evals, and explicit expert approval. Blocking a high-risk project is **by design, not a defect**.
 
 **Architecture principle:** workflow state transitions are deterministic and code-controlled. The LLM generates analysis content; it never decides flow transitions. Evidence, safety findings, eval runs, human interventions, and audit events are first-class records.
+
+**Governance capabilities (v1.11.x):** evidence lifecycle and verification, risk treatment with independent review, independent release approval, a read-only machine release gate backed by tenant-scoped service tokens, team workspaces with invitations and role revalidation, and governance dashboards that exclude demo sessions. See the Chinese docs for current details and boundaries.
 
 ## Quick start (offline demo, no API key)
 

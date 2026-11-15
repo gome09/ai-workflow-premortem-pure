@@ -1,7 +1,7 @@
 # 阶段 2 实施计划：AI 风险分类体系补强
 
 > 上游路线图：[improvement-roadmap.md](improvement-roadmap.md) 第 6 节「阶段 2」。
-> 配套设计规格：[../spec/risk-taxonomy-engine.md](../spec/risk-taxonomy-engine.md)（本计划的所有技术决策依据在 spec 中，此处只列任务与验收）。
+> 配套设计规格：[../spec/risk-taxonomy-engine.md](../../spec/risk-taxonomy-engine.md)（本计划的所有技术决策依据在 spec 中，此处只列任务与验收）。
 > 现状基线核实日期：2026-07-13。
 > 状态：**已完成（历史实施计划）**。本文保留执行前基线；当前风险分类实现以对应 spec、taxonomy 代码和 `.upgrade/STATE.md` 为准。
 
